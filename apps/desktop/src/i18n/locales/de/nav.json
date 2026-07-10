@@ -14,8 +14,16 @@
     "runs": "Durchläufe",
     "skills": "Skills"
   },
+  "projects": {
+    "heading": "Projekte",
+    "new": "Neues Projekt",
+    "namePlaceholder": "Projektname",
+    "newSessionAria": "Neue Sitzung in „{{name}}“",
+    "noSessions": "Noch keine Sitzungen.",
+    "renameHint": "Zum Umbenennen doppelklicken"
+  },
   "history": {
-    "heading": "Verlauf",
+    "heading": "Sitzungen",
     "empty": "Noch keine Unterhaltungen.",
     "exampleTag": "Beispiel",
     "deleteAria": "{{title}} löschen"

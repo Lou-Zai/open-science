@@ -14,8 +14,16 @@
     "runs": "运行",
     "skills": "技能"
   },
+  "projects": {
+    "heading": "项目",
+    "new": "新建项目",
+    "namePlaceholder": "项目名称",
+    "newSessionAria": "在“{{name}}”中新建会话",
+    "noSessions": "暂无会话。",
+    "renameHint": "双击重命名"
+  },
   "history": {
-    "heading": "历史记录",
+    "heading": "会话",
     "empty": "暂无对话。",
     "exampleTag": "示例",
     "deleteAria": "删除 {{title}}"

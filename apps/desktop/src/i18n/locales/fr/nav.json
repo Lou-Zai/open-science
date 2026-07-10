@@ -14,8 +14,16 @@
     "runs": "Exécutions",
     "skills": "Compétences"
   },
+  "projects": {
+    "heading": "Projets",
+    "new": "Nouveau projet",
+    "namePlaceholder": "Nom du projet",
+    "newSessionAria": "Nouvelle session dans « {{name}} »",
+    "noSessions": "Aucune session pour l’instant.",
+    "renameHint": "Double-cliquez pour renommer"
+  },
   "history": {
-    "heading": "Historique",
+    "heading": "Sessions",
     "empty": "Aucune conversation pour le moment.",
     "exampleTag": "exemple",
     "deleteAria": "Supprimer {{title}}"

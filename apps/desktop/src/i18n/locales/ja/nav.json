@@ -14,8 +14,16 @@
     "runs": "実行",
     "skills": "スキル"
   },
+  "projects": {
+    "heading": "プロジェクト",
+    "new": "新規プロジェクト",
+    "namePlaceholder": "プロジェクト名",
+    "newSessionAria": "「{{name}}」で新しいセッション",
+    "noSessions": "セッションはまだありません。",
+    "renameHint": "ダブルクリックで名前を変更"
+  },
   "history": {
-    "heading": "履歴",
+    "heading": "セッション",
     "empty": "まだ会話がありません。",
     "exampleTag": "例",
     "deleteAria": "{{title}} を削除"

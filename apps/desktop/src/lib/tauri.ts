@@ -339,6 +339,39 @@ export async function newDatedWorkspace(name: string): Promise<string> {
   return invoke<string>("new_dated_workspace", { name });
 }
 
+/** A project: a named workspace folder under the base dir, marked by its
+ *  `.openscience/project.json`. Sessions group under it by `directory`. */
+export interface ProjectInfo {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt: number;
+  /** Absolute workspace folder (canonical, matches session `directory`). */
+  path: string;
+}
+
+/** Create a project folder (with metadata, harness and an initial git
+ *  snapshot). Does not switch the active workspace. */
+export async function createProject(name: string): Promise<ProjectInfo> {
+  if (!isTauri) throw new Error("not running in the desktop app");
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<ProjectInfo>("create_project", { name });
+}
+
+/** Every project under the base dir, sorted by name. */
+export async function listProjects(): Promise<ProjectInfo[]> {
+  if (!isTauri) return [];
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<ProjectInfo[]>("list_projects");
+}
+
+/** Rename a project's display name (the folder never moves). */
+export async function renameProject(path: string, name: string): Promise<void> {
+  if (!isTauri) throw new Error("not running in the desktop app");
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("rename_project", { path, name });
+}
+
 /** Native folder picker; null on cancel or in the browser. */
 export async function pickFolder(): Promise<string | null> {
   if (!isTauri) return null;

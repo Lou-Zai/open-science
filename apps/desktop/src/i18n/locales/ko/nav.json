@@ -14,8 +14,16 @@
     "runs": "실행",
     "skills": "스킬"
   },
+  "projects": {
+    "heading": "프로젝트",
+    "new": "새 프로젝트",
+    "namePlaceholder": "프로젝트 이름",
+    "newSessionAria": "“{{name}}”에서 새 세션",
+    "noSessions": "아직 세션이 없습니다.",
+    "renameHint": "더블 클릭으로 이름 변경"
+  },
   "history": {
-    "heading": "기록",
+    "heading": "세션",
     "empty": "아직 대화가 없습니다.",
     "exampleTag": "예제",
     "deleteAria": "{{title}} 삭제"

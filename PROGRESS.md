@@ -1,5 +1,7 @@
 # Progress
 
+2026-07-10 10:45 · feat(projects): project concept shipped — a project is a named shared-workspace folder under the base dir, marked only by `.openscience/project.json` (no registry/DB); sessions group under it by their `directory`. Sidebar gains a Projects section (collapsible groups, inline create + double-click rename, per-project new session); loose dated-folder sessions unchanged; same-project concurrency allowed and git snapshots now name the session that made them. All tests pass (447 FE + 87 Rust); DMG rebuilt.
+
 2026-07-10 07:35 · docs(citation): repo is now academically citable — CITATION.cff + a citation section in all 7 READMEs (team authorship "The Open Science Desktop Contributors"); Zenodo↔GitHub archiving enabled, first DOI mints on the next release (then: add the badge + doi field, and sync the cff version each release). Sibling repo ai4s-skills shipped v0.1.0 the same way and already has DOI 10.5281/zenodo.21297455.
 
 2026-07-10 04:04 · release: v0.1.9 published (network-proxy setting, connection self-heal, #6 #7 #8 #9 fixes) — all 8 platform installers built by CI.

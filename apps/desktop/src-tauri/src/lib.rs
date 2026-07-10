@@ -12,6 +12,7 @@ mod large_file;
 mod modal;
 mod opencode_config;
 mod preview_server;
+mod project;
 mod provenance;
 mod runs;
 mod runs_index;
@@ -60,6 +61,9 @@ pub fn run() {
             runtime::set_workspace,
             runtime::mark_session,
             runtime::new_dated_workspace,
+            project::create_project,
+            project::list_projects,
+            project::rename_project,
             runtime::pick_folder,
             runtime::import_opencode_login,
             runtime::remove_config_entry,

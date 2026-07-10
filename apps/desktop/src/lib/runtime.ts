@@ -17,8 +17,10 @@ import type { ArtifactBlock, RuntimeStatus, ThreadBlock, ToolVerb } from "@ai4s/
 import {
   detectTools as probeTools,
   commitWorkspaceSnapshot,
+  createProject as createProjectFolder,
   getApprovalMode,
   isTauri,
+  listProjects,
   logDebug,
   markSession,
   newDatedWorkspace,
@@ -29,6 +31,7 @@ import {
   startRuntime,
   workspacePath,
   type ApprovalMode,
+  type ProjectInfo,
   type ProxyMode,
   type ToolStatus,
 } from "./tauri";
@@ -123,6 +126,15 @@ interface RuntimeState {
   refreshSessions: () => Promise<void>;
   startDraft: () => void;
   startDraftInCurrentWorkspace: () => void;
+  /** Projects: named shared-workspace folders under the base dir. Sessions
+   *  group under a project by `directory`; multiple sessions share the folder. */
+  projects: ProjectInfo[];
+  refreshProjects: () => Promise<void>;
+  /** Create a project folder and move into it with a fresh pinned draft. */
+  createProject: (name: string) => Promise<ProjectInfo | null>;
+  /** Fresh draft pinned inside `path` (a project folder), so the next new
+   *  session lands there. Skips the reconnect when the folder is already active. */
+  startDraftInWorkspace: (path: string) => Promise<void>;
   /** Active workspace folder (absolute path); null in the browser. */
   workspace: string | null;
   /** True when the user explicitly picked the active folder for the next new
@@ -431,6 +443,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
   permissions: [],
   sessionParents: {},
   panes: {},
+  projects: [],
   workspace: null,
   workspacePinned: false,
   switching: false,
@@ -780,7 +793,10 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       }
       if (event.type === "session.idle") {
         void get().refreshSessions();
-        void commitWorkspaceSnapshot("Snapshot session changes")
+        // Name the session in the snapshot: a project folder is shared by many
+        // sessions, and its git history must say which one made each change.
+        const sessionName = get().sessions.find((s) => s.id === sid)?.title || sid;
+        void commitWorkspaceSnapshot(`Snapshot session changes (${sessionName})`)
           .then((committed) => {
             if (committed) void logDebug(`git snapshot ✓ ${sid}`);
           })
@@ -795,6 +811,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       void logDebug("connect OK");
       set({ error: null });
       await get().refreshSessions();
+      void get().refreshProjects();
       // Catalog (skills/agents/commands) fills in behind the page — a session
       // switch must not wait on it to show the conversation.
       void get().loadCatalog();
@@ -904,6 +921,42 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       delete panes[DRAFT_KEY];
       return { currentId: null, workspacePinned: true, threads, panes };
     }),
+
+  refreshProjects: async () => {
+    if (!isTauri) return;
+    try {
+      set({ projects: await listProjects() });
+    } catch {
+      /* ignore transient scan failures */
+    }
+  },
+
+  createProject: async (name) => {
+    try {
+      const project = await createProjectFolder(name);
+      void get().refreshProjects();
+      await get().switchWorkspace({ path: project.path });
+      return project;
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      return null;
+    }
+  },
+
+  startDraftInWorkspace: async (path) => {
+    if (get().workspace === path) {
+      // Already inside the project — a clean pinned draft, no reconnect.
+      set((s) => {
+        const threads = { ...s.threads };
+        delete threads[DRAFT_KEY];
+        const panes = { ...s.panes };
+        delete panes[DRAFT_KEY];
+        return { currentId: null, workspacePinned: true, threads, panes };
+      });
+      return;
+    }
+    await get().switchWorkspace({ path });
+  },
 
   switchWorkspace: async (target) => {
     set({ switching: true });
