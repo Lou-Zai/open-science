@@ -47,21 +47,29 @@ pub async fn setup_science_mcp(app: AppHandle, package: String) -> Result<String
     let dir = env_dir(&app)?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
-    crate::uv::run_uv(
-        &app,
-        "science",
-        vec![
-            "venv".into(),
-            dir.to_string_lossy().to_string(),
-            "--python".into(),
-            "3.12".into(),
-            "--allow-existing".into(),
-        ],
-        "uv venv",
-    )
-    .await?;
-
+    // Create the venv only when its interpreter is missing. `uv venv` deletes
+    // and rewrites the interpreter even with --allow-existing (verified: the
+    // inode changes on every run), and on Windows a python.exe that an
+    // already-enabled connector's MCP server is running from cannot be
+    // replaced — so enabling a SECOND connector always died with "uv venv
+    // failed" (#10). An existing interpreter means the shared env is
+    // provisioned; `uv pip install` is all the next connector needs.
     let py = python_bin(&app)?;
+    if !py.exists() {
+        crate::uv::run_uv(
+            &app,
+            "science",
+            vec![
+                "venv".into(),
+                dir.to_string_lossy().to_string(),
+                "--python".into(),
+                "3.12".into(),
+                "--allow-existing".into(),
+            ],
+            "uv venv",
+        )
+        .await?;
+    }
     crate::uv::run_uv(
         &app,
         "science",

@@ -164,19 +164,25 @@ pub async fn setup_jupyter(app: AppHandle) -> Result<(), String> {
     let dir = env_dir(&app)?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
-    crate::uv::run_uv(
-        &app,
-        "jupyter",
-        vec![
-            "venv".into(),
-            dir.to_string_lossy().to_string(),
-            "--python".into(),
-            "3.12".into(),
-            "--allow-existing".into(),
-        ],
-        "uv venv",
-    )
-    .await?;
+    // Same Windows lock-avoidance as setup_science_mcp (#10): `uv venv`
+    // rewrites the env's interpreter even with --allow-existing, and a running
+    // jupyter-lab holds python.exe — re-running Setup would fail. Only create
+    // the venv when its interpreter is missing; pip install is incremental.
+    if env_python(&app).is_none() {
+        crate::uv::run_uv(
+            &app,
+            "jupyter",
+            vec![
+                "venv".into(),
+                dir.to_string_lossy().to_string(),
+                "--python".into(),
+                "3.12".into(),
+                "--allow-existing".into(),
+            ],
+            "uv venv",
+        )
+        .await?;
+    }
 
     let py = bin(&app, "python")?;
     let mut args = vec![
