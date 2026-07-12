@@ -1,5 +1,7 @@
 # Progress
 
+2026-07-12 01:32 · fix(runtime): serialized the complete OpenCode sidecar lifecycle behind one lock, cleared stale URLs on failed restarts, and deduplicated React StrictMode bootstrap calls so concurrent starts cannot double-spawn, overwrite the owned child, or launch dueling reconnect loops; Rust 87/87 + frontend 448/448 tests and the production build pass.
+
 2026-07-10 21:55 · fix(mcp): #10 root cause — enabling a second Python MCP re-ran `uv venv` on the shared env, and uv deletes + rewrites the interpreter even with `--allow-existing` (verified: inode changes per run); Windows cannot replace the python.exe the first connector's running MCP server holds, so the second enable always died with "uv venv failed". Venv is now created only when the interpreter is missing (science-MCP + jupyter setup); `uv pip install` into the existing env verified end-to-end with the bundled uv.
 
 2026-07-10 10:45 · feat(projects): project concept shipped — a project is a named shared-workspace folder under the base dir, marked only by `.openscience/project.json` (no registry/DB); sessions group under it by their `directory`. Sidebar gains a Projects section (collapsible groups, inline create + double-click rename, per-project new session); loose dated-folder sessions unchanged; same-project concurrency allowed and git snapshots now name the session that made them. All tests pass (447 FE + 87 Rust); DMG rebuilt.

@@ -41,6 +41,7 @@ const mocks = vi.hoisted(() => ({
     mocks.approvalMode = mode;
     return "http://127.0.0.1:1";
   }),
+  startRuntime: vi.fn(async () => "http://127.0.0.1:1"),
   /** Constructor options every OpenCodeClient was created with. */
   clientOpts: [] as Record<string, unknown>[],
 }));
@@ -49,7 +50,7 @@ vi.mock("./tauri", () => ({
   isTauri: true,
   logDebug: async () => {},
   detectTools: async () => [],
-  startRuntime: async () => "http://127.0.0.1:1",
+  startRuntime: mocks.startRuntime,
   workspacePath: async () => "/ws/base",
   setWorkspace: mocks.setWorkspace,
   newDatedWorkspace: mocks.newDatedWorkspace,
@@ -198,6 +199,15 @@ beforeEach(async () => {
 });
 
 describe("runtime authentication", () => {
+  it("deduplicates concurrent bootstrap calls", async () => {
+    const first = useRuntimeStore.getState().bootstrap();
+    const second = useRuntimeStore.getState().bootstrap();
+
+    expect(second).toBe(first);
+    await Promise.all([first, second]);
+    expect(mocks.startRuntime).toHaveBeenCalledTimes(1);
+  });
+
   it("connect() passes the per-run runtime password to the SDK client", async () => {
     // The sidecar requires Basic auth (OPENCODE_SERVER_PASSWORD); an
     // unauthenticated client would 401 on every call.

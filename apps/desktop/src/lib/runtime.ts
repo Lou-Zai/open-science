@@ -176,6 +176,9 @@ interface RuntimeState {
 
 let client: OpenCodeClient | null = null;
 let openSessionSeq = 0;
+/** React StrictMode mounts effects twice in development. Share the same boot
+ *  promise so duplicate AppShell effects cannot start dueling connect loops. */
+let bootstrapInFlight: Promise<void> | null = null;
 /** Unhook the current client's status listener BEFORE closing it — teardown
  *  emits "offline", and a reconnect attempt must not flash that at the user. */
 let clientStatusUnsub: (() => void) | null = null;
@@ -850,21 +853,30 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     set({ status: "error", error: lastError });
   },
 
-  bootstrap: async () => {
-    void get().detectTools();
-    if (!isTauri) return;
-    void logDebug("bootstrap: starting bundled runtime");
-    try {
-      const url = await startRuntime();
-      void logDebug(`bootstrap: runtime at ${url}`);
-      if (url) set({ serverUrl: url });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      void logDebug(`bootstrap FAILED: ${msg}`);
-      set({ error: msg });
-      return;
-    }
-    await get().connectRetry();
+  bootstrap: () => {
+    if (bootstrapInFlight) return bootstrapInFlight;
+    const run = (async () => {
+      void get().detectTools();
+      if (!isTauri) return;
+      void logDebug("bootstrap: starting bundled runtime");
+      try {
+        const url = await startRuntime();
+        void logDebug(`bootstrap: runtime at ${url}`);
+        if (url) set({ serverUrl: url });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        void logDebug(`bootstrap FAILED: ${msg}`);
+        set({ error: msg });
+        return;
+      }
+      await get().connectRetry();
+    })();
+    bootstrapInFlight = run;
+    const clear = () => {
+      if (bootstrapInFlight === run) bootstrapInFlight = null;
+    };
+    void run.then(clear, clear);
+    return run;
   },
 
   disconnect: () => {
