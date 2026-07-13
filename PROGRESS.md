@@ -1,6 +1,14 @@
 # Progress
 
+2026-07-12 23:45 · fix(runtime): model switches no longer flash the page — OpenCode's instance rebuild closes /event ~1s after the PATCH (outside the `switching` mask) and the SDK self-recovers in ~250ms, but the store mirrored the transient ready→connecting flip straight into the UI; a ready→connecting flip is now held for a 2s grace window and surfaced only if the stream stays down (errors still show immediately); 504/504 tests, typecheck pass, DMG rebuilt.
+
+2026-07-12 23:30 · fix(settings): the model picker no longer bounces back to the previous model after a switch — `getDefaultModel` read the instance-scoped `/config`, which lags the `/global/config` PATCH by ~1s while OpenCode rebuilds its instance, so the reconnect's `loadCatalog` could clobber the new selection with a stale read; now the read targets `/global/config` and `loadCatalog` leaves `defaultModel` alone mid-switch; 501/501 tests, typecheck pass, DMG rebuilt.
+
+2026-07-12 08:01 · fix(settings): PR #13 review fixes on `feat/model-browser-fixes` — the store now owns model-switch failure state (`modelSwitchError`; fixes the null===null first-boot misrender, the retry that collapsed the browser, and the stale-catalog-after-URL-change write hazard), catalog gained a loading state scoped to `listProviders`, the providers card stays collapsible when disconnected, model rows keep focus via aria-disabled, the dead `model.notSet` key is live again, and the two force-added `docs/superpowers/` files are removed; 500/500 tests, typecheck, lint, build pass.
+
 2026-07-12 15:10 · fix(desktop): #12 — the app had no zoom mechanism at all, so WSLg users hit by its HiDPI scale-factor bug (fonts shrink on maximize; upstream wslg#23/#388/#1335) had no way to recover; enabled `zoomHotkeysEnabled` + the `core:webview:allow-set-webview-zoom` capability so Ctrl/Cmd +/- zoom now works on all three platforms; DMG rebuilt.
+
+2026-07-12 11:25 · feat(settings): replaced the large native model dropdown with a searchable two-column browser (all/favorites/recent/provider filters), local favorite/recent persistence, immediate masked switching, and a separate collapsed provider-management card; full frontend tests, typecheck, lint, Windows Tauri build, and visual QA pass.
 
 2026-07-12 01:32 · fix(runtime): serialized the complete OpenCode sidecar lifecycle behind one lock, cleared stale URLs on failed restarts, and deduplicated React StrictMode bootstrap calls so concurrent starts cannot double-spawn, overwrite the owned child, or launch dueling reconnect loops; Rust 87/87 + frontend 448/448 tests and the production build pass.
 

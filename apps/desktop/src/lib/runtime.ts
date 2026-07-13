@@ -89,6 +89,11 @@ interface RuntimeState {
   defaultModel: string | null;
   /** Apply a new default model and transparently reconnect (see impl). */
   setDefaultModel: (model: string) => Promise<void>;
+  /** The last failed model switch's error, or null. While set, the Settings
+   *  page keeps the model browser on screen (instead of the connect prompt)
+   *  so the user can retry. Cleared by any successful reconnect, a successful
+   *  switch, a server-URL change, or an explicit disconnect. */
+  modelSwitchError: string | null;
   /** The composer's approval switch: "approve" (dangerous commands prompt)
    *  or "full" (everything in-workspace runs). Loaded from OpenCode config. */
   approvalMode: ApprovalMode;
@@ -120,7 +125,8 @@ interface RuntimeState {
   loadCatalog: () => Promise<void>;
   detectTools: () => Promise<void>;
   connect: () => Promise<void>;
-  connectRetry: (tries?: number) => Promise<void>;
+  /** Resolves true once connected, false when the retry window is exhausted. */
+  connectRetry: (tries?: number) => Promise<boolean>;
   bootstrap: () => Promise<void>;
   disconnect: () => void;
   refreshSessions: () => Promise<void>;
@@ -182,9 +188,20 @@ let bootstrapInFlight: Promise<void> | null = null;
 /** Unhook the current client's status listener BEFORE closing it — teardown
  *  emits "offline", and a reconnect attempt must not flash that at the user. */
 let clientStatusUnsub: (() => void) | null = null;
+/** The SDK recovers a dropped stream in ~250ms (OpenCode closes /event ~1s
+ *  after a config PATCH while rebuilding its instance). Surfacing that blip
+ *  repaints every status consumer, so a ready→connecting flip is held this
+ *  long and only shown if the stream does not come back. */
+const STATUS_BLIP_GRACE_MS = 2000;
+let statusBlipTimer: ReturnType<typeof setTimeout> | null = null;
+function clearStatusBlip() {
+  if (statusBlipTimer !== null) clearTimeout(statusBlipTimer);
+  statusBlipTimer = null;
+}
 function teardownClient() {
   clientStatusUnsub?.();
   clientStatusUnsub = null;
+  clearStatusBlip();
   client?.close();
   client = null;
 }
@@ -438,6 +455,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
   agents: [],
   commands: [],
   defaultModel: null,
+  modelSwitchError: null,
   approvalMode: "approve",
   tools: [],
   hiddenExamples: initialHidden(),
@@ -529,7 +547,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
 
   setServerUrl: (serverUrl) => {
     if (typeof window !== "undefined") window.localStorage.setItem(URL_KEY, serverUrl);
-    set({ serverUrl });
+    set({ serverUrl, modelSwitchError: null });
   },
 
   loadCatalog: async () => {
@@ -541,7 +559,10 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         client.getDefaultModel().catch(() => null),
         client.listCommands().catch(() => []),
       ]);
-      set({ agents, defaultModel, commands });
+      // A model switch in flight owns `defaultModel`: this read may predate
+      // the switch's config write, and applying it would visibly revert the
+      // just-selected model.
+      set(get().switching ? { agents, commands } : { agents, defaultModel, commands });
       let skills = firstSkills;
       // The first workspace-scoped /api/skill call triggers OpenCode's lazy
       // instance init and can answer before the scan finishes — poll briefly.
@@ -599,7 +620,15 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     try {
       await client.setDefaultModel(model);
       set({ defaultModel: model });
-      await get().connectRetry();
+      if (!(await get().connectRetry())) {
+        throw new Error(
+          get().error ?? "Runtime did not reconnect after setting the default model.",
+        );
+      }
+      set({ modelSwitchError: null });
+    } catch (err) {
+      set({ modelSwitchError: err instanceof Error ? err.message : String(err) });
+      throw err;
     } finally {
       set({ switching: false });
     }
@@ -624,6 +653,17 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     client = c;
     clientStatusUnsub = c.onStatus((status) => {
       void logDebug(`status → ${status}`);
+      if (status === "connecting" && get().status === "ready") {
+        // Hold the flip for STATUS_BLIP_GRACE_MS: if the SDK's own reconnect
+        // lands first ("ready" clears the timer), the UI never sees the blip.
+        if (statusBlipTimer === null)
+          statusBlipTimer = setTimeout(() => {
+            statusBlipTimer = null;
+            set({ status: "connecting" });
+          }, STATUS_BLIP_GRACE_MS);
+        return;
+      }
+      clearStatusBlip();
       set({ status });
     });
     c.onEvent((event) => {
@@ -842,7 +882,10 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     let lastError: string | null = null;
     for (let i = 0; i < tries; i++) {
       await get().connect();
-      if (get().status === "ready") return;
+      if (get().status === "ready") {
+        set({ modelSwitchError: null });
+        return true;
+      }
       lastError = get().error ?? lastError;
       set({ status: "connecting", error: null });
       // Quick retries first — the server is usually up within a second (a
@@ -851,6 +894,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       await sleep(i < 8 ? 250 : 1000);
     }
     set({ status: "error", error: lastError });
+    return false;
   },
 
   bootstrap: () => {
@@ -881,7 +925,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
 
   disconnect: () => {
     teardownClient();
-    set({ status: "offline" });
+    set({ status: "offline", modelSwitchError: null });
   },
 
   refreshSessions: async () => {

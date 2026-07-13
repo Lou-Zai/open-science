@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Check,
-  ChevronDown,
   ChevronRight,
   Download,
   ExternalLink,
@@ -45,6 +44,9 @@ import { useSetupStore } from "@/lib/setup";
 import { RemoteComputeCard } from "@/components/settings/RemoteComputeCard";
 import { ModalCard } from "@/components/settings/ModalCard";
 import { DataFlowCard } from "@/components/settings/DataFlowCard";
+import { ModelBrowser } from "@/components/settings/ModelBrowser";
+import { ProviderManagerCard } from "@/components/settings/ProviderManagerCard";
+import { inputCls } from "@/components/settings/inputCls";
 import { SCIENCE_CONNECTORS } from "@/lib/scienceConnectors";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/cn";
@@ -65,6 +67,7 @@ export function SettingsPage() {
   // made the native <select>/<input>/<button> controls flicker and blank out on
   // scroll. These are the only fields the page actually reads.
   const status = useRuntimeStore((s) => s.status);
+  const switching = useRuntimeStore((s) => s.switching);
   const serverUrl = useRuntimeStore((s) => s.serverUrl);
   const setServerUrl = useRuntimeStore((s) => s.setServerUrl);
   const connect = useRuntimeStore((s) => s.connect);
@@ -103,6 +106,10 @@ export function SettingsPage() {
   const setupGeneration = useSetupStore((s) => s.generation);
 
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  // The Models card's own lifecycle. "ready" is sticky across later refresh
+  // failures (keep the last good list); a server-URL change resets it so a
+  // different runtime can never render the previous runtime's catalog.
+  const [catalogState, setCatalogState] = useState<"loading" | "ready" | "unavailable">("loading");
   const [authMethods, setAuthMethods] = useState<Record<string, ProviderAuthMethod[]>>({});
   const [catalog, setCatalog] = useState<ProviderCatalogEntry[]>([]);
   const [customIds, setCustomIds] = useState<string[]>([]);
@@ -121,6 +128,13 @@ export function SettingsPage() {
   const [mTarget, setMTarget] = useState("");
   const [wsPath, setWsPath] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The store owns "a model switch failed" (modelSwitchError): after a failed
+  // apply the browser stays on screen for a retry instead of collapsing into
+  // the connect prompt, no matter how the attempt failed.
+  const modelSwitchError = useRuntimeStore((s) => s.modelSwitchError);
+  const modelSurfaceAvailable =
+    connected || switching || (status === "error" && modelSwitchError !== null);
+  const modelControlsBusy = busy || switching;
 
   // Custom endpoint form (self-hosted / Ollama / OpenAI- or Anthropic-compatible).
   const [showCustom, setShowCustom] = useState(false);
@@ -131,6 +145,7 @@ export function SettingsPage() {
   const [cModels, setCModels] = useState("");
 
   // Connect-a-provider flow state.
+  const [providerManagerOpen, setProviderManagerOpen] = useState(false);
   const [connectQuery, setConnectQuery] = useState("");
   const [keyInput, setKeyInput] = useState("");
   const [promptInputs, setPromptInputs] = useState<Record<string, string>>({});
@@ -147,15 +162,22 @@ export function SettingsPage() {
   const refresh = useCallback(async () => {
     const client = getClient();
     if (!client) return;
+    // The model catalog (listProviders) is what the Models card renders — only
+    // its failure means "catalog unavailable", and only when there is no last
+    // good list to keep showing. The rest is auxiliary settings data.
     try {
-      const [p, m, c, custom, mcp] = await Promise.all([
-        client.listProviders(),
+      setProviders(await client.listProviders());
+      setCatalogState("ready");
+    } catch {
+      setCatalogState((s) => (s === "ready" ? s : "unavailable"));
+    }
+    try {
+      const [m, c, custom, mcp] = await Promise.all([
         client.listAuthMethods(),
         client.listProviderCatalog(),
         client.listCustomProviderIds(),
         client.listMcpServers().catch(() => []),
       ]);
-      setProviders(p);
       setAuthMethods(m);
       setCatalog(c.all);
       setCustomIds(custom);
@@ -172,6 +194,12 @@ export function SettingsPage() {
   useEffect(() => {
     if (connected) void refresh();
   }, [connected, refresh, setupGeneration]);
+  // A different server URL means a different runtime: drop the cached catalog
+  // so its models can never be shown against (or written to) the new server.
+  useEffect(() => {
+    setProviders([]);
+    setCatalogState("loading");
+  }, [serverUrl]);
   useEffect(() => {
     // The BASE folder — the parent every session's dated subfolder is created
     // under. (The per-session active folder shows in the conversation header.)
@@ -265,14 +293,18 @@ export function SettingsPage() {
     oauthAbort.current = null;
   };
 
-  const saveModel = (model: string) =>
-    run(t("toast.couldNotSetModel"), async () => {
-      // Go through the store, not the client directly: applying a model closes
-      // the event stream server-side, so the store reconnects transparently
-      // (masked by `switching`) — no disconnect, no manual Connect afterward.
-      if (model) await useRuntimeStore.getState().setDefaultModel(model);
+  const saveModel = async (model: string): Promise<boolean> => {
+    // The store masks the whole apply with `switching` and records any failure
+    // in `modelSwitchError`; this page only presents the outcome.
+    try {
+      await useRuntimeStore.getState().setDefaultModel(model);
       toast.success(t("toast.defaultModelSet", { model }));
-    });
+      return true;
+    } catch (error) {
+      toast.error(`${t("toast.couldNotSetModel")}: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
+  };
 
   const saveKey = (providerID: string) =>
     run(t("toast.couldNotSaveKey"), async () => {
@@ -568,38 +600,35 @@ export function SettingsPage() {
           )}
         </Card>
 
-        {/* ---- Models & providers ---- */}
+        {/* ---- Models ---- */}
         <Card title={t("model.title")} hint={t("model.hint")}>
-          {!connected ? (
+          {!modelSurfaceAvailable ? (
             <p className="text-[13px] text-muted">{t("model.connectPrompt")}</p>
+          ) : catalogState === "unavailable" ? (
+            <p className="text-[13px] text-muted">{t("model.catalogUnavailable")}</p>
+          ) : catalogState === "loading" ? (
+            <p className="text-[13px] text-muted">{t("model.catalogLoading")}</p>
+          ) : (
+            <ModelBrowser
+              providers={providers}
+              defaultModel={defaultModel}
+              busy={modelControlsBusy}
+              onSelect={saveModel}
+              onManageProviders={() => setProviderManagerOpen(true)}
+            />
+          )}
+        </Card>
+
+        {/* ---- Providers ---- */}
+        <ProviderManagerCard
+          providers={providers}
+          expanded={providerManagerOpen}
+          onExpandedChange={setProviderManagerOpen}
+        >
+          {!connected ? (
+            <p className="text-[13px] text-muted">{t("providers.connectPrompt")}</p>
           ) : (
             <>
-              <div className="relative">
-                <select
-                  value={defaultModel ?? ""}
-                  onChange={(e) => void saveModel(e.target.value)}
-                  disabled={busy}
-                  className={cn(inputCls("w-full appearance-none pr-9"), "cursor-pointer")}
-                >
-                  <option value="">{t("model.notSet")}</option>
-                  {providers.map((p) => (
-                    <optgroup key={p.id} label={p.name}>
-                      {p.models.map((m) => (
-                        <option key={m.id} value={`${p.id}/${m.id}`}>
-                          {m.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-                <ChevronDown
-                  size={14}
-                  className="pointer-events-none absolute right-3 top-1/2 -mt-[7px] text-muted"
-                />
-              </div>
-
-              <Divider label={t("model.providersDivider")} />
-
               <div className="overflow-hidden rounded-input border border-border">
                 {providers.map((p, i) => (
                   <div
@@ -839,7 +868,7 @@ export function SettingsPage() {
               )}
             </>
           )}
-        </Card>
+        </ProviderManagerCard>
 
         {/* ---- MCP servers ---- */}
         <Card title={t("mcp.title")} hint={t("mcp.hint")}>
@@ -1280,12 +1309,6 @@ export function SettingsPage() {
 
 /* ---- Shared bits: one look for every control on this page ---- */
 
-const inputCls = (extra = "") =>
-  cn(
-    "h-9 rounded-input border border-border bg-surface px-3 text-[13px] text-text outline-none",
-    "placeholder:text-muted focus:border-accent/60",
-    extra,
-  );
 
 // Hover/disabled states use background + text COLOR, never `opacity`. The CSS
 // `opacity` property promotes an element to its own GPU compositing layer; in
@@ -1325,14 +1348,5 @@ function Card({
       </header>
       <div className="px-5 py-4">{children}</div>
     </section>
-  );
-}
-
-function Divider({ label }: { label: string }) {
-  return (
-    <div className="mb-3 mt-5 flex items-center gap-3">
-      <span className="text-xs font-medium uppercase tracking-wider text-muted">{label}</span>
-      <span className="h-px flex-1 bg-border" />
-    </div>
   );
 }

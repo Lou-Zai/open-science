@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   failCreates: 0,
   /** Fire a normalized event into the store, as the SSE stream would. */
   fireEvent: (_e: unknown) => {},
+  /** Fire a client status flip into the store, as the SDK's reconnect would. */
+  fireStatus: (_s: string) => {},
   runShell: vi.fn(),
   runCommand: vi.fn(),
   replyPermission: vi.fn(),
@@ -24,6 +26,8 @@ const mocks = vi.hoisted(() => ({
   /** Records setDefaultModel calls; `currentModel` is what getDefaultModel returns. */
   setDefaultModelSpy: vi.fn(),
   currentModel: null as string | null,
+  /** Next setDefaultModel PATCH throws (server unreachable). */
+  failSetModel: false,
   /** History the mock server returns for any session. */
   messages: [] as unknown[],
   /** Next getMessages call throws. */
@@ -69,6 +73,7 @@ vi.mock("@ai4s/sdk", () => {
     }
     onStatus(cb: (s: string) => void) {
       this.statusCb = cb;
+      mocks.fireStatus = cb;
       return () => {
         this.statusCb = () => {};
       };
@@ -99,6 +104,7 @@ vi.mock("@ai4s/sdk", () => {
     }
     async setDefaultModel(model: string) {
       mocks.setDefaultModelSpy(model);
+      if (mocks.failSetModel) throw new Error("Load failed");
       mocks.currentModel = model;
     }
     async createSession() {
@@ -183,6 +189,7 @@ beforeEach(async () => {
   mocks.failMessages = false;
   mocks.approvalMode = "approve";
   mocks.currentModel = null;
+  mocks.failSetModel = false;
   useRuntimeStore.setState({
     currentId: null,
     workspacePinned: false,
@@ -804,5 +811,168 @@ describe("approval mode", () => {
     await p;
     expect(useRuntimeStore.getState().switching).toBe(false);
     expect(useRuntimeStore.getState().status).toBe("ready");
+  });
+
+  it("setDefaultModel rejects an exhausted reconnect without rolling back the persisted model", async () => {
+    const originalConnectRetry = useRuntimeStore.getState().connectRetry;
+    useRuntimeStore.setState({
+      connectRetry: vi.fn(async () => {
+        useRuntimeStore.setState({
+          status: "error",
+          error: "Could not open OpenCode event stream",
+        });
+        return false;
+      }),
+    });
+
+    try {
+      await expect(
+        useRuntimeStore.getState().setDefaultModel("anthropic/claude-sonnet-5"),
+      ).rejects.toThrow("Could not open OpenCode event stream");
+      const state = useRuntimeStore.getState();
+      expect(state.status).toBe("error");
+      expect(state.defaultModel).toBe("anthropic/claude-sonnet-5");
+      expect(state.switching).toBe(false);
+    } finally {
+      useRuntimeStore.setState({ connectRetry: originalConnectRetry });
+    }
+  });
+
+  it("setDefaultModel uses a stable error when exhausted reconnect has no message", async () => {
+    const originalConnectRetry = useRuntimeStore.getState().connectRetry;
+    useRuntimeStore.setState({
+      connectRetry: vi.fn(async () => {
+        useRuntimeStore.setState({ status: "error", error: null });
+        return false;
+      }),
+    });
+
+    try {
+      await expect(
+        useRuntimeStore.getState().setDefaultModel("anthropic/claude-sonnet-5"),
+      ).rejects.toThrow("Runtime did not reconnect after setting the default model.");
+    } finally {
+      useRuntimeStore.setState({ connectRetry: originalConnectRetry });
+    }
+  });
+
+  it("holds a ready→connecting blip so a self-recovering stream never repaints the page", async () => {
+    // OpenCode closes /event ~1s after a config PATCH while rebuilding its
+    // instance; the SDK reconnects in ~250ms. That blip must not reach the UI.
+    vi.useFakeTimers();
+    try {
+      mocks.fireStatus("connecting");
+      expect(useRuntimeStore.getState().status).toBe("ready"); // held
+      mocks.fireStatus("ready");
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(useRuntimeStore.getState().status).toBe("ready"); // never flipped
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("surfaces connecting when the stream does not recover within the grace window", async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.fireStatus("connecting");
+      expect(useRuntimeStore.getState().status).toBe("ready");
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(useRuntimeStore.getState().status).toBe("connecting");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("an error during the hold surfaces immediately", () => {
+    mocks.fireStatus("connecting");
+    mocks.fireStatus("error");
+    expect(useRuntimeStore.getState().status).toBe("error");
+  });
+
+  it("loadCatalog never clobbers defaultModel while a switch is in flight", async () => {
+    // The switch's reconnect fires loadCatalog, whose config read can still
+    // answer with the pre-switch model while OpenCode rebuilds its instance —
+    // applying it would visibly bounce the UI back to the previous model.
+    try {
+      useRuntimeStore.setState({ defaultModel: "moonshot/kimi-k2-thinking", switching: true });
+      mocks.currentModel = "moonshot/kimi-k2.7-code"; // stale read-back
+      await useRuntimeStore.getState().loadCatalog();
+      expect(useRuntimeStore.getState().defaultModel).toBe("moonshot/kimi-k2-thinking");
+      // Outside a switch the server value is authoritative again.
+      useRuntimeStore.setState({ switching: false });
+      await useRuntimeStore.getState().loadCatalog();
+      expect(useRuntimeStore.getState().defaultModel).toBe("moonshot/kimi-k2.7-code");
+    } finally {
+      useRuntimeStore.setState({ switching: false });
+    }
+  });
+});
+
+// The store — not the Settings page — owns the fact "a model switch failed":
+// the page derives its whole model surface from `connected || switching ||
+// modelSwitchError`, so the browser stays on screen for a retry no matter how
+// the attempt failed, and clears wherever the failure stops being true.
+describe("model switch failure state", () => {
+  const failReconnect = () =>
+    vi.fn(async () => {
+      useRuntimeStore.setState({ status: "error", error: "Could not open OpenCode event stream" });
+      return false;
+    });
+
+  it("connectRetry resolves true on success and false when exhausted", async () => {
+    await expect(useRuntimeStore.getState().connectRetry(1)).resolves.toBe(true);
+    mocks.failConnects = 99;
+    await expect(useRuntimeStore.getState().connectRetry(1)).resolves.toBe(false);
+  });
+
+  it("an exhausted reconnect records modelSwitchError", async () => {
+    const original = useRuntimeStore.getState().connectRetry;
+    useRuntimeStore.setState({ connectRetry: failReconnect() });
+    try {
+      await expect(
+        useRuntimeStore.getState().setDefaultModel("anthropic/claude-sonnet-5"),
+      ).rejects.toThrow();
+      expect(useRuntimeStore.getState().modelSwitchError).toBe(
+        "Could not open OpenCode event stream",
+      );
+    } finally {
+      useRuntimeStore.setState({ connectRetry: original });
+    }
+  });
+
+  it("a rejected model PATCH records modelSwitchError (retry keeps the browser up)", async () => {
+    // The likely retry path: the server is still down, so the PATCH itself
+    // rejects before any reconnect. The failure state must re-arm — this is
+    // exactly the case where the old page-local flag silently dropped it.
+    mocks.failSetModel = true;
+    await expect(
+      useRuntimeStore.getState().setDefaultModel("anthropic/claude-sonnet-5"),
+    ).rejects.toThrow("Load failed");
+    expect(useRuntimeStore.getState().modelSwitchError).toBe("Load failed");
+    expect(useRuntimeStore.getState().defaultModel).toBe(null); // PATCH never landed
+  });
+
+  it("a later successful model switch clears modelSwitchError", async () => {
+    useRuntimeStore.setState({ modelSwitchError: "stale" });
+    await useRuntimeStore.getState().setDefaultModel("anthropic/claude-sonnet-5");
+    expect(useRuntimeStore.getState().modelSwitchError).toBe(null);
+  });
+
+  it("a later successful reconnect clears modelSwitchError", async () => {
+    useRuntimeStore.setState({ modelSwitchError: "stale" });
+    await useRuntimeStore.getState().connectRetry(1);
+    expect(useRuntimeStore.getState().modelSwitchError).toBe(null);
+  });
+
+  it("changing the server URL clears modelSwitchError", () => {
+    useRuntimeStore.setState({ modelSwitchError: "stale" });
+    useRuntimeStore.getState().setServerUrl("http://127.0.0.1:9999");
+    expect(useRuntimeStore.getState().modelSwitchError).toBe(null);
+  });
+
+  it("disconnect clears modelSwitchError (offline shows the connect prompt again)", () => {
+    useRuntimeStore.setState({ modelSwitchError: "stale" });
+    useRuntimeStore.getState().disconnect();
+    expect(useRuntimeStore.getState().modelSwitchError).toBe(null);
   });
 });

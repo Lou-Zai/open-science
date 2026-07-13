@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { renderAt } from "@/test/render";
 import { useUiStore } from "@/lib/store";
+import { useRuntimeStore } from "@/lib/runtime";
 import { shippedLocales } from "@/i18n/config";
 
 describe("Settings language selector", () => {
@@ -38,5 +39,22 @@ describe("Settings page strings (i18n)", () => {
     expect(await screen.findByText("Connect the runtime to configure models.")).toBeInTheDocument();
     expect(screen.getByText("Connect the runtime to configure MCP servers.")).toBeInTheDocument();
     expect(screen.getByText("available in the desktop app")).toBeInTheDocument();
+  });
+
+  it("renders separate model browsing and provider management surfaces when connected", async () => {
+    const original = useRuntimeStore.getState();
+    let view: ReturnType<typeof renderAt> | undefined;
+    try {
+      useRuntimeStore.setState({ status: "ready", defaultModel: null });
+      view = renderAt("/settings");
+      // No client behind this render: the Models card sits in its loading
+      // state while the separate Providers card is already on screen.
+      expect(await screen.findByText("Loading the model catalog…")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 2, name: "Providers" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Manage" })).toHaveAttribute("aria-expanded", "false");
+    } finally {
+      view?.unmount();
+      useRuntimeStore.setState({ status: original.status, defaultModel: original.defaultModel });
+    }
   });
 });
