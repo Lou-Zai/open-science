@@ -26,7 +26,12 @@
     "proxyPlaceholder": "http://127.0.0.1:7890 / socks5://host:port",
     "proxyDirectHint": "Toutes les connexions du runtime de l’agent sont directes.",
     "proxyEffective": "Routage via {{url}}",
-    "proxyNoneDetected": "Aucun proxy système détecté — les connexions sont directes."
+    "proxyNoneDetected": "Aucun proxy système détecté — les connexions sont directes.",
+    "mirrorPypi": "Index PyPI",
+    "mirrorPython": "Téléchargement Python",
+    "mirrorPypiPlaceholder": "https://pypi.tuna.tsinghua.edu.cn/simple",
+    "mirrorPythonPlaceholder": "https://mirror.example.com/python-build-standalone",
+    "mirrorHint": "Miroirs facultatifs, utilisés uniquement lors de l’installation d’outils Python (Jupyter, bases de données scientifiques) sur les réseaux où pypi.org / github.com sont lents. Laisser vide pour les valeurs par défaut."
   },
   "updates": {
     "title": "Mises à jour de l'app",
@@ -170,7 +175,9 @@
     "noOpenCodeLoginFound": "Aucune connexion CLI OpenCode trouvée sur cette machine.",
     "importedLogin": "Votre connexion CLI OpenCode a été importée.",
     "couldNotSetProxy": "Impossible d’appliquer le réglage du proxy",
-    "proxyApplied": "Réglage du proxy appliqué"
+    "proxyApplied": "Réglage du proxy appliqué",
+    "mirrorSaved": "Réglages de miroir enregistrés",
+    "couldNotSetMirror": "Impossible d’enregistrer les réglages de miroir"
   },
   "dataFlow": {
     "title": "Confidentialité et flux de données",

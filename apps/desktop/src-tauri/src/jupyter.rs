@@ -169,19 +169,7 @@ pub async fn setup_jupyter(app: AppHandle) -> Result<(), String> {
     // jupyter-lab holds python.exe — re-running Setup would fail. Only create
     // the venv when its interpreter is missing; pip install is incremental.
     if env_python(&app).is_none() {
-        crate::uv::run_uv(
-            &app,
-            "jupyter",
-            vec![
-                "venv".into(),
-                dir.to_string_lossy().to_string(),
-                "--python".into(),
-                "3.12".into(),
-                "--allow-existing".into(),
-            ],
-            "uv venv",
-        )
-        .await?;
+        crate::uv::create_venv(&app, "jupyter", &dir).await?;
     }
 
     let py = bin(&app, "python")?;

@@ -26,7 +26,12 @@
     "proxyPlaceholder": "http://127.0.0.1:7890 / socks5://host:port",
     "proxyDirectHint": "에이전트 런타임의 모든 연결은 직접 연결됩니다.",
     "proxyEffective": "{{url}} 경유로 연결",
-    "proxyNoneDetected": "시스템 프록시가 감지되지 않음 — 직접 연결됩니다."
+    "proxyNoneDetected": "시스템 프록시가 감지되지 않음 — 직접 연결됩니다.",
+    "mirrorPypi": "PyPI 인덱스",
+    "mirrorPython": "Python 다운로드",
+    "mirrorPypiPlaceholder": "https://pypi.tuna.tsinghua.edu.cn/simple",
+    "mirrorPythonPlaceholder": "https://mirror.example.com/python-build-standalone",
+    "mirrorHint": "선택적 미러로, Python 도구(Jupyter, 과학 데이터베이스)를 설정할 때 pypi.org / github.com이 느린 네트워크에서 다운로드에만 사용됩니다. 비워 두면 기본값을 사용합니다."
   },
   "updates": {
     "title": "앱 업데이트",
@@ -169,7 +174,9 @@
     "noOpenCodeLoginFound": "이 컴퓨터에서 OpenCode CLI 로그인을 찾을 수 없습니다.",
     "importedLogin": "OpenCode CLI 로그인 정보를 가져왔습니다.",
     "couldNotSetProxy": "프록시 설정을 적용할 수 없습니다",
-    "proxyApplied": "프록시 설정이 적용되었습니다"
+    "proxyApplied": "프록시 설정이 적용되었습니다",
+    "mirrorSaved": "미러 설정이 저장되었습니다",
+    "couldNotSetMirror": "미러 설정을 저장할 수 없습니다"
   },
   "dataFlow": {
     "title": "개인정보 및 데이터 흐름",

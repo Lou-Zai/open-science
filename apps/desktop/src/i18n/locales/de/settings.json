@@ -26,7 +26,12 @@
     "proxyPlaceholder": "http://127.0.0.1:7890 / socks5://host:port",
     "proxyDirectHint": "Alle Verbindungen der Agent-Laufzeit erfolgen direkt.",
     "proxyEffective": "Weiterleitung über {{url}}",
-    "proxyNoneDetected": "Kein System-Proxy erkannt — Verbindungen erfolgen direkt."
+    "proxyNoneDetected": "Kein System-Proxy erkannt — Verbindungen erfolgen direkt.",
+    "mirrorPypi": "PyPI-Index",
+    "mirrorPython": "Python-Download",
+    "mirrorPypiPlaceholder": "https://pypi.tuna.tsinghua.edu.cn/simple",
+    "mirrorPythonPlaceholder": "https://mirror.example.com/python-build-standalone",
+    "mirrorHint": "Optionale Spiegelserver, nur beim Einrichten von Python-Tools (Jupyter, Wissenschaftsdatenbanken) in Netzwerken verwendet, in denen pypi.org / github.com langsam sind. Leer lassen für Standardwerte."
   },
   "updates": {
     "title": "App-Updates",
@@ -170,7 +175,9 @@
     "noOpenCodeLoginFound": "Auf diesem Rechner wurde keine OpenCode-CLI-Anmeldung gefunden.",
     "importedLogin": "Ihre OpenCode-CLI-Anmeldung wurde importiert.",
     "couldNotSetProxy": "Proxy-Einstellung konnte nicht übernommen werden",
-    "proxyApplied": "Proxy-Einstellung übernommen"
+    "proxyApplied": "Proxy-Einstellung übernommen",
+    "mirrorSaved": "Spiegel-Einstellungen gespeichert",
+    "couldNotSetMirror": "Spiegel-Einstellungen konnten nicht gespeichert werden"
   },
   "dataFlow": {
     "title": "Datenschutz & Datenfluss",

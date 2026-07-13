@@ -26,7 +26,12 @@
     "proxyPlaceholder": "http://127.0.0.1:7890 / socks5://host:port",
     "proxyDirectHint": "Agent 运行时的所有连接均为直连。",
     "proxyEffective": "经由 {{url}} 转发",
-    "proxyNoneDetected": "未检测到系统代理——连接将直连。"
+    "proxyNoneDetected": "未检测到系统代理——连接将直连。",
+    "mirrorPypi": "PyPI 索引",
+    "mirrorPython": "Python 下载",
+    "mirrorPypiPlaceholder": "https://pypi.tuna.tsinghua.edu.cn/simple",
+    "mirrorPythonPlaceholder": "https://mirror.example.com/python-build-standalone",
+    "mirrorHint": "可选镜像,仅在设置 Python 工具(Jupyter、科学数据库)下载时使用,适合 pypi.org / github.com 访问缓慢的网络。留空则使用默认源。"
   },
   "updates": {
     "title": "应用更新",
@@ -169,7 +174,9 @@
     "noOpenCodeLoginFound": "在此计算机上未找到 OpenCode CLI 登录信息。",
     "importedLogin": "已导入您的 OpenCode CLI 登录信息。",
     "couldNotSetProxy": "无法应用代理设置",
-    "proxyApplied": "代理设置已生效"
+    "proxyApplied": "代理设置已生效",
+    "mirrorSaved": "镜像设置已保存",
+    "couldNotSetMirror": "无法保存镜像设置"
   },
   "dataFlow": {
     "title": "隐私与数据流",

@@ -26,7 +26,12 @@
     "proxyPlaceholder": "http://127.0.0.1:7890 / socks5://host:port",
     "proxyDirectHint": "エージェントランタイムの通信はすべて直接接続されます。",
     "proxyEffective": "{{url}} 経由で接続",
-    "proxyNoneDetected": "システムプロキシが見つかりません — 直接接続されます。"
+    "proxyNoneDetected": "システムプロキシが見つかりません — 直接接続されます。",
+    "mirrorPypi": "PyPI インデックス",
+    "mirrorPython": "Python ダウンロード",
+    "mirrorPypiPlaceholder": "https://pypi.tuna.tsinghua.edu.cn/simple",
+    "mirrorPythonPlaceholder": "https://mirror.example.com/python-build-standalone",
+    "mirrorHint": "任意のミラー。Python ツール(Jupyter・科学データベース)のセットアップ時のダウンロードにのみ使用され、pypi.org / github.com が遅いネットワーク向けです。空欄でデフォルト。"
   },
   "updates": {
     "title": "アプリの更新",
@@ -169,7 +174,9 @@
     "noOpenCodeLoginFound": "このマシンで OpenCode CLI のログインが見つかりませんでした。",
     "importedLogin": "OpenCode CLI のログインをインポートしました。",
     "couldNotSetProxy": "プロキシ設定を適用できませんでした",
-    "proxyApplied": "プロキシ設定を適用しました"
+    "proxyApplied": "プロキシ設定を適用しました",
+    "mirrorSaved": "ミラー設定を保存しました",
+    "couldNotSetMirror": "ミラー設定を保存できませんでした"
   },
   "dataFlow": {
     "title": "プライバシーとデータフロー",

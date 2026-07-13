@@ -39,6 +39,9 @@ import {
   getProxySetting,
   type ProxyMode,
   type ProxySetting,
+  getMirrorSetting,
+  setMirrorSetting,
+  type MirrorSetting,
 } from "@/lib/tauri";
 import { useSetupStore } from "@/lib/setup";
 import { RemoteComputeCard } from "@/components/settings/RemoteComputeCard";
@@ -265,6 +268,30 @@ export function SettingsPage() {
     void applyProxy(mode, "");
   };
   const validProxyUrl = /^(https?|socks5):\/\/\S+:\d+\/?$/i.test(proxyUrlInput.trim());
+
+  // uv download mirrors, used only when provisioning Python tools (Jupyter,
+  // science databases). Optional; a blank field clears that mirror.
+  const [mirror, setMirror] = useState<MirrorSetting | null>(null);
+  const [pypiInput, setPypiInput] = useState("");
+  const [pythonInput, setPythonInput] = useState("");
+  useEffect(() => {
+    void getMirrorSetting().then((m) => {
+      setMirror(m);
+      if (m) {
+        setPypiInput(m.pypi);
+        setPythonInput(m.python);
+      }
+    });
+  }, []);
+  const validMirror = (u: string) => u.trim() === "" || /^https?:\/\/\S+$/i.test(u.trim());
+  const mirrorDirty =
+    !!mirror && (pypiInput.trim() !== mirror.pypi || pythonInput.trim() !== mirror.python);
+  const applyMirror = () =>
+    run(t("toast.couldNotSetMirror"), async () => {
+      await setMirrorSetting(pypiInput.trim(), pythonInput.trim());
+      setMirror({ pypi: pypiInput.trim(), python: pythonInput.trim() });
+      toast.success(t("toast.mirrorSaved"));
+    });
 
   // The one post-change sequence — run() and the background OAuth wait must
   // stay in lockstep, so they share it instead of each keeping a copy.
@@ -595,6 +622,41 @@ export function SettingsPage() {
                   : proxy.effective
                     ? t("runtime.proxyEffective", { url: proxy.effective })
                     : t("runtime.proxyNoneDetected")}
+              </p>
+            </div>
+          )}
+
+          {/* uv download mirrors: only used when setting up Python tools where
+              pypi.org / github.com are slow. Optional; applies on Save. */}
+          {isTauri && mirror && (
+            <div className="mt-3 border-t border-border pt-3">
+              <div className="flex items-center gap-2">
+                <span className="w-28 shrink-0 text-xs text-muted">{t("runtime.mirrorPypi")}</span>
+                <input
+                  value={pypiInput}
+                  onChange={(e) => setPypiInput(e.target.value)}
+                  placeholder={t("runtime.mirrorPypiPlaceholder")}
+                  className={inputCls("flex-1 font-mono")}
+                />
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="w-28 shrink-0 text-xs text-muted">{t("runtime.mirrorPython")}</span>
+                <input
+                  value={pythonInput}
+                  onChange={(e) => setPythonInput(e.target.value)}
+                  placeholder={t("runtime.mirrorPythonPlaceholder")}
+                  className={inputCls("flex-1 font-mono")}
+                />
+                <button
+                  className={btnAccent()}
+                  onClick={() => void applyMirror()}
+                  disabled={busy || !mirrorDirty || !validMirror(pypiInput) || !validMirror(pythonInput)}
+                >
+                  <Check size={13} /> {t("common:actions.save")}
+                </button>
+              </div>
+              <p className="mt-1.5 pl-28 text-[11px] leading-relaxed text-muted">
+                {t("runtime.mirrorHint")}
               </p>
             </div>
           )}

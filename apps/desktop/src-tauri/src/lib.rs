@@ -75,6 +75,8 @@ pub fn run() {
             runtime::set_approval_mode,
             runtime::get_proxy_setting,
             runtime::set_proxy_setting,
+            runtime::get_mirror_setting,
+            runtime::set_mirror_setting,
             kernel::kernel_execute,
             kernel::kernel_reset,
             kernel::python_interpreter,

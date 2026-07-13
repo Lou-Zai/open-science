@@ -56,19 +56,7 @@ pub async fn setup_science_mcp(app: AppHandle, package: String) -> Result<String
     // provisioned; `uv pip install` is all the next connector needs.
     let py = python_bin(&app)?;
     if !py.exists() {
-        crate::uv::run_uv(
-            &app,
-            "science",
-            vec![
-                "venv".into(),
-                dir.to_string_lossy().to_string(),
-                "--python".into(),
-                "3.12".into(),
-                "--allow-existing".into(),
-            ],
-            "uv venv",
-        )
-        .await?;
+        crate::uv::create_venv(&app, "science", &dir).await?;
     }
     crate::uv::run_uv(
         &app,

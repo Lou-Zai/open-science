@@ -109,6 +109,28 @@ export async function setProxySetting(mode: ProxyMode, url: string): Promise<voi
   await invoke("set_proxy_setting", { mode, url });
 }
 
+/** uv download mirrors used only when provisioning Python tools (empty ⇒ default). */
+export interface MirrorSetting {
+  /** PyPI index URL (UV_DEFAULT_INDEX). */
+  pypi: string;
+  /** Python-download mirror (UV_PYTHON_INSTALL_MIRROR). */
+  python: string;
+}
+
+/** The persisted uv mirrors (desktop only; null in browser). */
+export async function getMirrorSetting(): Promise<MirrorSetting | null> {
+  if (!isTauri) return null;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke<MirrorSetting>("get_mirror_setting");
+}
+
+/** Persist the uv mirrors; blank fields clear. No sidecar restart. */
+export async function setMirrorSetting(pypi: string, python: string): Promise<void> {
+  if (!isTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("set_mirror_setting", { pypi, python });
+}
+
 /** Remove a provider/mcp entry from the global OpenCode config (restarts the sidecar). */
 export async function removeConfigEntry(section: "provider" | "mcp", key: string): Promise<void> {
   if (!isTauri) throw new Error("not running in the desktop app");

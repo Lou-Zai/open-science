@@ -502,6 +502,61 @@ fn effective_proxy(mode: &str, url: &str) -> Option<String> {
     }
 }
 
+/// PyPI-index and Python-download mirrors for the bundled uv, stored one per
+/// line (`pypi <url>` / `python <url>`) in `mirrors.txt` under the runtime root.
+/// Empty ⇒ uv's defaults (pypi.org / github.com). Only the uv provisioning
+/// flows read these — no long-running sidecar to restart.
+fn mirror_setting_file(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(runtime_root(app)?.join("mirrors.txt"))
+}
+
+/// The persisted mirrors as (pypi_index_url, python_install_mirror_url).
+fn read_mirror_setting(app: &AppHandle) -> (String, String) {
+    let raw = mirror_setting_file(app)
+        .ok()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .unwrap_or_default();
+    let (mut pypi, mut python) = (String::new(), String::new());
+    for line in raw.lines() {
+        match line.trim().split_once(' ') {
+            Some(("pypi", v)) => pypi = v.trim().to_string(),
+            Some(("python", v)) => python = v.trim().to_string(),
+            _ => {}
+        }
+    }
+    (pypi, python)
+}
+
+/// Accept an `http(s)://` URL with a non-empty host.
+fn validate_mirror_url(url: &str) -> Result<(), String> {
+    let rest = ["https://", "http://"]
+        .iter()
+        .find_map(|s| url.strip_prefix(s))
+        .ok_or("mirror URL must start with http:// or https://")?;
+    if rest.trim_matches('/').is_empty() {
+        return Err("mirror URL needs a host".into());
+    }
+    Ok(())
+}
+
+/// Network env for the bundled uv sidecar (managed-Python download + pip
+/// install). Mirrors the OpenCode sidecar's proxy so first-run provisioning
+/// works behind the same proxy the agent uses, and adds the optional PyPI /
+/// Python-download mirrors. uv reads HTTP(S)_PROXY, `UV_DEFAULT_INDEX` and
+/// `UV_PYTHON_INSTALL_MIRROR` from its environment.
+pub(crate) fn uv_network_env(app: &AppHandle) -> Vec<(&'static str, String)> {
+    let (mode, url) = read_proxy_setting(app);
+    let mut env = resolve_proxy_env(&mode, &url);
+    let (pypi, python) = read_mirror_setting(app);
+    if !pypi.is_empty() {
+        env.push(("UV_DEFAULT_INDEX", pypi));
+    }
+    if !python.is_empty() {
+        env.push(("UV_PYTHON_INSTALL_MIRROR", python));
+    }
+    env
+}
+
 /// The system-configured proxy as a URL, if one is enabled (macOS: scutil).
 /// HTTP(S) proxies are preferred — an HTTPS proxy endpoint still speaks plain
 /// HTTP CONNECT, hence the http:// scheme — with SOCKS as the fallback.
@@ -1090,6 +1145,34 @@ pub fn set_proxy_setting(
     // Same restart flow as set_approval_mode: the env only applies at spawn.
     Ok(restart_sidecar_if_running(&app, &state)?
         .unwrap_or_else(|| path.to_string_lossy().to_string()))
+}
+
+/// The persisted uv mirrors (empty string ⇒ use uv's default index/mirror).
+#[tauri::command]
+pub fn get_mirror_setting(app: AppHandle) -> Result<serde_json::Value, String> {
+    let (pypi, python) = read_mirror_setting(&app);
+    Ok(serde_json::json!({ "pypi": pypi, "python": python }))
+}
+
+/// Persist the uv mirrors. Blank fields clear that mirror. No sidecar restart:
+/// only the next provisioning run (Jupyter / science MCP) reads them.
+#[tauri::command]
+pub fn set_mirror_setting(app: AppHandle, pypi: String, python: String) -> Result<(), String> {
+    let (pypi, python) = (pypi.trim(), python.trim());
+    let mut lines = Vec::new();
+    if !pypi.is_empty() {
+        validate_mirror_url(pypi)?;
+        lines.push(format!("pypi {pypi}"));
+    }
+    if !python.is_empty() {
+        validate_mirror_url(python)?;
+        lines.push(format!("python {python}"));
+    }
+    let path = mirror_setting_file(&app)?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, lines.join("\n")).map_err(|e| e.to_string())
 }
 
 /// Write the provider key/model into the app-private OpenCode config and restart
