@@ -19,6 +19,8 @@ mod runs_index;
 mod runtime;
 mod science_mcp;
 mod tools;
+#[cfg(target_os = "macos")]
+mod macos;
 mod updates;
 mod uv;
 
@@ -50,6 +52,20 @@ pub fn run() {
         .manage(PreviewState::default())
         .manage(ProvenanceState::default())
         .manage(runs::RunState::default())
+        // The transparent + vibrancy window loses tao's traffic-light inset on
+        // some machines (tao only re-applies it from drawRect). Re-pin on the
+        // events that cover launch, resize, and the in-app theme switch.
+        .on_window_event(|_window, _event| {
+            #[cfg(target_os = "macos")]
+            if matches!(
+                _event,
+                tauri::WindowEvent::Focused(true)
+                    | tauri::WindowEvent::Resized(_)
+                    | tauri::WindowEvent::ThemeChanged(_)
+            ) {
+                macos::reapply_traffic_light_inset(_window);
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             runtime::start_runtime,
             runtime::runtime_password,

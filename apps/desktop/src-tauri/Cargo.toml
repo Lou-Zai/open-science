@@ -28,3 +28,14 @@ getrandom = "0.4.3"
 opener = { version = "0.8.5", features = ["reveal"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "native-tls"] }
+
+# Already in the tree via tao — used to re-pin the traffic lights (src/macos.rs).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSButton",
+    "NSControl",
+    "NSResponder",
+    "NSView",
+    "NSWindow",
+] }

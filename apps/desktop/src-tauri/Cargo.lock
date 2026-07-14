@@ -34,6 +34,7 @@ name = "ai4s-workbench"
 version = "0.2.0"
 dependencies = [
  "getrandom 0.4.3",
+ "objc2-app-kit",
  "opener",
  "reqwest",
  "rusqlite",
