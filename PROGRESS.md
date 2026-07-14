@@ -1,5 +1,7 @@
 # Progress
 
+2026-07-13 23:15 · release: v0.2.0 tagged (new UI: 3 themes, vibrancy sidebar, Codex-style settings, in-app zoom; fixes: provider retries/errors #17 #18, git snapshot bloat #19, uv/python provisioning, sidecar lifecycle) — CI builds the draft release; publish mints the first Zenodo DOI, then the DOI badge + CITATION.cff doi still need adding.
+
 2026-07-13 22:55 · fix(ui): settings row dividers glowed white in dark — `divide-border-faint` is not a valid Tailwind token (color key is `faint`), so divide-y fell back to Tailwind's default gray-200; both usages now `divide-faint`; 511/511 FE tests pass, DMG rebuilt.
 
 2026-07-13 23:40 · feat(ui): light is now the default theme; per-theme accents (light #2563eb blue, dark #4d9df6 blue on dark text, warm keeps terracotta); Settings › Appearance gains a Zoom row (−/%/+/reset wired to the in-app ZoomProvider, shortcut hint ⌘/Ctrl +−0); 511/511 FE tests, typecheck, lint pass, DMG rebuilt.
