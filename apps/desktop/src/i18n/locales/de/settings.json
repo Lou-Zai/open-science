@@ -1,8 +1,20 @@
 {
+  "nav": {
+    "back": "Zurück zur App",
+    "general": "Allgemein",
+    "appearance": "Erscheinungsbild",
+    "models": "Modelle",
+    "runtime": "Laufzeit",
+    "connectors": "Konnektoren",
+    "compute": "Rechenleistung",
+    "privacy": "Datenschutz"
+  },
   "appearance": {
     "title": "Erscheinungsbild",
+    "themeLabel": "Design",
     "theme": {
       "light": "Hell",
+      "warm": "Warm",
       "dark": "Dunkel"
     }
   },
@@ -157,6 +169,7 @@
     "couldNotSetFolder": "Der Ordner konnte nicht festgelegt werden",
     "couldNotSetModel": "Das Modell konnte nicht festgelegt werden",
     "defaultModelSet": "Standardmodell auf {{model}} gesetzt",
+    "defaultModelReset": "Standardmodell {{old}} ist nicht mehr verfügbar — auf {{model}} umgestellt",
     "couldNotSaveKey": "Der Schlüssel konnte nicht gespeichert werden",
     "providerConnected": "{{providerID}} verbunden",
     "couldNotStartLogin": "Die Anmeldung konnte nicht gestartet werden",

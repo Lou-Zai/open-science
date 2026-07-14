@@ -131,6 +131,19 @@ export async function setMirrorSetting(pypi: string, python: string): Promise<vo
   await invoke("set_mirror_setting", { pypi, python });
 }
 
+/** Whether the bundled runtime's credential store has an entry for this
+ *  provider — ground truth that a browser login landed even when its OAuth
+ *  callback was lost. False in browser dev (and on any read failure). */
+export async function providerAuthExists(providerID: string): Promise<boolean> {
+  if (!isTauri) return false;
+  const { invoke } = await import("@tauri-apps/api/core");
+  try {
+    return await invoke<boolean>("provider_auth_exists", { providerId: providerID });
+  } catch {
+    return false;
+  }
+}
+
 /** Remove a provider/mcp entry from the global OpenCode config (restarts the sidecar). */
 export async function removeConfigEntry(section: "provider" | "mcp", key: string): Promise<void> {
   if (!isTauri) throw new Error("not running in the desktop app");
@@ -536,6 +549,21 @@ export async function logDebug(message: string): Promise<void> {
     await invoke("log_debug", { message });
   } catch {
     /* never let diagnostics break the app */
+  }
+}
+
+/** Sync the native window appearance with the in-app theme so the macOS
+ *  vibrancy material behind the translucent sidebar matches (warm and light
+ *  are both light appearances). */
+export async function setWindowTheme(dark: boolean): Promise<void> {
+  if (!isTauri) return;
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().setTheme(dark ? "dark" : "light");
+  } catch (e) {
+    // Best-effort — without it the material follows the system appearance.
+    // Loud in the console: a denied capability here looks like a CSS bug.
+    console.warn("setWindowTheme failed:", e);
   }
 }
 

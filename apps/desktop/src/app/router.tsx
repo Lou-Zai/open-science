@@ -23,6 +23,7 @@ export const routes: RouteObject[] = [
       { path: "files", element: <FilesPage /> },
       { path: "runs", element: <RunsPage /> },
       { path: "settings", element: <SettingsPage /> },
+      { path: "settings/:section", element: <SettingsPage /> },
       { path: "*", element: <NotFound /> },
     ],
   },

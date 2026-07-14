@@ -1,8 +1,20 @@
 {
+  "nav": {
+    "back": "앱으로 돌아가기",
+    "general": "일반",
+    "appearance": "화면 모드",
+    "models": "모델",
+    "runtime": "런타임",
+    "connectors": "커넥터",
+    "compute": "컴퓨팅",
+    "privacy": "개인정보"
+  },
   "appearance": {
     "title": "화면 모드",
+    "themeLabel": "테마",
     "theme": {
       "light": "라이트",
+      "warm": "웜",
       "dark": "다크"
     }
   },
@@ -156,6 +168,7 @@
     "couldNotSetFolder": "폴더를 설정할 수 없습니다",
     "couldNotSetModel": "모델을 설정할 수 없습니다",
     "defaultModelSet": "기본 모델이 {{model}}로 설정되었습니다",
+    "defaultModelReset": "기본 모델 {{old}}을(를) 더 이상 사용할 수 없어 {{model}}(으)로 전환했습니다",
     "couldNotSaveKey": "키를 저장할 수 없습니다",
     "providerConnected": "{{providerID}} 연결됨",
     "couldNotStartLogin": "로그인을 시작할 수 없습니다",

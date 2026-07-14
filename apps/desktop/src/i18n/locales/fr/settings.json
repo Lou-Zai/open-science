@@ -1,8 +1,20 @@
 {
+  "nav": {
+    "back": "Retour à l'app",
+    "general": "Général",
+    "appearance": "Apparence",
+    "models": "Modèles",
+    "runtime": "Environnement d'exécution",
+    "connectors": "Connecteurs",
+    "compute": "Calcul",
+    "privacy": "Confidentialité"
+  },
   "appearance": {
     "title": "Apparence",
+    "themeLabel": "Thème",
     "theme": {
       "light": "Clair",
+      "warm": "Chaud",
       "dark": "Sombre"
     }
   },
@@ -157,6 +169,7 @@
     "couldNotSetFolder": "Impossible de définir le dossier",
     "couldNotSetModel": "Impossible de définir le modèle",
     "defaultModelSet": "Modèle par défaut défini sur {{model}}",
+    "defaultModelReset": "Le modèle par défaut {{old}} n'est plus disponible — remplacé par {{model}}",
     "couldNotSaveKey": "Impossible d'enregistrer la clé",
     "providerConnected": "{{providerID}} connecté",
     "couldNotStartLogin": "Impossible de démarrer la connexion",

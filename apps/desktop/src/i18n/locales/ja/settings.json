@@ -1,8 +1,20 @@
 {
+  "nav": {
+    "back": "アプリに戻る",
+    "general": "一般",
+    "appearance": "外観",
+    "models": "モデル",
+    "runtime": "ランタイム",
+    "connectors": "コネクタ",
+    "compute": "コンピューティング",
+    "privacy": "プライバシー"
+  },
   "appearance": {
     "title": "外観",
+    "themeLabel": "テーマ",
     "theme": {
       "light": "ライト",
+      "warm": "ウォーム",
       "dark": "ダーク"
     }
   },
@@ -156,6 +168,7 @@
     "couldNotSetFolder": "フォルダを設定できませんでした",
     "couldNotSetModel": "モデルを設定できませんでした",
     "defaultModelSet": "デフォルトモデルを {{model}} に設定しました",
+    "defaultModelReset": "デフォルトモデル {{old}} は利用できなくなったため、{{model}} に切り替えました",
     "couldNotSaveKey": "キーを保存できませんでした",
     "providerConnected": "{{providerID}} を接続しました",
     "couldNotStartLogin": "ログインを開始できませんでした",

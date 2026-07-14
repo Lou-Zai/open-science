@@ -18,6 +18,7 @@ import type {
   ProviderInfo,
 } from "@ai4s/sdk";
 import { useTranslation } from "react-i18next";
+import { useParams } from "react-router-dom";
 import { useUiStore } from "@/lib/store";
 import { shippedLocales } from "@/i18n/config";
 import { getClient, useRuntimeStore } from "@/lib/runtime";
@@ -29,6 +30,7 @@ import {
   openExternal,
   openWorkspaceBase,
   pickFolder,
+  providerAuthExists,
   pythonInterpreter,
   removeConfigEntry,
   setPythonPath,
@@ -48,8 +50,11 @@ import { RemoteComputeCard } from "@/components/settings/RemoteComputeCard";
 import { ModalCard } from "@/components/settings/ModalCard";
 import { DataFlowCard } from "@/components/settings/DataFlowCard";
 import { ModelBrowser } from "@/components/settings/ModelBrowser";
+import { fallbackDefaultModel } from "@/components/settings/modelCatalog";
 import { ProviderManagerCard } from "@/components/settings/ProviderManagerCard";
-import { inputCls } from "@/components/settings/inputCls";
+import { Row, Section, Switch } from "@/components/settings/Section";
+import { resolveSection } from "@/components/settings/sections";
+import { inputCls, selectCls } from "@/components/settings/inputCls";
 import { SCIENCE_CONNECTORS } from "@/lib/scienceConnectors";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/cn";
@@ -59,6 +64,8 @@ import { cn } from "@/lib/cn";
  * OpenCode's own config/auth API — no separate "model key" concept.
  */
 export function SettingsPage() {
+  // Which settings section is on screen — the sidebar is the navigation.
+  const section = resolveSection(useParams().section);
   const theme = useUiStore((s) => s.theme);
   const setTheme = useUiStore((s) => s.setTheme);
   const locale = useUiStore((s) => s.locale);
@@ -162,14 +169,16 @@ export function SettingsPage() {
   const oauthGen = useRef(0);
   const oauthAbort = useRef<AbortController | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<ProviderInfo[] | null> => {
     const client = getClient();
-    if (!client) return;
+    if (!client) return null;
     // The model catalog (listProviders) is what the Models card renders — only
     // its failure means "catalog unavailable", and only when there is no last
     // good list to keep showing. The rest is auxiliary settings data.
+    let fresh: ProviderInfo[] | null = null;
     try {
-      setProviders(await client.listProviders());
+      fresh = await client.listProviders();
+      setProviders(fresh);
       setCatalogState("ready");
     } catch {
       setCatalogState((s) => (s === "ready" ? s : "unavailable"));
@@ -189,6 +198,7 @@ export function SettingsPage() {
     } catch {
       /* runtime not ready yet */
     }
+    return fresh;
   }, []);
 
   // Re-refresh when a provisioning run finishes (setupGeneration bumps) so a
@@ -296,8 +306,21 @@ export function SettingsPage() {
   // The one post-change sequence — run() and the background OAuth wait must
   // stay in lockstep, so they share it instead of each keeping a copy.
   const refreshAll = async () => {
-    await refresh();
+    const fresh = await refresh();
     await loadCatalog();
+    // A provider change can strand the configured default model (provider
+    // removed, or its models renamed): every later send then fails with
+    // "model not found" (#18). Re-point it at the closest surviving model
+    // while the change that broke it is still on screen.
+    const { defaultModel: current, setDefaultModel } = useRuntimeStore.getState();
+    const next = fresh && current ? fallbackDefaultModel(fresh, current) : null;
+    if (!next) return;
+    try {
+      await setDefaultModel(next);
+      toast.success(t("toast.defaultModelReset", { old: current, model: next }));
+    } catch (e) {
+      toast.error(`${t("toast.couldNotSetModel")}: ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
 
   const run = async (label: string, fn: () => Promise<void>) => {
@@ -374,6 +397,17 @@ export function SettingsPage() {
   const OAUTH_WAIT_MS = 5 * 60 * 1000;
 
   const waitForBrowserLogin = async (providerID: string, methodIndex: number, gen: number) => {
+    const deadline = Date.now() + OAUTH_WAIT_MS;
+    const active = () => gen === oauthGen.current;
+    // Ground truth that the login landed: the sidecar writes the provider's
+    // token to its credential store the moment the browser flow completes —
+    // even when the callback wait below never hears about it (loopback port
+    // collision, proxy, dropped redirect). The browser then shows "success"
+    // while the app looks frozen (#17). Only conclusive for a provider that
+    // had no credentials when the wait began.
+    const hadAuth = await providerAuthExists(providerID);
+    const loginLanded = async () => !hadAuth && (await providerAuthExists(providerID));
+
     // The callback POST hangs open until the browser redirect lands, but the
     // webview's native fetch enforces its own idle timeout (~60s in WKWebView)
     // — far shorter than the provider's login window, and a slow browser login
@@ -383,45 +417,71 @@ export function SettingsPage() {
     // waiting on it (opencode's ProviderAuth.callback re-invokes the stored
     // pending closure; it is never consumed). Retry those; HTTP errors are the
     // provider's real verdict and stay terminal.
-    const deadline = Date.now() + OAUTH_WAIT_MS;
-    let lastError: unknown = new Error("Timed out waiting for the browser login");
-    while (Date.now() < deadline) {
-      const abort = new AbortController();
-      oauthAbort.current = abort;
-      try {
-        await getClient()!.oauthCallback(providerID, methodIndex, undefined, abort.signal);
-        if (gen !== oauthGen.current) {
-          // Cancelled in the UI, but the login DID complete — refresh silently
-          // so the now-connected provider still shows up in the list.
-          await refreshAll();
-          return;
+    type Verdict = { ok: boolean; viaStore: boolean; error?: unknown };
+    const callbackVerdict = async (): Promise<Verdict | null> => {
+      let lastError: unknown = new Error("Timed out waiting for the browser login");
+      while (Date.now() < deadline && active()) {
+        const abort = new AbortController();
+        oauthAbort.current = abort;
+        try {
+          await getClient()!.oauthCallback(providerID, methodIndex, undefined, abort.signal);
+          if (!active()) {
+            // Cancelled in the UI, but the login DID complete — refresh silently
+            // so the now-connected provider still shows up in the list.
+            await refreshAll();
+            return null;
+          }
+          return { ok: true, viaStore: false };
+        } catch (e) {
+          if (!active()) return null; // cancelled — the abort is expected
+          // Webview fetch failures (idle timeout, transient drop) are TypeError;
+          // apiError() throws plain Error for the server's HTTP verdicts.
+          if (e instanceof TypeError) {
+            lastError = e;
+            await new Promise((r) => setTimeout(r, 500));
+            continue;
+          }
+          return { ok: false, viaStore: false, error: e };
+        } finally {
+          if (oauthAbort.current === abort) oauthAbort.current = null;
         }
-        setOauth(null);
-        toast.success(t("toast.providerConnected", { providerID }));
-        await refreshAll();
-        return;
-      } catch (e) {
-        if (gen !== oauthGen.current) return; // cancelled — the abort is expected
-        // Webview fetch failures (idle timeout, transient drop) are TypeError;
-        // apiError() throws plain Error for the server's HTTP verdicts.
-        if (e instanceof TypeError) {
-          lastError = e;
-          await new Promise((r) => setTimeout(r, 500));
-          if (gen !== oauthGen.current) return;
-          continue;
-        }
-        setOauth(null);
-        toast.error(`${t("toast.loginDidNotComplete")}: ${e instanceof Error ? e.message : String(e)}`);
-        return;
-      } finally {
-        if (oauthAbort.current === abort) oauthAbort.current = null;
       }
+      // The login window closed without a verdict from the server.
+      return active() ? { ok: false, viaStore: false, error: lastError } : null;
+    };
+
+    // Race the server's verdict against the credential store: whichever
+    // reports first settles the wait. The watcher only ever reports success —
+    // silence just leaves the callback in charge.
+    let verdict = await new Promise<Verdict | null>((resolve) => {
+      void callbackVerdict().then(resolve);
+      void (async () => {
+        while (Date.now() < deadline && active()) {
+          await new Promise((r) => setTimeout(r, 2000));
+          if (!active()) return;
+          if (await loginLanded()) return resolve({ ok: true, viaStore: true });
+        }
+      })();
+    });
+    if (verdict === null || !active()) return; // cancelled
+    if (!verdict.ok && (await loginLanded())) {
+      // The server said failure (or timed out), but the credential store says
+      // the login landed — the callback signal was lost, not the login.
+      verdict = { ok: true, viaStore: true };
     }
-    // The login window closed without a verdict from the server.
+    if (!active()) return; // superseded while re-checking the store
+    invalidateOauthWait(); // settled either way — stop the losing strategy
     setOauth(null);
-    toast.error(
-      `${t("toast.loginDidNotComplete")}: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
-    );
+    if (!verdict.ok) {
+      const err = verdict.error;
+      toast.error(`${t("toast.loginDidNotComplete")}: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    // A store-confirmed login skipped oauthCallback's cache invalidation — the
+    // provider list would still answer from the pre-login cache.
+    if (verdict.viaStore) await getClient()?.refreshProviderCache();
+    toast.success(t("toast.providerConnected", { providerID }));
+    await refreshAll();
   };
 
   const cancelOAuth = () => {
@@ -540,12 +600,13 @@ export function SettingsPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-2xl px-8 pb-16 pt-8">
-        <h1 className="font-serif text-xl text-text">{t("page.title")}</h1>
-        <p className="mt-0.5 text-xs text-muted">{t("page.subtitle")}</p>
+      {/* Modest top padding: the AppShell titlebar strip already clears 48px. */}
+      <div className="mx-auto max-w-2xl px-8 pb-16 pt-4">
+        <h1 className="font-serif text-2xl text-text">{t(`nav.${section}`)}</h1>
 
         {/* ---- Agent runtime ---- */}
-        <Card title={t("runtime.title")} hint={t("runtime.hint")}>
+        {section === "runtime" && (
+        <Section title={t("runtime.title")} hint={t("runtime.hint")}>
           <div className="flex items-center gap-2">
             <input
               value={serverUrl}
@@ -589,7 +650,7 @@ export function SettingsPage() {
                   value={proxy.mode}
                   onChange={(e) => changeProxyMode(e.target.value as ProxyMode)}
                   disabled={busy}
-                  className={cn(inputCls("w-44"), "cursor-pointer")}
+                  className={selectCls("w-44")}
                 >
                   <option value="system">{t("runtime.proxySystem")}</option>
                   <option value="custom">{t("runtime.proxyCustom")}</option>
@@ -660,10 +721,12 @@ export function SettingsPage() {
               </p>
             </div>
           )}
-        </Card>
+        </Section>
+        )}
 
         {/* ---- Models ---- */}
-        <Card title={t("model.title")} hint={t("model.hint")}>
+        {section === "models" && (
+        <Section title={t("model.title")} hint={t("model.hint")}>
           {!modelSurfaceAvailable ? (
             <p className="text-[13px] text-muted">{t("model.connectPrompt")}</p>
           ) : catalogState === "unavailable" ? (
@@ -679,19 +742,21 @@ export function SettingsPage() {
               onManageProviders={() => setProviderManagerOpen(true)}
             />
           )}
-        </Card>
+        </Section>
+        )}
 
         {/* ---- Providers ---- */}
+        {section === "models" && (
         <ProviderManagerCard
           providers={providers}
           expanded={providerManagerOpen}
           onExpandedChange={setProviderManagerOpen}
         >
           {!connected ? (
-            <p className="text-[13px] text-muted">{t("providers.connectPrompt")}</p>
+            <p className="px-4 py-3 text-[13px] text-muted">{t("providers.connectPrompt")}</p>
           ) : (
             <>
-              <div className="overflow-hidden rounded-input border border-border">
+              <div>
                 {providers.map((p, i) => (
                   <div
                     key={p.id}
@@ -763,7 +828,7 @@ export function SettingsPage() {
                                   onChange={(e) =>
                                     setPromptInputs((s) => ({ ...s, [pr.key]: e.target.value }))
                                   }
-                                  className={inputCls("w-full")}
+                                  className={selectCls("w-full")}
                                 >
                                   <option value="">{pr.message}</option>
                                   {(pr.options ?? []).map((o) => (
@@ -883,7 +948,7 @@ export function SettingsPage() {
                         <select
                           value={cNpm}
                           onChange={(e) => setCNpm(e.target.value)}
-                          className={inputCls("w-[190px]")}
+                          className={selectCls("w-[190px]")}
                         >
                           <option value="@ai-sdk/openai-compatible">{t("providers.openaiCompatible")}</option>
                           <option value="@ai-sdk/anthropic">{t("providers.anthropicCompatible")}</option>
@@ -920,7 +985,7 @@ export function SettingsPage() {
 
               {isTauri && (
                 <button
-                  className="mt-3 flex items-center gap-1.5 text-xs text-muted transition-colors hover:text-text"
+                  className="flex items-center gap-1.5 border-t border-border px-3 py-2.5 text-xs text-muted transition-colors hover:text-text"
                   onClick={() => void importLogin()}
                   disabled={busy}
                 >
@@ -931,13 +996,15 @@ export function SettingsPage() {
             </>
           )}
         </ProviderManagerCard>
+        )}
 
         {/* ---- MCP servers ---- */}
-        <Card title={t("mcp.title")} hint={t("mcp.hint")}>
+        {section === "connectors" && (
+        <Section title={t("mcp.title")} hint={t("mcp.hint")} flush>
           {!connected ? (
-            <p className="text-[13px] text-muted">{t("mcp.connectPrompt")}</p>
+            <p className="px-4 py-3 text-[13px] text-muted">{t("mcp.connectPrompt")}</p>
           ) : (
-            <div className="overflow-hidden rounded-input border border-border">
+            <div>
               {/* Curated open-source science connectors — one-click enable. */}
               {isTauri &&
                 SCIENCE_CONNECTORS.filter((c) => !mcpServers.some((s) => s.name === c.id)).map(
@@ -1098,7 +1165,7 @@ export function SettingsPage() {
                   <select
                     value={mType}
                     onChange={(e) => setMType(e.target.value as "local" | "remote")}
-                    className={inputCls("w-[110px]")}
+                    className={selectCls("w-[110px]")}
                   >
                     <option value="local">{t("mcp.typeLocal")}</option>
                     <option value="remote">{t("mcp.typeRemote")}</option>
@@ -1122,10 +1189,12 @@ export function SettingsPage() {
               </div>
             </div>
           )}
-        </Card>
+        </Section>
+        )}
 
         {/* ---- Workspace ---- */}
-        <Card title={t("workspace.title")} hint={t("workspace.hint")}>
+        {section === "general" && (
+        <Section title={t("workspace.title")} hint={t("workspace.hint")}>
           <div className="flex items-center gap-2">
             <span
               className={cn(
@@ -1146,11 +1215,12 @@ export function SettingsPage() {
               </>
             )}
           </div>
-        </Card>
+        </Section>
+        )}
 
         {/* ---- Local Python kernel ---- */}
-        {isTauri && (
-          <Card title={t("python.title")} hint={t("python.hint")}>
+        {section === "runtime" && isTauri && (
+          <Section title={t("python.title")} hint={t("python.hint")}>
             <div className="flex items-center gap-2 text-[13px]">
               <span
                 className={cn(
@@ -1202,168 +1272,152 @@ export function SettingsPage() {
                 </button>
               )}
             </div>
-          </Card>
+          </Section>
         )}
 
-        <RemoteComputeCard />
-
-        <ModalCard />
+        {section === "compute" && (
+          <>
+            <RemoteComputeCard />
+            <ModalCard />
+          </>
+        )}
 
         {/* ---- Privacy & data flow ---- */}
-        <DataFlowCard model={defaultModel} workspace={wsPath} />
+        {section === "privacy" && <DataFlowCard model={defaultModel} workspace={wsPath} />}
 
         {/* ---- Appearance ---- */}
-        <Card title={t("appearance.title")}>
-          <div className="inline-flex rounded-input border border-border bg-surface-2 p-0.5">
-            {/* eslint-disable-next-line i18next/no-literal-string -- internal theme-mode keys, not display text (the visible label is t(`appearance.theme.${mode}`)) */}
-            {(["light", "dark"] as const).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setTheme(mode)}
-                className={cn(
-                  "rounded-[5px] px-4 py-1.5 text-[13px] transition-colors",
-                  theme === mode ? "bg-surface text-text shadow-card" : "text-muted hover:text-text",
-                )}
-              >
-                {t(`appearance.theme.${mode}`)}
-              </button>
-            ))}
+        {section === "appearance" && (
+        <Section title={t("appearance.title")} flush>
+          <div className="divide-y divide-border-faint">
+            <Row title={t("appearance.themeLabel")}
+              control={
+                <div className="inline-flex shrink-0 rounded-input border border-border bg-surface-2 p-0.5">
+                  {/* eslint-disable-next-line i18next/no-literal-string -- internal theme-mode keys, not display text (the visible label is t(`appearance.theme.${mode}`)) */}
+                  {(["light", "warm", "dark"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => setTheme(mode)}
+                      className={cn(
+                        "rounded-[5px] px-4 py-1.5 text-[13px] transition-colors",
+                        theme === mode ? "bg-surface text-text shadow-card" : "text-muted hover:text-text",
+                      )}
+                    >
+                      {t(`appearance.theme.${mode}`)}
+                    </button>
+                  ))}
+                </div>
+              }
+            />
+            <Row title={t("language.label")}
+              control={
+                <select
+                  value={locale}
+                  onChange={(e) => setLocale(e.target.value)}
+                  aria-label={t("language.label")}
+                  className={selectCls("w-48")}
+                >
+                  {shippedLocales().map((l) => (
+                    <option key={l.code} value={l.code}>
+                      {l.nativeName}
+                    </option>
+                  ))}
+                </select>
+              }
+            />
           </div>
-          <div className="mt-4">
-            <div className="mb-2 text-xs font-medium text-muted">{t("language.label")}</div>
-            <div
-              role="group"
-              aria-label={t("language.label")}
-              className="grid grid-cols-2 gap-1.5 sm:grid-cols-4"
-            >
-              {shippedLocales().map((l) => {
-                const active = locale === l.code;
-                return (
-                  <button
-                    key={l.code}
-                    onClick={() => setLocale(l.code)}
-                    className={cn(
-                      "rounded-input border px-2.5 py-2 text-left text-[13px] transition-colors",
-                      active
-                        ? "border-accent bg-accent/10 text-text shadow-sm"
-                        : "border-border bg-surface text-muted hover:bg-surface-2 hover:text-text",
-                    )}
-                    aria-pressed={active}
-                  >
-                    <span className="block truncate font-medium">{l.nativeName}</span>
-                    <span className="block truncate text-[10.5px] text-muted">{l.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </Card>
+        </Section>
+        )}
 
         {/* ---- App updates ---- */}
-        <Card title={t("updates.title")} hint={t("updates.hint")}>
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1",
-                updateTone === "error"
-                  ? "bg-error/10 text-error ring-error/20"
-                  : updateTone === "accent"
-                    ? "bg-accent/10 text-accent ring-accent/20"
-                    : "bg-ok/10 text-ok ring-ok/20",
-              )}
+        {section === "general" && (
+        <Section title={t("updates.title")} hint={t("updates.hint")} flush>
+          <div className="divide-y divide-border-faint">
+            <Row
+              title={
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full",
+                      updateTone === "error" ? "bg-error" : updateTone === "accent" ? "bg-accent" : "bg-ok",
+                    )}
+                  />
+                  {updateLabel}
+                </span>
+              }
+              hint={[
+                t("updates.currentVersion", { version: currentVersion }),
+                latestUpdate && t("updates.latestVersion", { version: latestUpdate.version }),
+                latestUpdate?.publishedAt &&
+                  t("updates.publishedAt", {
+                    date: new Date(latestUpdate.publishedAt).toLocaleString(locale),
+                  }),
+                lastCheckedAt &&
+                  t("updates.lastChecked", { date: new Date(lastCheckedAt).toLocaleString(locale) }),
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              control={
+                <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                  <button
+                    className={btnGhost("gap-1.5")}
+                    onClick={() => void checkForUpdates({ manual: true })}
+                    disabled={updateStatus === "checking"}
+                  >
+                    {updateStatus === "checking" ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={13} />
+                    )}
+                    {t("updates.checkNow")}
+                  </button>
+                  {latestUpdate?.url && (
+                    <button
+                      className={btnGhost("gap-1.5")}
+                      onClick={() => void openExternal(latestUpdate.url)}
+                    >
+                      <ExternalLink size={13} /> {t("updates.openRelease")}
+                    </button>
+                  )}
+                  {showUpdateBadge && (
+                    <button className={btnGhost()} onClick={dismissUpdateBadge}>
+                      {t("updates.hideBadge")}
+                    </button>
+                  )}
+                </div>
+              }
             >
-              <span
-                className={cn(
-                  "h-1.5 w-1.5 rounded-full",
-                  updateTone === "error" ? "bg-error" : updateTone === "accent" ? "bg-accent" : "bg-ok",
-                )}
-              />
-              {updateLabel}
-            </span>
-            <span className="text-xs text-muted">
-              {t("updates.currentVersion", { version: currentVersion })}
-            </span>
-            {latestUpdate && (
-              <span className="text-xs text-muted">
-                {t("updates.latestVersion", { version: latestUpdate.version })}
-              </span>
-            )}
-          </div>
-
-          {latestUpdate?.publishedAt && (
-            <div className="mt-2 text-xs text-muted">
-              {t("updates.publishedAt", {
-                date: new Date(latestUpdate.publishedAt).toLocaleString(locale),
-              })}
-            </div>
-          )}
-          {lastCheckedAt && (
-            <div className="mt-1 text-xs text-muted">
-              {t("updates.lastChecked", { date: new Date(lastCheckedAt).toLocaleString(locale) })}
-            </div>
-          )}
-          {updateStatus === "error" && updateError && (
-            <div className="mt-2 text-xs text-error">
-              {t("updates.checkFailed", { message: updateError })}
-            </div>
-          )}
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              className={btnAccent("gap-1.5")}
-              onClick={() => void checkForUpdates({ manual: true })}
-              disabled={updateStatus === "checking"}
-            >
-              {updateStatus === "checking" ? (
-                <Loader2 size={13} className="animate-spin" />
-              ) : (
-                <RefreshCw size={13} />
+              {updateStatus === "error" && updateError && (
+                <div className="mt-2 text-xs text-error">
+                  {t("updates.checkFailed", { message: updateError })}
+                </div>
               )}
-              {t("updates.checkNow")}
-            </button>
-            {latestUpdate?.url && (
-              <button
-                className={btnGhost("gap-1.5")}
-                onClick={() => void openExternal(latestUpdate.url)}
-              >
-                <ExternalLink size={13} /> {t("updates.openRelease")}
-              </button>
-            )}
-            {showUpdateBadge && (
-              <button className={btnGhost()} onClick={dismissUpdateBadge}>
-                {t("updates.hideBadge")}
-              </button>
-            )}
+            </Row>
+            <Row
+              title={t("updates.autoCheck")}
+              hint={t("updates.autoCheckHint")}
+              control={
+                <Switch
+                  checked={updateEnabled}
+                  onChange={setUpdateEnabled}
+                  label={t("updates.autoCheck")}
+                />
+              }
+            />
+            <Row
+              title={t("updates.showBadge")}
+              hint={t("updates.showBadgeHint")}
+              control={
+                <Switch
+                  checked={updateBadgeEnabled}
+                  onChange={setUpdateBadgeEnabled}
+                  label={t("updates.showBadge")}
+                />
+              }
+            />
+            <div className="px-4 py-3 text-xs leading-relaxed text-muted">{t("updates.privacy")}</div>
           </div>
-
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            <label className="flex items-start gap-2 rounded-input border border-border bg-surface-2 px-3 py-2">
-              <input
-                type="checkbox"
-                checked={updateEnabled}
-                onChange={(e) => setUpdateEnabled(e.target.checked)}
-                className="mt-0.5 accent-[var(--color-accent)]"
-              />
-              <span>
-                <span className="block text-[13px] font-medium text-text">{t("updates.autoCheck")}</span>
-                <span className="block text-xs leading-relaxed text-muted">{t("updates.autoCheckHint")}</span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2 rounded-input border border-border bg-surface-2 px-3 py-2">
-              <input
-                type="checkbox"
-                checked={updateBadgeEnabled}
-                onChange={(e) => setUpdateBadgeEnabled(e.target.checked)}
-                className="mt-0.5 accent-[var(--color-accent)]"
-              />
-              <span>
-                <span className="block text-[13px] font-medium text-text">{t("updates.showBadge")}</span>
-                <span className="block text-xs leading-relaxed text-muted">{t("updates.showBadgeHint")}</span>
-              </span>
-            </label>
-          </div>
-          <p className="mt-3 text-xs leading-relaxed text-muted">{t("updates.privacy")}</p>
-        </Card>
+        </Section>
+        )}
       </div>
     </div>
   );
@@ -1392,23 +1446,3 @@ const btnAccent = (extra = "") =>
     "text-accent-fg transition-colors hover:bg-accent/90 disabled:bg-accent/50",
     extra,
   );
-
-function Card({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="mt-5 rounded-card border border-border bg-surface shadow-card">
-      <header className="border-b border-border px-5 py-3">
-        <h2 className="font-serif text-[15px] text-text">{title}</h2>
-        {hint && <p className="mt-0.5 text-xs text-muted">{hint}</p>}
-      </header>
-      <div className="px-5 py-4">{children}</div>
-    </section>
-  );
-}

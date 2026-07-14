@@ -19,6 +19,7 @@ import {
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/cn";
 import { inputCls } from "./inputCls";
+import { Section } from "./Section";
 
 /** The `t` type the plain (non-component) helpers below take as a parameter. */
 type TFn = TFunction<["settings", "common"]>;
@@ -123,17 +124,12 @@ export function RemoteComputeCard() {
   };
 
   return (
-    <section className="mt-5 rounded-card border border-border bg-surface shadow-card">
-      <header className="border-b border-border px-5 py-3">
-        <h2 className="font-serif text-[15px] text-text">{t("remoteCompute.title")}</h2>
-        <p className="mt-0.5 text-xs text-muted">{t("remoteCompute.subtitle")}</p>
-      </header>
-      <div className="px-5 py-4">
+    <Section title={t("remoteCompute.title")} hint={t("remoteCompute.subtitle")} flush>
         {!isTauri ? (
-          <p className="text-[13px] text-muted">{t("remoteCompute.unavailable")}</p>
+          <p className="px-4 py-3 text-[13px] text-muted">{t("remoteCompute.unavailable")}</p>
         ) : (
           <>
-            <div className="overflow-hidden rounded-input border border-border">
+            <div>
               {machines.length === 0 && (
                 <p className="bg-surface px-3 py-2.5 text-[13px] text-muted">
                   {t("remoteCompute.empty")}
@@ -182,8 +178,7 @@ export function RemoteComputeCard() {
             </div>
           </>
         )}
-      </div>
-    </section>
+    </Section>
   );
 }
 

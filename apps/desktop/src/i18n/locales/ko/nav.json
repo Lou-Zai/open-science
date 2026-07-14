@@ -58,7 +58,7 @@
       "openNotebooks": "노트북 열기",
       "manageSkills": "스킬 관리",
       "openSettings": "설정 열기",
-      "toggleTheme": "라이트/다크 테마 전환"
+      "toggleTheme": "테마 전환 (라이트 / 웜 / 다크)"
     }
   }
 }

@@ -10,8 +10,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Warm — the original paper palette, and the default theme. */
 :root,
-[data-theme="light"] {
+[data-theme="warm"] {
   --bg: #f7f5ef;
   --surface: #ffffff;
   --surface-2: #f2efe7;
@@ -38,6 +39,34 @@
   --series-8: #eb6834;
   --chart-grid: #e7e3da;
   --chart-axis: #cbc6bb;
+}
+
+/* Light — clean white with neutral (cool) grays; same accent and chart hues
+   as warm since both sit on a white chart surface. */
+[data-theme="light"] {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f4f4f6;
+  --border: #e6e6ea;
+  --border-faint: #f0f0f3;
+  --text: #1f1f24;
+  --muted: #8a8a93;
+  --accent: #c15f3c;
+  --accent-fg: #ffffff;
+  --link: #2a6fdb;
+  --warn: #c98a2b;
+  --ok: #4b8b5b;
+  --error: #c0564b;
+  --series-1: #2a78d6;
+  --series-2: #1baf7a;
+  --series-3: #eda100;
+  --series-4: #008300;
+  --series-5: #4a3aa7;
+  --series-6: #e34948;
+  --series-7: #e87ba4;
+  --series-8: #eb6834;
+  --chart-grid: #e6e6ea;
+  --chart-axis: #c9c9cf;
 }
 
 [data-theme="dark"] {
@@ -80,6 +109,40 @@ body {
   font-family: Inter, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* Sidebar background. With window vibrancy (macOS desktop app, data-vibrancy
+   set by ThemeProvider) the page under the sidebar goes transparent and the
+   sidebar turns slightly translucent, letting the blurred desktop tint
+   through; everywhere else it stays an opaque surface. */
+.sidebar-surface {
+  background: var(--surface);
+}
+[data-vibrancy] body {
+  background: transparent;
+}
+/* The translucent tint uses the theme's own --bg (not the white surface) so
+   the sidebar stays warm in warm and dark in dark. The vibrancy material
+   itself follows the in-app theme via setWindowTheme (needs the
+   core:window:allow-set-theme capability). */
+[data-vibrancy] .sidebar-surface {
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+}
+[data-vibrancy][data-theme="dark"] .sidebar-surface {
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+}
+
+/* Native <select> chrome (metallic bezel + arrow) clashes with the flat
+   inputs; draw our own chevron instead. Pair with inputCls via selectCls. */
+.select-chrome {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23898989' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 14px;
+  padding-right: 30px;
+  cursor: pointer;
 }
 
 /* Thin, calm scrollbars to match the paper aesthetic. */

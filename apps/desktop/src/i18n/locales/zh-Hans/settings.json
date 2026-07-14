@@ -1,8 +1,20 @@
 {
+  "nav": {
+    "back": "返回应用",
+    "general": "通用",
+    "appearance": "外观",
+    "models": "模型",
+    "runtime": "运行时",
+    "connectors": "连接器",
+    "compute": "计算",
+    "privacy": "隐私"
+  },
   "appearance": {
     "title": "外观",
+    "themeLabel": "主题",
     "theme": {
       "light": "浅色",
+      "warm": "暖色",
       "dark": "深色"
     }
   },
@@ -156,6 +168,7 @@
     "couldNotSetFolder": "无法设置文件夹",
     "couldNotSetModel": "无法设置模型",
     "defaultModelSet": "默认模型已设置为 {{model}}",
+    "defaultModelReset": "默认模型 {{old}} 已不可用——已切换为 {{model}}",
     "couldNotSaveKey": "无法保存密钥",
     "providerConnected": "{{providerID}} 已连接",
     "couldNotStartLogin": "无法开始登录",

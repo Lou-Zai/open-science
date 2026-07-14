@@ -17,12 +17,16 @@ export function AppShell() {
   const { t } = useTranslation("nav");
   const { sidebarCollapsed, setSidebarCollapsed } = useUiStore();
 
-  // Cmd/Ctrl+B toggles the sidebar, matching the button's tooltip.
+  // Cmd/Ctrl+B toggles the sidebar, matching the button's tooltip. Not in
+  // settings: there the sidebar IS the settings navigation (with the only way
+  // back to the app), so it must not collapse.
+  const inSettings = useLocation().pathname.startsWith("/settings");
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
         e.preventDefault();
-        useUiStore.getState().toggleSidebar();
+        if (!window.location.pathname.startsWith("/settings"))
+          useUiStore.getState().toggleSidebar();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -80,25 +84,32 @@ export function AppShell() {
   const pageOwnsTitlebar = useLocation().pathname.startsWith("/live");
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-bg text-text">
+    // The window background lives on <main>, not the shell: under vibrancy
+    // the area behind the (translucent) sidebar must stay transparent.
+    <div className="flex h-screen w-screen overflow-hidden text-text">
       <Sidebar project={mockProject} />
-      <main className="flex min-w-0 flex-1 flex-col">
-        {sidebarCollapsed && !pageOwnsTitlebar && (
+      <main className="flex min-w-0 flex-1 flex-col bg-bg">
+        {/* Titlebar strip for pages that don't own one: keeps the whole top
+            of the content area draggable under the macOS overlay titlebar,
+            and hosts the expand button while the sidebar is collapsed. */}
+        {!pageOwnsTitlebar && (overlayTitlebar || (sidebarCollapsed && !inSettings)) && (
           <div
             data-tauri-drag-region={overlayTitlebar || undefined}
             className={cn(
               "flex h-12 shrink-0 items-center",
-              overlayTitlebar ? "pl-[78px]" : "pl-2",
+              overlayTitlebar && sidebarCollapsed && !inSettings ? "pl-[78px]" : "pl-2",
             )}
           >
-            <button
-              onClick={() => setSidebarCollapsed(false)}
-              aria-label={t("sidebar.expand")}
-              title={t("sidebar.expandTitle", { shortcut: isMac ? "⌘B" : "Ctrl+B" })}
-              className="fade-in rounded p-1 text-text hover:bg-surface-2"
-            >
-              <PanelLeft size={14} strokeWidth={1.5} />
-            </button>
+            {sidebarCollapsed && !inSettings && (
+              <button
+                onClick={() => setSidebarCollapsed(false)}
+                aria-label={t("sidebar.expand")}
+                title={t("sidebar.expandTitle", { shortcut: isMac ? "⌘B" : "Ctrl+B" })}
+                className="fade-in rounded p-1 text-text hover:bg-surface-2"
+              >
+                <PanelLeft size={14} strokeWidth={1.5} />
+              </button>
+            )}
           </div>
         )}
         <div className="min-h-0 flex-1">

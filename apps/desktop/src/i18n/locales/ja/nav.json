@@ -58,7 +58,7 @@
       "openNotebooks": "ノートブックを開く",
       "manageSkills": "スキルを管理",
       "openSettings": "設定を開く",
-      "toggleTheme": "ライト / ダークテーマを切り替え"
+      "toggleTheme": "テーマを切り替え（ライト / ウォーム / ダーク）"
     }
   }
 }

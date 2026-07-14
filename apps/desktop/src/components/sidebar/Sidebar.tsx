@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
+  ArrowLeft,
   ChevronRight,
   Files,
   FlaskConical,
@@ -25,6 +26,7 @@ import {
   useUiStore,
 } from "@/lib/store";
 import { useUpdateStore } from "@/lib/update";
+import { SETTINGS_SECTIONS, resolveSection } from "@/components/settings/sections";
 import { StatusPills } from "./StatusPills";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import logo from "@/assets/logo.webp";
@@ -53,9 +55,14 @@ function initialCollapsedProjects(): string[] {
 }
 
 export function Sidebar({ project }: { project: Project }) {
-  const { t } = useTranslation("nav");
+  const { t } = useTranslation(["nav", "settings"]);
   const navigate = useNavigate();
   const location = useLocation();
+  // In settings the sidebar becomes the settings navigation: "Back to app" on
+  // top, one row per section, and NO collapse affordance — a collapsed sidebar
+  // would strand the user with no way back.
+  const inSettings = location.pathname.startsWith("/settings");
+  const activeSection = resolveSection(location.pathname.split("/")[2]);
   const {
     sessions,
     projects,
@@ -91,7 +98,7 @@ export function Sidebar({ project }: { project: Project }) {
     if (!dragging) return;
     // The sidebar starts at the window's left edge, so clientX is the width.
     const x = e.clientX;
-    if (x < COLLAPSE_BELOW) {
+    if (x < COLLAPSE_BELOW && !inSettings) {
       if (!sidebarCollapsed) setSidebarCollapsed(true);
       return;
     }
@@ -244,10 +251,10 @@ export function Sidebar({ project }: { project: Project }) {
         "relative h-full shrink-0 overflow-hidden",
         !dragging && "transition-[width] duration-200 ease-out",
       )}
-      style={{ width: sidebarCollapsed ? 0 : width }}
+      style={{ width: sidebarCollapsed && !inSettings ? 0 : width }}
     >
       <aside
-        className="flex h-full flex-col border-r border-border bg-surface"
+        className="sidebar-surface flex h-full flex-col border-r border-border"
         style={{ width }}
       >
         {/* The strip clears the traffic lights and hosts the collapse button just
@@ -257,16 +264,50 @@ export function Sidebar({ project }: { project: Project }) {
             data-tauri-drag-region
             className="flex h-12 shrink-0 items-center pl-[78px]"
           >
-            <button
-              onClick={toggleSidebar}
-              aria-label={t("sidebar.collapse")}
-              title={t("sidebar.collapseTitle", { shortcut: "⌘B" })}
-              className="rounded p-1 text-text hover:bg-surface-2"
-            >
-              <PanelLeft size={14} strokeWidth={1.5} />
-            </button>
+            {!inSettings && (
+              <button
+                onClick={toggleSidebar}
+                aria-label={t("sidebar.collapse")}
+                title={t("sidebar.collapseTitle", { shortcut: "⌘B" })}
+                className="rounded p-1 text-text hover:bg-surface-2"
+              >
+                <PanelLeft size={14} strokeWidth={1.5} />
+              </button>
+            )}
           </div>
         )}
+        {inSettings && (
+          <>
+            <div className={cn("px-3 pb-2", overlayTitlebar ? "pt-0" : "pt-3")}>
+              <button
+                onClick={() => navigate("/live")}
+                className="flex w-full items-center gap-2 rounded-input px-2 py-1.5 text-[13px] text-muted transition-colors hover:bg-surface-2 hover:text-text"
+              >
+                <ArrowLeft size={15} />
+                {t("settings:nav.back")}
+              </button>
+            </div>
+            <nav className="flex flex-col gap-0.5 px-3">
+              {SETTINGS_SECTIONS.map(({ key, icon: Icon }) => (
+                <NavLink
+                  key={key}
+                  to={`/settings/${key}`}
+                  className={cn(
+                    "flex items-center gap-2 rounded-input px-2 py-1.5 text-[13px]",
+                    activeSection === key
+                      ? "bg-surface-2 text-text"
+                      : "text-text/90 hover:bg-surface-2",
+                  )}
+                >
+                  <Icon size={15} className={activeSection === key ? "text-text" : "text-muted"} />
+                  {t(`settings:nav.${key}`)}
+                </NavLink>
+              ))}
+            </nav>
+          </>
+        )}
+        {!inSettings && (
+        <>
         <div className={cn("px-4 pb-3", overlayTitlebar ? "pt-1" : "pt-4")}>
           <div className="flex items-baseline gap-1.5">
             <img src={logo} alt="" className="h-[18px] w-auto self-center" />
@@ -480,6 +521,8 @@ export function Sidebar({ project }: { project: Project }) {
             )}
           </button>
         </div>
+        </>
+        )}
 
         {pendingDelete && (
           <ConfirmDialog

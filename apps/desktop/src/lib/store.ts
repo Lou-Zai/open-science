@@ -2,9 +2,13 @@ import { create } from "zustand";
 import { detectInitialLocale, LOCALE_KEY } from "@/i18n/config";
 import { isMacUA, isTauri, trafficLightsPresent } from "./tauri";
 
-export type Theme = "light" | "dark";
+export type Theme = "light" | "warm" | "dark";
 
-const THEME_KEY = "ai4s.theme";
+export const THEMES: readonly Theme[] = ["light", "warm", "dark"];
+
+const THEME_KEY = "ai4s.theme.v2";
+/** Two-theme era key: its "light" was the warm paper palette, now called "warm". */
+const LEGACY_THEME_KEY = "ai4s.theme";
 const SIDEBAR_WIDTH_KEY = "ai4s.sidebar.width";
 const SIDEBAR_COLLAPSED_KEY = "ai4s.sidebar.collapsed";
 const INSPECTOR_WIDTH_KEY = "ai4s.inspector.width";
@@ -18,11 +22,14 @@ export const INSPECTOR_MAX = 960;
 export const INSPECTOR_DEFAULT = 560;
 
 function initialTheme(): Theme {
-  if (typeof window === "undefined") return "light";
+  if (typeof window === "undefined") return "warm";
   const saved = window.localStorage.getItem(THEME_KEY);
-  if (saved === "light" || saved === "dark") return saved;
+  if (saved === "light" || saved === "warm" || saved === "dark") return saved;
+  const legacy = window.localStorage.getItem(LEGACY_THEME_KEY);
+  if (legacy === "dark") return "dark";
+  if (legacy === "light") return "warm";
   const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-  return prefersDark ? "dark" : "light";
+  return prefersDark ? "dark" : "warm";
 }
 
 function initialSidebarWidth(): number {
@@ -84,7 +91,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     if (typeof window !== "undefined") window.localStorage.setItem(THEME_KEY, theme);
     set({ theme });
   },
-  toggleTheme: () => get().setTheme(get().theme === "light" ? "dark" : "light"),
+  toggleTheme: () => get().setTheme(THEMES[(THEMES.indexOf(get().theme) + 1) % THEMES.length]),
   setLocale: (locale) => {
     if (typeof window !== "undefined") window.localStorage.setItem(LOCALE_KEY, locale);
     set({ locale });
