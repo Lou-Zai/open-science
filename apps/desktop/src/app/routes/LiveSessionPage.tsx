@@ -71,6 +71,9 @@ export function LiveSessionPage() {
   const connecting = status === "connecting" && !switching;
   const displayStatus = switching ? "ready" : status;
 
+  // The session's folder, once the list has loaded — openSession needs it to
+  // follow the session into its workspace.
+  const sessionDir = sessions.find((s) => s.id === sessionId)?.directory;
   useEffect(() => {
     if (sessionId) {
       if (!clearingLocalCommand.current) void openSession(sessionId);
@@ -82,7 +85,13 @@ export function LiveSessionPage() {
       // EventSockets until the connection pool is exhausted and sessions hang.
       if (useRuntimeStore.getState().currentId) startDraft(); // blank draft (#3)
     }
-  }, [sessionId, openSession, startDraft]);
+    // `connected` and `sessionDir` re-fire this on purpose: a hard reload (or a
+    // context-menu Reload) lands here before bootstrap has a client, and that
+    // first openSession bails — without the re-fire the history never loads
+    // (permanent skeleton). sessionDir arrives with the session list and lets
+    // the re-run follow the session into its own workspace folder. openSession
+    // is sequenced + loaded-guarded, so extra runs are cheap no-ops.
+  }, [sessionId, connected, sessionDir, openSession, startDraft]);
 
   // All three composer paths reflect a freshly-created session in the URL.
   const afterTurn = (id: string | null) => {
