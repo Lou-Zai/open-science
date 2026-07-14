@@ -10,6 +10,14 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Webview page-zoom factor (Cmd/Ctrl +/-), owned by ZoomProvider. The macOS
+   traffic lights are native chrome and never zoom, so titlebar strips counter-
+   scale their height and traffic-light inset by 1/--zoom (see overlayTitlebarStyle)
+   to stay pinned to the lights at every zoom level. */
+:root {
+  --zoom: 1;
+}
+
 /* Warm — the original paper palette, and the default theme. */
 :root,
 [data-theme="warm"] {
@@ -41,8 +49,9 @@
   --chart-axis: #cbc6bb;
 }
 
-/* Light — clean white with neutral (cool) grays; same accent and chart hues
-   as warm since both sit on a white chart surface. */
+/* Light — clean white with neutral (cool) grays and a blue accent (the warm
+   terracotta belongs to the warm theme); same chart hues as warm since both
+   sit on a white chart surface. */
 [data-theme="light"] {
   --bg: #ffffff;
   --surface: #ffffff;
@@ -51,7 +60,7 @@
   --border-faint: #f0f0f3;
   --text: #1f1f24;
   --muted: #8a8a93;
-  --accent: #c15f3c;
+  --accent: #2563eb;
   --accent-fg: #ffffff;
   --link: #2a6fdb;
   --warn: #c98a2b;
@@ -69,6 +78,8 @@
   --chart-axis: #c9c9cf;
 }
 
+/* Dark — neutral-cool like light, so it shares light's blue accent (stepped
+   up for the dark surface; dark text on the filled accent keeps contrast). */
 [data-theme="dark"] {
   --bg: #16151a;
   --surface: #1e1d24;
@@ -77,7 +88,7 @@
   --border-faint: #25242b;
   --text: #ece9e2;
   --muted: #9a958c;
-  --accent: #d0764f;
+  --accent: #4d9df6;
   --accent-fg: #16151a;
   --link: #7aa5f0;
   --warn: #d7a24a;

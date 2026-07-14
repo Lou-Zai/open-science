@@ -6,6 +6,7 @@ import type { RuntimeStatus } from "@ai4s/shared";
 import { DRAFT_KEY, rootSessionOf, subagentActivity, useRuntimeStore } from "@/lib/runtime";
 import { queryRuns } from "@/lib/runs";
 import { useOverlayTitlebar, useUiStore } from "@/lib/store";
+import { overlayTitlebarStyle } from "@/lib/titlebar";
 import { fileInspectorFromBlock } from "@/lib/artifacts";
 import { useScrollMemory } from "@/lib/scrollMemory";
 import { BlockList, type BlockHandlers } from "@/components/thread/BlockList";
@@ -240,12 +241,16 @@ export function LiveSessionPage() {
       <div className="flex h-full min-w-0 flex-1 flex-col">
         <div
           data-tauri-drag-region={overlayTitlebar || undefined}
+          // Collapsed + overlay, this row IS the titlebar: it clears the traffic
+          // lights and counter-scales for page zoom so the expand button stays
+          // pinned to them (overlayTitlebarStyle). Otherwise it's a normal header.
+          style={sidebarCollapsed && overlayTitlebar ? overlayTitlebarStyle(true) : undefined}
           className={cn(
-            "flex h-12 shrink-0 items-center gap-2 px-6",
+            "flex shrink-0 items-center gap-2 px-6",
             // A draft is a clean page — no separator; an open session gets a
             // faint one so the title row reads as part of the conversation.
             sessionId && "border-b border-faint",
-            sidebarCollapsed && overlayTitlebar && "pl-[78px]",
+            !(sidebarCollapsed && overlayTitlebar) && "h-12",
           )}
         >
           {sidebarCollapsed && (

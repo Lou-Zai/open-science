@@ -1,5 +1,11 @@
 # Progress
 
+2026-07-13 22:55 · fix(ui): settings row dividers glowed white in dark — `divide-border-faint` is not a valid Tailwind token (color key is `faint`), so divide-y fell back to Tailwind's default gray-200; both usages now `divide-faint`; 511/511 FE tests pass, DMG rebuilt.
+
+2026-07-13 23:40 · feat(ui): light is now the default theme; per-theme accents (light #2563eb blue, dark #4d9df6 blue on dark text, warm keeps terracotta); Settings › Appearance gains a Zoom row (−/%/+/reset wired to the in-app ZoomProvider, shortcut hint ⌘/Ctrl +−0); 511/511 FE tests, typecheck, lint pass, DMG rebuilt.
+
+2026-07-13 23:20 · fix(ui): sidebar collapse/expand button now stays aligned with the macOS traffic lights at any Cmd/Ctrl +/- zoom — the native lights don't zoom but the strip's `h-12`/`pl-[78px]` did; app now owns zoom (ZoomProvider, `zoomHotkeysEnabled: false`, persisted `ai4s.zoom`) and exposes it as `--zoom` so titlebar strips counter-scale height + inset by 1/zoom (overlayTitlebarStyle); 511/511 FE tests, typecheck, lint, FE build pass.
+
 2026-07-13 23:00 · fix(ui): root-caused the washed-out dark sidebar — `setTheme` was silently denied (missing `core:window:allow-set-theme` capability), so the vibrancy material never followed the in-app theme; capability added, tint now uses each theme's own `--bg` (warm stays warm, dark 80%), and the AppShell titlebar strip renders on every non-live page under the overlay titlebar so the whole content-area top is draggable (was only when the sidebar was collapsed); 511/511 FE tests, typecheck, lint pass, DMG rebuilt.
 
 2026-07-13 22:25 · fix(ui): dark sidebar no longer washes out to gray — vibrancy translucency now theme-scoped (55% light/warm, 92% dark, `[data-vibrancy][data-theme="dark"]` override); all native `<select>` chrome replaced with a flat `selectCls`/`.select-chrome` (appearance:none + own chevron) across settings and inspector; 511/511 FE tests, typecheck, lint pass, DMG rebuilt.

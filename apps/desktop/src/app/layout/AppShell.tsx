@@ -10,6 +10,7 @@ import { mockProject } from "@/lib/mock";
 import { useRuntimeStore } from "@/lib/runtime";
 import { ensureSetupProgressListener } from "@/lib/setup";
 import { useOverlayTitlebar, useUiStore } from "@/lib/store";
+import { overlayTitlebarStyle } from "@/lib/titlebar";
 import { ensureJupyter, openExternal, watchFullscreen } from "@/lib/tauri";
 import { useUpdateStore } from "@/lib/update";
 
@@ -95,10 +96,12 @@ export function AppShell() {
         {!pageOwnsTitlebar && (overlayTitlebar || (sidebarCollapsed && !inSettings)) && (
           <div
             data-tauri-drag-region={overlayTitlebar || undefined}
-            className={cn(
-              "flex h-12 shrink-0 items-center",
-              overlayTitlebar && sidebarCollapsed && !inSettings ? "pl-[78px]" : "pl-2",
-            )}
+            style={
+              overlayTitlebar
+                ? overlayTitlebarStyle(sidebarCollapsed && !inSettings)
+                : undefined
+            }
+            className={cn("flex shrink-0 items-center", !overlayTitlebar && "h-12 pl-2")}
           >
             {sidebarCollapsed && !inSettings && (
               <button

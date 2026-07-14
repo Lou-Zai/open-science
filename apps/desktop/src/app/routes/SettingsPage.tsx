@@ -6,7 +6,9 @@ import {
   ExternalLink,
   FolderOpen,
   Loader2,
+  Minus,
   NotebookPen,
+  Plus,
   RefreshCw,
   Search,
 } from "lucide-react";
@@ -19,12 +21,13 @@ import type {
 } from "@ai4s/sdk";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
-import { useUiStore } from "@/lib/store";
+import { useUiStore, ZOOM_MAX, ZOOM_MIN } from "@/lib/store";
 import { shippedLocales } from "@/i18n/config";
 import { getClient, useRuntimeStore } from "@/lib/runtime";
 import { useUpdateStore } from "@/lib/update";
 import {
   importOpenCodeLogin,
+  isMacUA,
   isTauri,
   jupyterStatus,
   openExternal,
@@ -70,6 +73,9 @@ export function SettingsPage() {
   const setTheme = useUiStore((s) => s.setTheme);
   const locale = useUiStore((s) => s.locale);
   const setLocale = useUiStore((s) => s.setLocale);
+  const zoom = useUiStore((s) => s.zoom);
+  const zoomBy = useUiStore((s) => s.zoomBy);
+  const resetZoom = useUiStore((s) => s.resetZoom);
   const { t } = useTranslation(["settings", "common"]);
   // Select each field individually. A bare `useRuntimeStore()` subscribed to the
   // WHOLE store, so every unrelated mutation (session events, streaming, idle
@@ -1288,7 +1294,7 @@ export function SettingsPage() {
         {/* ---- Appearance ---- */}
         {section === "appearance" && (
         <Section title={t("appearance.title")} flush>
-          <div className="divide-y divide-border-faint">
+          <div className="divide-y divide-faint">
             <Row title={t("appearance.themeLabel")}
               control={
                 <div className="inline-flex shrink-0 rounded-input border border-border bg-surface-2 p-0.5">
@@ -1324,6 +1330,42 @@ export function SettingsPage() {
                 </select>
               }
             />
+            {/* Zoom is desktop-only: in a browser the browser's own zoom rules. */}
+            {isTauri && (
+              <Row
+                title={t("appearance.zoom.label")}
+                hint={t("appearance.zoom.hint", { mod: isMacUA() ? "⌘" : "Ctrl" })}
+                control={
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      className={btnGhost("h-8 w-8 justify-center px-0")}
+                      onClick={() => zoomBy(-1)}
+                      disabled={zoom <= ZOOM_MIN}
+                      aria-label={t("appearance.zoom.out")}
+                    >
+                      <Minus size={13} />
+                    </button>
+                    <span className="w-11 text-center text-[13px] tabular-nums text-text">
+                      {/* eslint-disable-next-line i18next/no-literal-string -- "%" unit glue, not prose */}
+                      {Math.round(zoom * 100)}%
+                    </span>
+                    <button
+                      className={btnGhost("h-8 w-8 justify-center px-0")}
+                      onClick={() => zoomBy(1)}
+                      disabled={zoom >= ZOOM_MAX}
+                      aria-label={t("appearance.zoom.in")}
+                    >
+                      <Plus size={13} />
+                    </button>
+                    {zoom !== 1 && (
+                      <button className={btnGhost("h-8")} onClick={resetZoom}>
+                        {t("appearance.zoom.reset")}
+                      </button>
+                    )}
+                  </div>
+                }
+              />
+            )}
           </div>
         </Section>
         )}
@@ -1331,7 +1373,7 @@ export function SettingsPage() {
         {/* ---- App updates ---- */}
         {section === "general" && (
         <Section title={t("updates.title")} hint={t("updates.hint")} flush>
-          <div className="divide-y divide-border-faint">
+          <div className="divide-y divide-faint">
             <Row
               title={
                 <span className="inline-flex items-center gap-1.5">

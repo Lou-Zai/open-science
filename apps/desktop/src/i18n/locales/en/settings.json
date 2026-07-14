@@ -16,6 +16,13 @@
       "light": "Light",
       "warm": "Warm",
       "dark": "Dark"
+    },
+    "zoom": {
+      "label": "Zoom",
+      "hint": "{{mod}} + / − to zoom, {{mod}} 0 to reset",
+      "in": "Zoom in",
+      "out": "Zoom out",
+      "reset": "Reset"
     }
   },
   "language": {

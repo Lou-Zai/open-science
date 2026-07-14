@@ -567,6 +567,20 @@ export async function setWindowTheme(dark: boolean): Promise<void> {
   }
 }
 
+/** Set the webview page zoom (desktop only). We own zoom ourselves rather than
+ *  Tauri's `zoomHotkeysEnabled` so the titlebar strips can counter-scale by the
+ *  same factor — the native traffic lights don't zoom (see ZoomProvider). */
+export async function setWebviewZoom(factor: number): Promise<void> {
+  if (!isTauri) return;
+  try {
+    const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+    await getCurrentWebview().setZoom(factor);
+  } catch (e) {
+    // Best-effort — a denied capability just leaves the page at 100%.
+    console.warn("setWebviewZoom failed:", e);
+  }
+}
+
 /** True when the current UA is macOS (traffic lights live in the window chrome). */
 export function isMacUA(): boolean {
   return typeof navigator !== "undefined" && navigator.userAgent.includes("Mac");

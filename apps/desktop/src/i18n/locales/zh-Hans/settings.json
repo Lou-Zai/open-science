@@ -16,6 +16,13 @@
       "light": "浅色",
       "warm": "暖色",
       "dark": "深色"
+    },
+    "zoom": {
+      "label": "缩放",
+      "hint": "{{mod}} + / − 缩放，{{mod}} 0 复原",
+      "in": "放大",
+      "out": "缩小",
+      "reset": "复原"
     }
   },
   "language": {

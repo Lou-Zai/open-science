@@ -16,6 +16,13 @@
       "light": "Hell",
       "warm": "Warm",
       "dark": "Dunkel"
+    },
+    "zoom": {
+      "label": "Zoom",
+      "hint": "{{mod}} + / − zum Zoomen, {{mod}} 0 zum Zurücksetzen",
+      "in": "Vergrößern",
+      "out": "Verkleinern",
+      "reset": "Zurücksetzen"
     }
   },
   "language": {

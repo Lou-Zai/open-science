@@ -26,6 +26,7 @@ import {
   useUiStore,
 } from "@/lib/store";
 import { useUpdateStore } from "@/lib/update";
+import { overlayTitlebarStyle } from "@/lib/titlebar";
 import { SETTINGS_SECTIONS, resolveSection } from "@/components/settings/sections";
 import { StatusPills } from "./StatusPills";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -262,7 +263,8 @@ export function Sidebar({ project }: { project: Project }) {
         {overlayTitlebar && (
           <div
             data-tauri-drag-region
-            className="flex h-12 shrink-0 items-center pl-[78px]"
+            style={overlayTitlebarStyle(true)}
+            className="flex shrink-0 items-center"
           >
             {!inSettings && (
               <button

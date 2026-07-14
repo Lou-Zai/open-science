@@ -11,7 +11,7 @@
         "minHeight": 640,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "zoomHotkeysEnabled": true,
+        "zoomHotkeysEnabled": false,
         "trafficLightPosition": { "x": 13, "y": 22 },
         "transparent": true,
         "windowEffects": {
