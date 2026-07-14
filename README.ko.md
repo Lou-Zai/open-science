@@ -20,6 +20,7 @@ Formerly Open Science. Claude Science 및 유사한 AI-for-science 워크벤치�
 
 <p>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://doi.org/10.5281/zenodo.21351225"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.21351225.svg" alt="DOI"></a>
   <a href="https://internscience.github.io/ResearchClawBench-Home/"><img src="https://img.shields.io/badge/%F0%9F%8F%86%20%231-ResearchClawBench-FFB300" alt="#1 on ResearchClawBench"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue" alt="Platforms">
   <img src="https://img.shields.io/badge/i18n-7%20languages-5B8DEF" alt="7 interface languages">
@@ -185,7 +186,8 @@ pnpm lint
   author  = {{The Open Science Desktop Contributors}},
   title   = {Open Science Desktop: a local-first, model-agnostic AI research workbench},
   year    = {2026},
-  version = {0.1.9},
+  version = {0.2.0},
+  doi     = {10.5281/zenodo.21351226},
   url     = {https://github.com/ai4s-research/open-science},
   license = {MIT}
 }

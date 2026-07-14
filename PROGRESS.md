@@ -1,5 +1,7 @@
 # Progress
 
+2026-07-13 23:50 · release: v0.2.0 published (6 installers via CI) and the first Zenodo DOI minted — concept 10.5281/zenodo.21351225 (badge in 7 READMEs), version 10.5281/zenodo.21351226 (BibTeX + CITATION.cff).
+
 2026-07-13 23:15 · release: v0.2.0 tagged (new UI: 3 themes, vibrancy sidebar, Codex-style settings, in-app zoom; fixes: provider retries/errors #17 #18, git snapshot bloat #19, uv/python provisioning, sidecar lifecycle) — CI builds the draft release; publish mints the first Zenodo DOI, then the DOI badge + CITATION.cff doi still need adding.
 
 2026-07-13 22:55 · fix(ui): settings row dividers glowed white in dark — `divide-border-faint` is not a valid Tailwind token (color key is `faint`), so divide-y fell back to Tailwind's default gray-200; both usages now `divide-faint`; 511/511 FE tests pass, DMG rebuilt.
