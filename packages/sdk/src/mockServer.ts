@@ -41,6 +41,24 @@ export function startMockOpenCode(port = 0): Promise<MockOpenCode> {
     ];
   };
 
+  // A turn whose model call fails: the server announces the retry via
+  // session.status, gives up with session.error, and the stored assistant
+  // message carries the error (that is all a reloaded history has to show).
+  const streamFlakyTurn = (sessionID: string) => {
+    const push = (obj: unknown) => clients.forEach((c) => send(c, obj));
+    const error = { name: "APICallError", data: { message: "no channel available for this model" } };
+    push({
+      type: "session.status",
+      properties: { sessionID, status: { type: "retry", attempt: 2, message: error.data.message, next: 1234 } },
+    });
+    push({ type: "session.error", properties: { sessionID, error } });
+    push({ type: "session.idle", properties: { sessionID } });
+    messages[sessionID] = [
+      { info: { role: "user" }, parts: [{ type: "text", text: "flaky" }] },
+      { info: { role: "assistant", time: { created: 1, completed: 2 }, error }, parts: [] },
+    ];
+  };
+
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = req.url ?? "";
     requests.push(`${req.method} ${url}`);
@@ -198,9 +216,14 @@ export function startMockOpenCode(port = 0): Promise<MockOpenCode> {
     }
     const m = url.match(/^\/session\/([^/]+)\/prompt_async/);
     if (req.method === "POST" && m) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end("{}");
-      setTimeout(() => streamTurn(decodeURIComponent(m[1])), 5);
+      let body = "";
+      req.on("data", (chunk) => (body += chunk));
+      req.on("end", () => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end("{}");
+        const turn = body.includes("flaky") ? streamFlakyTurn : streamTurn;
+        setTimeout(() => turn(decodeURIComponent(m[1])), 5);
+      });
       return;
     }
     res.writeHead(404);

@@ -160,6 +160,11 @@ interface RuntimeState {
    *  output shows inline in the thread — the output IS the result the user
    *  asked for. Agent bash steps stay quiet single-line log entries. */
   shellTurns: Record<string, true>;
+  /** Sessions whose model call failed and is being retried server-side —
+   *  OpenCode backs off with no attempt cap, so this is what keeps a broken
+   *  provider from looking like a silent "Working…" forever. Cleared by the
+   *  session's next sign of life (stream events, idle, error). */
+  retryNotices: Record<string, { attempt: number; message: string }>;
   /** Switch to an existing folder, or (with `dated`) create a new dated one. */
   switchWorkspace: (target: { path: string } | { dated: string }) => Promise<void>;
   openSession: (id: string) => Promise<void>;
@@ -471,6 +476,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
   sending: false,
   runningSessions: {},
   shellTurns: {},
+  retryNotices: {},
 
   // These write the CURRENT session's pane (DRAFT_KEY on a draft), keeping the
   // artifact inspector, the Files browser, and the Runs pane mutually exclusive
@@ -685,25 +691,33 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         // the thread already says "Interrupted"; don't add a second red line.
         if (sid) clearLiveFolds(sid);
         if (sid && interruptedSessions.has(sid)) return;
+        // A dangling default model (its provider removed or renamed) fails
+        // every send the same way — point at where the fix lives.
+        const message = /model not found/i.test(event.message)
+          ? `${event.message} Pick an available model in Settings → Models.`
+          : event.message;
         if (sid) {
           set((s) => {
             const cur = s.threads[sid] ?? emptyThread();
             const runningSessions = { ...s.runningSessions };
             delete runningSessions[sid];
+            const retryNotices = { ...s.retryNotices };
+            delete retryNotices[sid];
             return {
               runningSessions,
+              retryNotices,
               threads: {
                 ...s.threads,
                 [sid]: {
                   ...cur,
                   loaded: true,
-                  blocks: [...cur.blocks, { kind: "status-line", text: event.message, tone: "error" }],
+                  blocks: [...cur.blocks, { kind: "status-line", text: message, tone: "error" }],
                 },
               },
             };
           });
         } else {
-          set({ error: event.message });
+          set({ error: message });
         }
         return;
       }
@@ -728,9 +742,26 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         case "permission.resolved":
           set((s) => ({ permissions: s.permissions.filter((p) => p.requestId !== event.requestId) }));
           return;
+        case "session.retry":
+          set((s) => ({
+            retryNotices: {
+              ...s.retryNotices,
+              [event.sessionId]: { attempt: event.attempt, message: event.message },
+            },
+          }));
+          return;
       }
       const sid = event.sessionId;
       if (!sid) return;
+      // Any other sign of life from the session supersedes its retry notice:
+      // an attempt is streaming again (text/tool events) or the turn is over.
+      if (get().retryNotices[sid]) {
+        set((s) => {
+          const retryNotices = { ...s.retryNotices };
+          delete retryNotices[sid];
+          return { retryNotices };
+        });
+      }
       if (event.type === "session.idle") clearLiveFolds(sid);
       // Idle after a user interrupt: the thread already ends with "Interrupted"
       // — keep the locks clear and skip the fold. An abort can emit MORE than
@@ -1622,6 +1653,13 @@ export function historyToThread(messages: HistoryMessage[], commands?: CommandIn
           });
           if (artifact) blocks.push(artifact);
         }
+      }
+      // A turn that ended in a provider/runtime error must say so on reload —
+      // its live session.error is gone (SSE reconnect, app restart) and an
+      // empty reply followed by "done" explains nothing. User-interrupted
+      // turns are not errors; the trailing "Interrupted" line covers those.
+      if (m.error && !/abort/i.test(m.error)) {
+        blocks.push({ kind: "status-line", text: m.error, tone: "error" });
       }
       shellTurn = false;
     }

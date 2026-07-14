@@ -119,6 +119,7 @@
     "status": {
       "paused": "Pausado — el agente necesita tu respuesta a continuación",
       "startingSession": "Iniciando la sesión en su carpeta…",
+      "retrying": "Error del proveedor — reintentando (intento {{attempt}})",
       "working": "Trabajando…"
     },
     "placeholder": {

@@ -45,6 +45,18 @@ export interface SessionIdleEvent {
   type: "session.idle";
   sessionId: string;
 }
+/** The turn's model call failed and the server is retrying it — OpenCode backs
+ *  off exponentially with NO attempt cap, so without surfacing these the UI
+ *  shows a bare "Working…" forever while every attempt fails. */
+export interface SessionRetryEvent {
+  type: "session.retry";
+  sessionId: string;
+  attempt: number;
+  /** The provider's error message for the failed attempt. */
+  message: string;
+  /** Epoch ms of the next scheduled attempt. */
+  nextAt: number;
+}
 
 // ---- Interactive requests (the agent asks; the user must answer) ----
 // OpenCode blocks the run until answered. Two kinds: a `question` (pick from
@@ -100,6 +112,7 @@ export type OpenCodeEvent =
   | TextUpdatedEvent
   | ToolUpdatedEvent
   | SessionIdleEvent
+  | SessionRetryEvent
   | RuntimeErrorEvent
   | QuestionAskedEvent
   | QuestionResolvedEvent
@@ -155,6 +168,10 @@ export interface HistoryMessage {
   /** Epoch ms when the message finished — unset while it is still streaming.
    *  On the LAST message this is the server's truth for "is the turn over". */
   completed?: number;
+  /** The error that ended this assistant turn, when it failed. Without it a
+   *  failed turn whose live session.error was missed (SSE reconnect, app
+   *  restart) reloads as an empty reply with no explanation at all. */
+  error?: string;
   parts: HistoryPart[];
 }
 export interface HistoryPart {

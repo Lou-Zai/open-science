@@ -66,6 +66,7 @@ pub fn run() {
             project::rename_project,
             runtime::pick_folder,
             runtime::import_opencode_login,
+            runtime::provider_auth_exists,
             runtime::remove_config_entry,
             jupyter::jupyter_status,
             jupyter::setup_jupyter,

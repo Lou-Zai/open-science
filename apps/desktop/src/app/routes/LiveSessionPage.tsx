@@ -31,6 +31,7 @@ export function LiveSessionPage() {
     switching,
     sending,
     runningSessions,
+    retryNotices,
     serverUrl,
     sessions,
     currentId,
@@ -133,6 +134,10 @@ export function LiveSessionPage() {
   // working indicator, so a sent message is never silently "nowhere".
   const running = !!(currentId && runningSessions[currentId]);
   const working = sending || running;
+  // The turn's model call is failing and the server keeps retrying it — the
+  // only life sign a broken provider produces. Show it, or the row below
+  // reads "Working…" forever with nothing actually working.
+  const retryNotice = currentId ? retryNotices[currentId] : undefined;
   // What the agent is doing right now — the newest still-running tool call.
   const currentTool = working
     ? [...(thread?.blocks ?? [])]
@@ -361,11 +366,18 @@ export function LiveSessionPage() {
                 <span className="shrink-0">
                   {activeRequest
                     ? t("live.status.paused")
-                    : sending && !currentId
-                      ? t("live.status.startingSession")
-                      : t("live.status.working")}
+                    : retryNotice
+                      ? t("live.status.retrying", { attempt: Math.max(1, retryNotice.attempt) })
+                      : sending && !currentId
+                        ? t("live.status.startingSession")
+                        : t("live.status.working")}
                 </span>
-                {!activeRequest && currentTool && (
+                {!activeRequest && retryNotice && (
+                  <span className="truncate font-mono text-xs text-warn" title={retryNotice.message}>
+                    {retryNotice.message}
+                  </span>
+                )}
+                {!activeRequest && !retryNotice && currentTool && (
                   <>
                     <span
                       className="truncate font-mono text-xs"

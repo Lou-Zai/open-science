@@ -119,6 +119,7 @@
     "status": {
       "paused": "Pausiert — der Agent benötigt Ihre Antwort unten",
       "startingSession": "Die Sitzung wird in ihrem Ordner gestartet…",
+      "retrying": "Anbieterfehler — neuer Versuch (Versuch {{attempt}})",
       "working": "Arbeitet…"
     },
     "placeholder": {

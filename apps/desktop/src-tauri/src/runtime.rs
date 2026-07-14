@@ -158,6 +158,28 @@ pub fn import_opencode_login(app: AppHandle, state: State<'_, RuntimeState>) -> 
     Ok(true)
 }
 
+/// Whether the bundled runtime's credential store (its auth.json) has an entry
+/// for this provider. The sidecar writes the token there the moment a browser
+/// login completes, so the UI can fall back on it when the pending OAuth
+/// callback request is lost (loopback port collision, proxy) — issue #17.
+#[tauri::command(async)]
+pub fn provider_auth_exists(app: AppHandle, provider_id: String) -> Result<bool, String> {
+    let path = runtime_root(&app)?
+        .join("xdg-data")
+        .join("opencode")
+        .join("auth.json");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Ok(false); // no store yet — no logins
+    };
+    Ok(auth_has_provider(&text, &provider_id))
+}
+
+fn auth_has_provider(text: &str, provider_id: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .is_some_and(|auth| auth.get(provider_id).is_some())
+}
+
 /// Deploy the bundled skill packs (Tauri resources) into the app-private
 /// profile's global skills dir (`<xdg-config>/opencode/skills/`), which OpenCode
 /// scans regardless of project detection: `skills/` is the external ai4s-skills
@@ -865,10 +887,19 @@ pub fn kill_child(state: &RuntimeState) {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_scutil_proxy, prune_stale_skills, random_hex, remove_key_from_config,
-        resolve_proxy_env, sync_skill_pack, validate_proxy_url,
+        auth_has_provider, parse_scutil_proxy, prune_stale_skills, random_hex,
+        remove_key_from_config, resolve_proxy_env, sync_skill_pack, validate_proxy_url,
     };
     use std::fs;
+
+    #[test]
+    fn auth_store_provider_lookup() {
+        let auth = r#"{ "openai": { "type": "oauth", "refresh": "r", "access": "a" } }"#;
+        assert!(auth_has_provider(auth, "openai"));
+        assert!(!auth_has_provider(auth, "anthropic"));
+        assert!(!auth_has_provider("", "openai")); // empty/corrupt store
+        assert!(!auth_has_provider("not json", "openai"));
+    }
 
     #[test]
     fn proxy_url_validation() {

@@ -38,6 +38,14 @@ function mapToolStatus(status: string): ToolCallStatus {
   }
 }
 
+/** OpenCode's error objects nest the human-readable message at
+ *  error.data.message; keep the first line (some errors append a stack). */
+function errorText(error: unknown): string | undefined {
+  const err = error as { name?: string; message?: string; data?: { message?: string } } | undefined;
+  const full = err?.data?.message ?? err?.message ?? err?.name;
+  return typeof full === "string" && full ? full.split("\n")[0] : undefined;
+}
+
 /**
  * The single boundary between the app and the OpenCode agent runtime.
  * Talks to a running `opencode serve` over its HTTP + SSE API. The UI must go
@@ -320,14 +328,18 @@ export class OpenCodeClient {
     );
     if (!res.ok) throw await this.apiError(res, "Failed to load messages");
     const arr = (await res.json()) as Array<{
-      info: { role: "user" | "assistant"; time?: { completed?: number } };
+      info: { role: "user" | "assistant"; time?: { completed?: number }; error?: unknown };
       parts: HistoryMessage["parts"];
     }>;
-    return arr.map((m) => ({
-      role: m.info.role,
-      completed: m.info.time?.completed,
-      parts: m.parts ?? [],
-    }));
+    return arr.map((m) => {
+      const error = errorText(m.info.error);
+      return {
+        role: m.info.role,
+        completed: m.info.time?.completed,
+        ...(error ? { error } : {}),
+        parts: m.parts ?? [],
+      };
+    });
   }
 
   /** Interrupt the session's current turn (POST /session/:id/abort). A no-op
@@ -534,6 +546,13 @@ export class OpenCodeClient {
       },
     );
     if (!res.ok) throw await this.apiError(res, "Login did not complete");
+    await this.disposeInstance();
+  }
+
+  /** Drop the server's cached provider list so a credential stored outside
+   *  this client's own auth calls (e.g. a browser login whose callback never
+   *  reached us) shows up in listProviders. */
+  async refreshProviderCache(): Promise<void> {
     await this.disposeInstance();
   }
 
@@ -926,16 +945,31 @@ export class OpenCodeClient {
         break;
       }
       case "session.error": {
-        const err = props.error as
-          | { name?: string; message?: string; data?: { message?: string } }
-          | undefined;
         // OpenCode nests the human-readable message at error.data.message.
-        const full = err?.data?.message ?? err?.message ?? err?.name ?? "session error";
         // Keep the first line — OpenCode appends a stack trace to some errors.
         this.emit({
           type: "error",
           sessionId: String(props.sessionID ?? ""),
-          message: full.split("\n")[0],
+          message: errorText(props.error) ?? "session error",
+        });
+        break;
+      }
+      case "session.status": {
+        // A failed model call being retried server-side. OpenCode's retry
+        // policy has NO attempt cap (exponential backoff only), so these are
+        // the ONLY sign of life while a broken provider fails every attempt —
+        // dropping them leaves the UI on a bare "Working…" forever. ("busy"
+        // and "idle" statuses carry nothing session.idle doesn't already.)
+        const status = props.status as
+          | { type?: string; attempt?: number; message?: string; next?: number }
+          | undefined;
+        if (status?.type !== "retry") break;
+        this.emit({
+          type: "session.retry",
+          sessionId: String(props.sessionID ?? ""),
+          attempt: status.attempt ?? 0,
+          message: status.message ?? "provider error",
+          nextAt: status.next ?? 0,
         });
         break;
       }

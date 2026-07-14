@@ -106,6 +106,35 @@ describe("OpenCodeClient ↔ OpenCode server", () => {
     client.close();
   });
 
+  it("surfaces a failing model call: retry status, session error, and the history error", async () => {
+    const events: OpenCodeEvent[] = [];
+    const client = new OpenCodeClient({ baseUrl: `http://127.0.0.1:${server.port}` });
+    client.onEvent((e) => events.push(e));
+    await client.connect();
+    const sessionId = await client.createSession();
+    await client.sendPrompt(sessionId, "flaky provider call");
+    await waitFor(() => events.some((e) => e.type === "session.idle"));
+
+    // The server-side retry loop is unbounded — its status events are the only
+    // sign of life while every attempt fails, so they must reach the app.
+    expect(events.find((e) => e.type === "session.retry")).toMatchObject({
+      sessionId,
+      attempt: 2,
+      message: "no channel available for this model",
+    });
+    expect(events.find((e) => e.type === "error")).toMatchObject({
+      sessionId,
+      message: "no channel available for this model",
+    });
+
+    // A reload after the live error was missed must still explain the failure.
+    const messages = await client.getMessages(sessionId);
+    const last = messages[messages.length - 1];
+    expect(last.role).toBe("assistant");
+    expect(last.error).toBe("no channel available for this model");
+    client.close();
+  });
+
   it("reports an error status when the server is unreachable", async () => {
     const client = new OpenCodeClient({ baseUrl: "http://127.0.0.1:1" });
     await expect(client.connect()).rejects.toBeTruthy();

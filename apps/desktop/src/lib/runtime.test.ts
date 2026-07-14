@@ -313,6 +313,26 @@ describe("historyToThread", () => {
     ]);
   });
 
+  it("shows a failed turn's error on reload instead of an unexplained empty reply", () => {
+    const msgs: HistoryMessage[] = [
+      { role: "user", parts: [{ type: "text", text: "hi" }] },
+      { role: "assistant", completed: 2, error: "no channel available for this model", parts: [] },
+    ];
+    const t = historyToThread(msgs);
+    expect(t.blocks).toEqual([
+      { kind: "user", text: "hi" },
+      { kind: "status-line", text: "no channel available for this model", tone: "error" },
+    ]);
+  });
+
+  it("keeps user-interrupted turns quiet: an aborted error adds no red line", () => {
+    const msgs: HistoryMessage[] = [
+      { role: "user", parts: [{ type: "text", text: "hi" }] },
+      { role: "assistant", completed: 2, error: "The operation was aborted.", parts: [] },
+    ];
+    expect(historyToThread(msgs).blocks).toEqual([{ kind: "user", text: "hi" }]);
+  });
+
   it("falls back to the bash command as the row title (agent steps too)", () => {
     const msgs: HistoryMessage[] = [
       {

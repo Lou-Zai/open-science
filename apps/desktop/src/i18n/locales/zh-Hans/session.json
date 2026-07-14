@@ -119,6 +119,7 @@
     "status": {
       "paused": "已暂停——代理需要您在下方回答",
       "startingSession": "正在其文件夹中启动会话…",
+      "retrying": "服务商报错——正在重试（第 {{attempt}} 次）",
       "working": "正在处理…"
     },
     "placeholder": {
