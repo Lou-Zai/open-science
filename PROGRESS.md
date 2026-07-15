@@ -1,5 +1,7 @@
 # Progress
 
+2026-07-14 00:55 · fix(ui): code was unreadable in dark — CodeViewer hardcoded highlight.js's light github.css; token colors now live in index.css as per-theme --hl-* variables (.hljs-* rules mirroring github/github-dark), so all three themes highlight correctly; 511/511 FE tests, typecheck, lint pass, DMG rebuilt.
+
 2026-07-14 · fix(desktop): traffic lights drift on some Macs — tao re-applies the configured inset only from drawRect, which the transparent+vibrancy window can stop firing; new src-tauri/src/macos.rs re-pins the lights on Focused/Resized/ThemeChanged. fix(session): a hard reload on /live/:id showed a permanent skeleton — openSession ran before bootstrap had a client and bailed with no retry; the page effect now re-fires on `connected` and on the session's directory arriving. 511/511 FE tests, cargo check, typecheck, lint pass, DMG rebuilt.
 
 2026-07-13 23:50 · release: v0.2.0 published (6 installers via CI) and the first Zenodo DOI minted — concept 10.5281/zenodo.21351225 (badge in 7 READMEs), version 10.5281/zenodo.21351226 (BibTeX + CITATION.cff).
