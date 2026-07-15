@@ -52,7 +52,13 @@ const REF_EXTS = [
   "bed", "bedgraph", "bdg", "gff", "gff3", "gtf", "vcf",
   "stl", "obj", "ply", "gltf", "glb",
 ];
-const REF_RE = new RegExp(`[\\w./-]+\\.(?:${REF_EXTS.join("|")})\\b`, "gi");
+// \p{L}\p{N} instead of \w: research deliverables are routinely named in the
+// user's language (青云录_剧情.docx), and ASCII-only \w silently drops every
+// such mention — no chip, no way to open the file from the conversation.
+const REF_RE = new RegExp(
+  `[\\p{L}\\p{N}_./-]+\\.(?:${REF_EXTS.join("|")})(?![\\p{L}\\p{N}_])`,
+  "giu",
+);
 
 /**
  * Extract workspace file paths mentioned in an agent message so a file produced by

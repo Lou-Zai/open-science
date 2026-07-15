@@ -1560,19 +1560,34 @@ function mapToolStatus(status?: string): ToolCallStatus {
 /** Convert loaded message history into thread blocks. */
 export function historyToThread(messages: HistoryMessage[], commands?: CommandInfo[]): FoldState {
   const blocks: ThreadBlock[] = [];
-  // OpenCode stores a slash command's EXPANDED template as the user message,
-  // with any typed arguments appended after it (no marker) — show the
-  // "/name args" the user actually typed instead. Longest template first, so
-  // one template being a prefix of another's expansion can't mis-attribute.
+  // OpenCode stores a slash command's EXPANDED template as the user message —
+  // show the "/name args" the user actually typed instead. Templates either
+  // embed a $ARGUMENTS placeholder anywhere (match prefix + suffix around it,
+  // e.g. the goal plugin's <goal_command_arguments> block) or carry no
+  // placeholder (typed args are appended after the template, no marker).
+  // Longest template first, so one template being a prefix of another's
+  // expansion can't mis-attribute.
   const templates = (commands ?? [])
     .filter((c) => c.template?.trim())
     .map((c) => ({ name: c.name, template: c.template!.trim() }))
     .sort((a, b) => b.template.length - a.template.length);
   const asTypedCommand = (text: string): string | undefined => {
-    const hit = templates.find((t) => text.startsWith(t.template));
-    if (!hit) return undefined;
-    const args = text.slice(hit.template.length).trim();
-    return args ? `/${hit.name} ${args}` : `/${hit.name}`;
+    for (const t of templates) {
+      const at = t.template.indexOf("$ARGUMENTS");
+      if (at < 0) {
+        if (!text.startsWith(t.template)) continue;
+        const args = text.slice(t.template.length).trim();
+        return args ? `/${t.name} ${args}` : `/${t.name}`;
+      }
+      const prefix = t.template.slice(0, at);
+      const suffix = t.template.slice(at + "$ARGUMENTS".length).trimEnd();
+      if (!text.startsWith(prefix)) continue;
+      const rest = text.trimEnd();
+      if (suffix && !rest.endsWith(suffix)) continue;
+      const args = rest.slice(prefix.length, suffix ? rest.length - suffix.length : undefined).trim();
+      return args ? `/${t.name} ${args}` : `/${t.name}`;
+    }
+    return undefined;
   };
   // A step frozen mid-run (the runtime restarted or the turn was killed before
   // it finished) must not spin forever in history — render it quietly and say

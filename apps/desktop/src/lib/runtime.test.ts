@@ -382,6 +382,20 @@ describe("historyToThread", () => {
     expect(t.blocks[2]).toEqual({ kind: "user", text: "/growth-marketing 帮我设计增长方式" });
   });
 
+  it("collapses a template whose $ARGUMENTS placeholder sits mid-template (goal plugin)", () => {
+    // The goal plugin's command embeds the args INSIDE the template, with a
+    // long instruction block after them — prefix/suffix matching around
+    // $ARGUMENTS must recover the typed "/goal <args>".
+    const template =
+      'OpenCode goal mode command "/goal" was invoked.\n\nArguments:\n<goal_command_arguments>\n$ARGUMENTS\n</goal_command_arguments>\n\nUse the goal tools to handle this command:\n- If the arguments are empty, call get_goal…';
+    const expanded = template.replace("$ARGUMENTS", "梳理项目，做一个详细剧情docx。");
+    const msgs: HistoryMessage[] = [
+      { role: "user", parts: [{ type: "text", text: expanded }] },
+    ];
+    const t = historyToThread(msgs, [{ name: "goal", source: "command", template }]);
+    expect(t.blocks[0]).toEqual({ kind: "user", text: "/goal 梳理项目，做一个详细剧情docx。" });
+  });
+
   it("leaves a long pasted user text alone when it matches no template", () => {
     const msgs: HistoryMessage[] = [
       { role: "user", parts: [{ type: "text", text: "a genuinely long pasted question…" }] },
