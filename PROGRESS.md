@@ -1,5 +1,7 @@
 # Progress
 
+2026-07-14 01:20 · roadmap: triaged all 5 open issues (8 asks) into GitHub milestones — v0.2.1 patch (fixes on master), v0.3.0 Research UX (#20 #21 #22: LaTeX, image upload, plan-first, adaptive approvals, notifications), v0.4.0 Reach (#3 LAN web UI, #20 messaging, #14 ACP) — and rewrote the stale PRD §9 roadmap to match reality.
+
 2026-07-14 00:55 · fix(ui): code was unreadable in dark — CodeViewer hardcoded highlight.js's light github.css; token colors now live in index.css as per-theme --hl-* variables (.hljs-* rules mirroring github/github-dark), so all three themes highlight correctly; 511/511 FE tests, typecheck, lint pass, DMG rebuilt.
 
 2026-07-14 · fix(desktop): traffic lights drift on some Macs — tao re-applies the configured inset only from drawRect, which the transparent+vibrancy window can stop firing; new src-tauri/src/macos.rs re-pins the lights on Focused/Resized/ThemeChanged. fix(session): a hard reload on /live/:id showed a permanent skeleton — openSession ran before bootstrap had a client and bailed with no retry; the page effect now re-fires on `connected` and on the session's directory arriving. 511/511 FE tests, cargo check, typecheck, lint pass, DMG rebuilt.

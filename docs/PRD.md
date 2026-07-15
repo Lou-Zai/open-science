@@ -337,15 +337,48 @@ Outputs: `plan.md`, `data/corpus.csv`, `scripts/analyze.py`, `figures/year_trend
 
 ## 9. Roadmap
 
-- **v0.1 Desktop MVP** — macOS / Windows installers, local workspace, bundled OpenCode runtime,
-  model config, agent chat, plan approval, literature search, Python analysis, artifact
-  panel, `provenance.jsonl`, basic reviewer, BCI demo.
-- **v0.2 Research Workflows** — K-Dense skills installer, PDF parsing, citation checker,
-  Markdown report export, workflow template library, fuller review panel.
-- **v0.3 Notebook Runtime** — Jupyter Kernel Gateway, persistent Python kernel, notebook
-  preview, R support, Quarto / PDF / DOCX export.
-- **v0.4 Advanced Science** — BioMCP; PubMed / GEO / ChEMBL / UniProt connectors;
-  RDKit / py3Dmol; single-cell and molecular-screening templates; HPC / SSH / Modal runner.
+Tracked as GitHub milestones; issue numbers are the source of truth for scope
+discussion. Shipped versions are kept here as the delivery record.
+
+### Shipped
+
+- **v0.1.x Desktop MVP → hardening** — macOS / Windows / Linux installers, local
+  workspace, bundled OpenCode runtime, model config, agent chat, plan approval,
+  Python analysis, artifact panel, `provenance.jsonl`, notebooks (Python + R),
+  science MCP connectors, remote compute (SSH / Slurm / Modal), projects,
+  searchable model browser, network proxy + mirrors, 7 UI languages.
+- **v0.2.0 UI & reliability** — three themes (light / warm / dark) with per-theme
+  accents, translucent macOS sidebar, Codex-style settings (section routes +
+  sidebar navigation), in-app zoom, provider retry/error surfacing, OAuth
+  recovery via the credential store, git-snapshot bloat guards, first Zenodo DOI.
+
+### Planned
+
+- **v0.2.1 Patch** — fixes already on master: traffic-light re-pin on the
+  transparent/vibrancy window, session history loading after a hard reload of
+  `/live/:id`, theme-aware code highlighting (dark-mode readability).
+- **v0.3.0 Research UX** — the "scientist's daily loop" gets first-class
+  treatment:
+  - LaTeX / math rendering in chat and documents (#22);
+  - image upload → multimodal prompts (screenshots of errors, plots, papers) (#22);
+  - plan-first workflow: surface OpenCode's plan mode as an explicit
+    "plan, review, then execute" loop (#20);
+  - adaptive approvals: document and refine the risk tiers between "approve
+    dangerous only" and "full access" (#20);
+  - system-level notifications when the agent is blocked on a permission or
+    question (#21).
+- **v0.4.0 Reach & interop** — using Open Science from outside the desktop window:
+  - LAN web UI with authentication (phone / second machine on the same
+    network) (#3);
+  - messaging-platform integrations (Slack / Discord / Telegram / Feishu) for
+    submitting tasks and receiving results (#20);
+  - Agent Client Protocol (ACP) support so external editors/agents can drive
+    the runtime (#14).
+
+Ordering rationale: v0.3.0 items make the core desktop loop better for the
+existing research audience (small-to-medium, high frequency-of-use); v0.4.0
+items open new surfaces (large, security-sensitive — the LAN UI and messaging
+bridges must not weaken the local-first / keychain-only-secrets guarantees).
 
 ## 10. Non-functional requirements
 
