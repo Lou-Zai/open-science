@@ -231,5 +231,17 @@
   },
   "agentMessage": {
     "previewTitle": "预览 {{path}}"
+  },
+  "goal": {
+    "label": "目标",
+    "running": "进行中",
+    "runningTurns": "自动第 {{count}} 轮",
+    "paused": "已暂停",
+    "done": "完成",
+    "pauseAria": "暂停目标（停止自动续跑）",
+    "resumeAria": "继续目标",
+    "clearAria": "清除目标",
+    "unmet": "受阻",
+    "limited": "达到上限"
   }
 }

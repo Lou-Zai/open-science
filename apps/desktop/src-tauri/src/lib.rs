@@ -4,6 +4,7 @@ mod artifact_file;
 mod debug_log;
 mod examples;
 mod git_snapshot;
+mod goal;
 mod harness;
 mod compute;
 mod jupyter;
@@ -77,6 +78,8 @@ pub fn run() {
             runtime::set_workspace,
             runtime::mark_session,
             runtime::new_dated_workspace,
+            goal::goal_state,
+            goal::goal_update,
             project::create_project,
             project::list_projects,
             project::rename_project,

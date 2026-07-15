@@ -74,6 +74,10 @@ jobs:
         shell: bash
         run: bash scripts/dev/fetch-uv.sh ${{ matrix.target }}
 
+      - name: Fetch bundled goal plugin
+        shell: bash
+        run: bash scripts/dev/fetch-goal-plugin.sh
+
       - name: Build the app (Tauri)
         uses: tauri-apps/tauri-action@v0
         env:

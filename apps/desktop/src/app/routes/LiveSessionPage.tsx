@@ -12,6 +12,7 @@ import { useScrollMemory } from "@/lib/scrollMemory";
 import { BlockList, type BlockHandlers } from "@/components/thread/BlockList";
 import { Elapsed } from "@/components/thread/ToolGroup";
 import { Composer } from "@/components/thread/Composer";
+import { GOAL_RESUME_NUDGE, GoalPill } from "@/components/thread/GoalPill";
 import { baseName } from "@/components/thread/WorkspaceChip";
 import { WorkflowStarters } from "@/components/thread/WorkflowStarters";
 import { InteractionPrompt } from "@/components/thread/InteractionPrompt";
@@ -278,6 +279,16 @@ export function LiveSessionPage() {
               right-side controls off the bar. */}
           {sessionId && (
             <h1 className="min-w-0 truncate text-[13px] font-medium text-text">{title ?? ""}</h1>
+          )}
+          {/* Goal mode (/goal): the objective stays visible with live status
+              and instant pause/clear — an agent that keeps working on its own
+              must never be invisible. Resume also kicks one turn: a paused
+              session has no idle event left to re-arm the plugin's loop. */}
+          {sessionId && (
+            <GoalPill
+              sessionId={sessionId}
+              onResumed={() => void sendPrompt(GOAL_RESUME_NUDGE)}
+            />
           )}
           <div data-tauri-drag-region={overlayTitlebar || undefined} className="flex-1" />
           {/* Right: quiet ghost controls — no border or fill until hovered or

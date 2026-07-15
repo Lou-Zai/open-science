@@ -231,5 +231,17 @@
   },
   "agentMessage": {
     "previewTitle": "{{path}} 미리보기"
+  },
+  "goal": {
+    "label": "목표",
+    "running": "진행 중",
+    "runningTurns": "자동 턴 {{count}}",
+    "paused": "일시정지",
+    "done": "완료",
+    "pauseAria": "목표 일시정지 (자동 계속 중지)",
+    "resumeAria": "목표 재개",
+    "clearAria": "목표 지우기",
+    "unmet": "차단됨",
+    "limited": "한도 도달"
   }
 }

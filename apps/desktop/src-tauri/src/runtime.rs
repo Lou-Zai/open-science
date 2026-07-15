@@ -38,6 +38,12 @@ fn xdg_config_home(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(runtime_root(app)?.join("xdg-config"))
 }
 
+/// The sidecar's XDG_DATA_HOME — also where the bundled goal plugin keeps its
+/// per-session state (`opencode-goal-plugin/goals.json`, read by `goal.rs`).
+pub(crate) fn xdg_data_home(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(runtime_root(app)?.join("xdg-data"))
+}
+
 /// File recording the user's chosen active workspace folder (absolute path).
 fn active_workspace_file(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(runtime_root(app)?.join("active-workspace.txt"))
@@ -223,6 +229,27 @@ fn deploy_bundled_skills(app: &AppHandle) {
     if all_ok {
         prune_stale_skills(&dst, &bundled);
     }
+}
+
+/// Ship the bundled goal plugin (one self-contained JS file, see
+/// scripts/dev/fetch-goal-plugin.sh) into the app-private OpenCode profile and
+/// return its absolute path for the config's `plugin` array. OpenCode 1.17
+/// cannot install npm plugin specs itself (silently ignored), so the file is
+/// referenced by absolute path. None in dev runs without the fetch script.
+fn deploy_goal_plugin(app: &AppHandle) -> Option<PathBuf> {
+    let src = app
+        .path()
+        .resolve("goal-plugin/goal-plugin.server.js", tauri::path::BaseDirectory::Resource)
+        .ok()
+        .filter(|p| p.is_file())?;
+    let dst = xdg_config_home(app).ok()?.join("opencode").join("goal-plugin.server.js");
+    std::fs::create_dir_all(dst.parent()?).ok()?;
+    // Refresh on every start so app upgrades replace the plugin in place.
+    if let Err(e) = std::fs::copy(&src, &dst) {
+        eprintln!("failed to deploy goal plugin: {e}");
+        return None;
+    }
+    Some(dst)
 }
 
 /// Remove every SKILL.md-bearing directory in `dst` whose name is not in
@@ -641,6 +668,16 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<CommandChild, String> {
             std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
         }
         std::fs::write(&cfg_file, seeded).map_err(|e| e.to_string())?;
+    }
+    // Goal mode (/goal): register the bundled plugin under its deployed path.
+    // Forward slashes everywhere — Windows accepts them, and the config stays
+    // portable for opencode's path-spec detection.
+    if let Some(plugin_path) = deploy_goal_plugin(app) {
+        let existing = std::fs::read_to_string(&cfg_file).unwrap_or_default();
+        let path_str = plugin_path.to_string_lossy().replace('\\', "/");
+        if let Some(updated) = crate::opencode_config::ensure_goal_plugin(&existing, &path_str) {
+            std::fs::write(&cfg_file, updated).map_err(|e| e.to_string())?;
+        }
     }
     // Secrets live under the runtime root (provider/connector keys in
     // opencode.jsonc, OpenCode's auth.json) — owner-only on every start, so

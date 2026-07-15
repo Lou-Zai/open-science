@@ -239,5 +239,17 @@
   },
   "agentMessage": {
     "previewTitle": "Preview {{path}}"
+  },
+  "goal": {
+    "label": "Goal",
+    "running": "running",
+    "runningTurns": "auto-turn {{count}}",
+    "paused": "paused",
+    "done": "done",
+    "pauseAria": "Pause the goal (stops auto-continuation)",
+    "resumeAria": "Resume the goal",
+    "clearAria": "Clear the goal",
+    "unmet": "blocked",
+    "limited": "limit reached"
   }
 }

@@ -231,5 +231,17 @@
   },
   "agentMessage": {
     "previewTitle": "{{path}} をプレビュー"
+  },
+  "goal": {
+    "label": "ゴール",
+    "running": "実行中",
+    "runningTurns": "自動ターン {{count}}",
+    "paused": "一時停止",
+    "done": "完了",
+    "pauseAria": "ゴールを一時停止（自動続行を止める）",
+    "resumeAria": "ゴールを再開",
+    "clearAria": "ゴールをクリア",
+    "unmet": "ブロック",
+    "limited": "上限に到達"
   }
 }

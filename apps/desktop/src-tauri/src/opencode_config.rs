@@ -141,6 +141,38 @@ pub fn merge_config(
     serde_json::to_string_pretty(&root).map_err(|e| e.to_string())
 }
 
+/// Point the config's `plugin` array at the deployed goal plugin, replacing
+/// any stale entry from a previous install location (our entries are
+/// recognized by the `goal-plugin.server.js` file name). Returns None when the
+/// config already lists exactly this path — no rewrite, no sidecar churn.
+/// User-added plugin entries are preserved untouched.
+pub fn ensure_goal_plugin(existing: &str, plugin_path: &str) -> Option<String> {
+    let mut root: Value = if existing.trim().is_empty() {
+        json!({})
+    } else {
+        serde_json::from_str(existing).ok()?
+    };
+    if !root.is_object() {
+        root = json!({});
+    }
+    let obj = root.as_object_mut().unwrap();
+    let plugins = obj.entry("plugin").or_insert_with(|| json!([]));
+    if !plugins.is_array() {
+        *plugins = json!([]);
+    }
+    let arr = plugins.as_array_mut().unwrap();
+    let ours = |v: &Value| {
+        v.as_str()
+            .is_some_and(|s| s.ends_with("goal-plugin.server.js"))
+    };
+    if arr.iter().any(|v| v.as_str() == Some(plugin_path)) && arr.iter().filter(|v| ours(v)).count() == 1 {
+        return None; // already exactly right
+    }
+    arr.retain(|v| !ours(v));
+    arr.push(json!(plugin_path));
+    serde_json::to_string_pretty(&root).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -212,6 +244,28 @@ mod tests {
     #[test]
     fn set_permission_mode_rejects_unknown_mode() {
         assert!(set_permission_mode("", "off").is_err());
+    }
+
+    #[test]
+    fn ensure_goal_plugin_adds_entry_to_empty_config() {
+        let out = ensure_goal_plugin("", "/app/goal-plugin.server.js").unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["plugin"], json!(["/app/goal-plugin.server.js"]));
+    }
+
+    #[test]
+    fn ensure_goal_plugin_replaces_stale_path_and_keeps_others() {
+        let existing = r#"{"plugin":["my-other-plugin","/old/place/goal-plugin.server.js"],"model":"m"}"#;
+        let out = ensure_goal_plugin(existing, "/new/goal-plugin.server.js").unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["plugin"], json!(["my-other-plugin", "/new/goal-plugin.server.js"]));
+        assert_eq!(v["model"], "m"); // unrelated keys preserved
+    }
+
+    #[test]
+    fn ensure_goal_plugin_is_idempotent() {
+        let existing = r#"{"plugin":["/app/goal-plugin.server.js"]}"#;
+        assert!(ensure_goal_plugin(existing, "/app/goal-plugin.server.js").is_none());
     }
 
     #[test]
