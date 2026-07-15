@@ -42,6 +42,7 @@ import { deriveArtifact } from "./artifacts";
 import { provenanceInputFromEvent, recordProvenance } from "./provenance";
 import { recordRun, runInputFromEvent } from "./runs";
 import { splitReview } from "./review";
+import { notifyPermissionRequest } from "./systemNotification";
 import i18n from "@/i18n";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -244,6 +245,7 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
 const recordedProvenance = new Set<string>();
 /** Bash calls already written to the run store — terminal events can repeat per callId. */
 const recordedRuns = new Set<string>();
+const notifiedPermissions = new Set<string>();
 
 /** Sessions the user just interrupted: the thread already shows "Interrupted",
  *  so the abort's own trailing events (an "aborted" error and one or more
@@ -757,6 +759,10 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
           set((s) => ({ questions: s.questions.filter((q) => q.requestId !== event.requestId) }));
           return;
         case "permission.asked":
+          if (!notifiedPermissions.has(event.requestId)) {
+            notifiedPermissions.add(event.requestId);
+            void notifyPermissionRequest({ action: event.action, resources: event.resources });
+          }
           set((s) => ({
             permissions: [
               ...s.permissions.filter((p) => p.requestId !== event.requestId),

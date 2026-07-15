@@ -46,6 +46,7 @@ const mocks = vi.hoisted(() => ({
     mocks.approvalMode = mode;
     return "http://127.0.0.1:1";
   }),
+  notifyPermissionRequest: vi.fn(async () => true),
   startRuntime: vi.fn(async () => "http://127.0.0.1:1"),
   /** Constructor options every OpenCodeClient was created with. */
   clientOpts: [] as Record<string, unknown>[],
@@ -66,6 +67,9 @@ vi.mock("./tauri", () => ({
   runtimePassword: async () => "pw-test",
 }));
 vi.mock("./kernel", () => ({ kernelReset: mocks.kernelReset }));
+vi.mock("./systemNotification", () => ({
+  notifyPermissionRequest: mocks.notifyPermissionRequest,
+}));
 vi.mock("@ai4s/sdk", () => {
   class OpenCodeClient {
     private statusCb: (s: string) => void = () => {};
@@ -196,6 +200,7 @@ beforeEach(async () => {
   mocks.approvalMode = "approve";
   mocks.currentModel = null;
   mocks.failSetModel = false;
+  mocks.notifyPermissionRequest.mockResolvedValue(true);
   useRuntimeStore.setState({
     currentId: null,
     workspacePinned: false,
@@ -588,6 +593,26 @@ describe("subagent permission asks and long sync turns", () => {
     expect(mocks.replyPermission).toHaveBeenCalledTimes(3);
     expect(mocks.replyPermission).toHaveBeenCalledWith("per_b", "always");
     expect(useRuntimeStore.getState().permissions).toHaveLength(0);
+  });
+
+  it("sends one system notification for each new permission request", async () => {
+    await useRuntimeStore.getState().sendPrompt("go");
+    const permission = {
+      type: "permission.asked" as const,
+      sessionId: "ses_new",
+      requestId: "per_notify",
+      action: "bash",
+      resources: ["npm install"],
+    };
+
+    mocks.fireEvent(permission);
+    mocks.fireEvent(permission);
+
+    expect(mocks.notifyPermissionRequest).toHaveBeenCalledTimes(1);
+    expect(mocks.notifyPermissionRequest).toHaveBeenCalledWith({
+      action: "bash",
+      resources: ["npm install"],
+    });
   });
 });
 
