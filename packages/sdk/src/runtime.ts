@@ -41,7 +41,9 @@ export interface AgentRuntime {
   listSessions(): Promise<SessionMeta[]>;
   deleteSession(sessionId: string): Promise<void>;
   getMessages(sessionId: string): Promise<HistoryMessage[]>;
-  sendPrompt(sessionId: string, text: string): Promise<void>;
+  /** `agent` pins a specific agent for the turn (e.g. the read-only "plan"
+   *  agent); omit for the runtime default. See lib/runtime.ts AgentMode. */
+  sendPrompt(sessionId: string, text: string, agent?: string): Promise<void>;
   abortSession(sessionId: string): Promise<void>;
 
   // ---- capability discovery (what this runtime can do) ----
