@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ToolUpdatedEvent } from "@ai4s/sdk";
-import { provenanceInputFromEvent } from "./provenance";
+import { provenanceInputFromEvent, provenanceInputsFromEvent } from "./provenance";
 
 const write = (over: Partial<ToolUpdatedEvent> = {}): ToolUpdatedEvent => ({
   type: "tool.updated",
@@ -49,6 +49,44 @@ describe("provenanceInputFromEvent", () => {
     expect(provenanceInputFromEvent(write({ status: "running" }))).toBeNull();
     expect(provenanceInputFromEvent(write({ tool: "bash" }))).toBeNull();
     expect(provenanceInputFromEvent(write({ input: {} }))).toBeNull();
+  });
+
+  it("fans an apply_patch call out to one record per file", () => {
+    // apply_patch names each file inside `patchText` (not in a path field) and can
+    // touch many files at once — every add/update must become its own version.
+    const patchText = [
+      "*** Begin Patch",
+      "*** Add File: PROGRESS.md",
+      "+2026-07-16 done",
+      "*** Update File: src/plot.py",
+      "@@ -1 +1 @@",
+      "-print(1)",
+      "+print(2)",
+      "*** Delete File: old.tmp",
+      "*** End Patch",
+    ].join("\n");
+    const records = provenanceInputsFromEvent({
+      type: "tool.updated",
+      sessionId: "ses_1",
+      callId: "call_1",
+      tool: "apply_patch",
+      status: "success",
+      input: { patchText },
+    } as unknown as ToolUpdatedEvent);
+
+    expect(records.map((r) => r.path)).toEqual(["PROGRESS.md", "src/plot.py"]); // delete skipped
+    const added = records.find((r) => r.path === "PROGRESS.md");
+    expect(added?.content).toBe("2026-07-16 done"); // `+` stripped → full new text
+    expect(added?.diff).toBeUndefined();
+    const updated = records.find((r) => r.path === "src/plot.py");
+    expect(updated?.content).toBeUndefined();
+    expect(updated?.diff).toContain("+print(2)"); // diff kept for lineage
+  });
+
+  it("wraps a single non-patch write as a one-element list, [] when not version-worthy", () => {
+    expect(provenanceInputsFromEvent(write()).map((r) => r.path)).toEqual(["fig/plot.py"]);
+    expect(provenanceInputsFromEvent(write({ status: "running" }))).toEqual([]);
+    expect(provenanceInputsFromEvent(write({ tool: "bash" }))).toEqual([]);
   });
 
   it("records mutating jupyter tools but not reads", () => {

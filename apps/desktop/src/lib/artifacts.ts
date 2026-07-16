@@ -240,6 +240,55 @@ export function deriveArtifact(event: ToolUpdatedEvent): ArtifactBlock | null {
   };
 }
 
+/** One file section parsed out of an apply_patch `patchText`. */
+export interface PatchFile {
+  path: string;
+  op: "add" | "update" | "delete";
+  /** The section body verbatim: `+`-prefixed lines for an add, diff hunks for an update. */
+  body: string;
+}
+
+const PATCH_HEADER = /^\*\*\* (Add|Update|Delete) File: (.+?)\s*$/;
+const PATCH_MOVE = /^\*\*\* Move to: (.+?)\s*$/;
+
+/**
+ * Split an apply_patch `patchText` into its per-file sections. apply_patch names
+ * each target *inside* the patch body (`*** Update File: <path>`) rather than in a
+ * path field, and a single call can touch many files — so a caller that records
+ * one path per event silently drops every file. Parsing here lets provenance fan
+ * out to one record per file.
+ */
+export function parsePatchFiles(patchText: string): PatchFile[] {
+  const files: PatchFile[] = [];
+  let path: string | null = null;
+  let op: PatchFile["op"] = "update";
+  let lines: string[] = [];
+  const flush = () => {
+    if (path !== null) files.push({ path, op, body: lines.join("\n") });
+    path = null;
+    lines = [];
+  };
+  for (const line of patchText.split("\n")) {
+    const h = PATCH_HEADER.exec(line);
+    if (h) {
+      flush();
+      op = h[1].toLowerCase() as PatchFile["op"];
+      path = h[2];
+      continue;
+    }
+    if (path === null) continue; // preamble before the first file (e.g. "*** Begin Patch")
+    if (line.startsWith("*** End Patch")) break;
+    const mv = PATCH_MOVE.exec(line);
+    if (mv) {
+      path = mv[1]; // a rename — attribute the change to its destination
+      continue;
+    }
+    lines.push(line);
+  }
+  flush();
+  return files;
+}
+
 /** Resolve the content shown for the active version, falling back to inspector-level fields. */
 export function resolveArtifactContent(
   data: ArtifactInspector,
