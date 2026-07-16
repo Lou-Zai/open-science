@@ -56,6 +56,46 @@ describe("looksLikeExecution", () => {
     }
   });
 
+  it("recognizes path-form / venv interpreters, not only a bare `python`", () => {
+    for (const c of [
+      // Windows venv interpreter by full path (issue #23).
+      'C:\\path\\to\\project\\.venv\\Scripts\\python.exe -c "print(1)"',
+      // PowerShell call operator in front of the path.
+      '& C:\\path\\to\\project\\.venv\\Scripts\\python.exe -c "print(1)"',
+      // Windows path with spaces, quoted.
+      '"C:\\Program Files\\Python\\python.exe" train.py',
+      // POSIX absolute and relative venv interpreters.
+      "/home/u/proj/.venv/bin/python train.py",
+      "./.venv/bin/python train.py",
+      // Bare `python.exe` and versioned names still work.
+      'python.exe -c "print(1)"',
+      "python3.11 train.py",
+      // Env prefix in front of a path-form interpreter.
+      "CUDA_VISIBLE_DEVICES=0 /home/u/.venv/bin/python train.py",
+    ]) {
+      expect(looksLikeExecution(c)).toBe(true);
+      expect(surfaceForCommand(c)).toBe("local");
+    }
+  });
+
+  it("does not mistake a path to a non-interpreter for a run", () => {
+    for (const c of [
+      "C:\\Windows\\System32\\cmd.exe /c dir",
+      "/usr/bin/cat train.py",
+      "./configure --prefix=/usr",
+    ]) {
+      expect(looksLikeExecution(c)).toBe(false);
+    }
+  });
+
+  it("treats bash/sh as a run only when the first argument is a .sh script", () => {
+    expect(looksLikeExecution("bash run_experiment.sh")).toBe(true);
+    expect(looksLikeExecution("sh scripts/go.sh")).toBe(true);
+    // A `.sh` merely mentioned in a quoted argument is NOT a run.
+    expect(looksLikeExecution('bash -c "echo foo.sh"')).toBe(false);
+    expect(looksLikeExecution('bash -c "python train.py"')).toBe(false);
+  });
+
   it("records commands prefixed with environment-variable assignments", () => {
     // Ubiquitous in ML — the env prefix must not hide the interpreter.
     expect(looksLikeExecution("CUDA_VISIBLE_DEVICES=0 python train.py")).toBe(true);

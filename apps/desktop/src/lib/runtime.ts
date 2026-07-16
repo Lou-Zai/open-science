@@ -1222,7 +1222,9 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       set,
       get,
       text,
-      (sid) => withRetry(() => client!.sendPrompt(sid, text, agent)),
+      // Pass the current default model so an old session (which OpenCode bound
+      // to its creation-time model) follows a later model switch, per #8.
+      (sid) => withRetry(() => client!.sendPrompt(sid, text, agent, get().defaultModel)),
       false,
     );
   },
@@ -1382,7 +1384,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
           },
         };
       });
-      await client.sendPrompt(id, prompt);
+      await client.sendPrompt(id, prompt, undefined, get().defaultModel);
       return id;
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });

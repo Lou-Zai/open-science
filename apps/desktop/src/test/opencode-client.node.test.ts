@@ -315,3 +315,22 @@ describe("per-prompt agent pinning", () => {
     client.close();
   });
 });
+
+describe("per-prompt model pinning (#8: old sessions follow the current default)", () => {
+  it("sends model as {providerID, modelID} when a default is passed, omits it otherwise", async () => {
+    const client = new OpenCodeClient({ baseUrl: `http://127.0.0.1:${server.port}` });
+    await client.connect();
+    const sessionId = await client.createSession();
+    const before = server.promptBodies.length;
+
+    await client.sendPrompt(sessionId, "hi", undefined, "anthropic/claude-opus-4-8");
+    await client.sendPrompt(sessionId, "hi again"); // no default → no model key
+    await client.sendPrompt(sessionId, "hi", undefined, "malformed-no-slash"); // unparseable → omitted
+
+    const bodies = server.promptBodies.slice(before) as Array<Record<string, unknown>>;
+    expect(bodies[0]).toMatchObject({ model: { providerID: "anthropic", modelID: "claude-opus-4-8" } });
+    expect(bodies[1]).not.toHaveProperty("model");
+    expect(bodies[2]).not.toHaveProperty("model");
+    client.close();
+  });
+});

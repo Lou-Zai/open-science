@@ -47,6 +47,17 @@ function errorText(error: unknown): string | undefined {
   return typeof full === "string" && full ? full.split("\n")[0] : undefined;
 }
 
+/** Split a "provider/model" default-model string into the `{providerID, modelID}`
+ *  shape the prompt API expects. Returns undefined when the string is empty or
+ *  has no provider prefix (so the caller omits the key and the server falls back
+ *  to its own default). Splits on the FIRST slash: a model id may contain more. */
+function parseModel(model?: string | null): { providerID: string; modelID: string } | undefined {
+  if (!model) return undefined;
+  const i = model.indexOf("/");
+  if (i <= 0 || i >= model.length - 1) return undefined;
+  return { providerID: model.slice(0, i), modelID: model.slice(i + 1) };
+}
+
 /**
  * The single boundary between the app and the OpenCode agent runtime.
  * Talks to a running `opencode serve` over its HTTP + SSE API. The UI must go
@@ -657,14 +668,27 @@ export class OpenCodeClient implements AgentRuntime {
   /** Send a prompt into a session; output streams back via onEvent (SSE).
    *  `agent` pins the turn to a specific agent (e.g. "plan"); omitted, the
    *  server resolves its default — the key is left out entirely so build-mode
-   *  requests stay byte-identical to before. */
-  async sendPrompt(sessionId: string, text: string, agent?: string): Promise<void> {
+   *  requests stay byte-identical to before.
+   *
+   *  `model` ("provider/model") pins the turn to the current default model.
+   *  OpenCode persists a `session.model` at session creation, so switching the
+   *  global default does NOT rebind existing sessions — an old session would
+   *  keep answering on its creation-time provider/model. Passing the current
+   *  default on every turn overrides that stale binding without mutating the
+   *  server's stored rows. Omitted/unparseable, the key is left out and the
+   *  server falls back to the session/global default. */
+  async sendPrompt(sessionId: string, text: string, agent?: string, model?: string | null): Promise<void> {
+    const m = parseModel(model);
     const res = await this.fetchWithTimeout(
       `${this.baseUrl}/session/${encodeURIComponent(sessionId)}/prompt_async`,
       {
         method: "POST",
         headers: this.headers(true),
-        body: JSON.stringify({ parts: [{ type: "text", text }], ...(agent ? { agent } : {}) }),
+        body: JSON.stringify({
+          parts: [{ type: "text", text }],
+          ...(agent ? { agent } : {}),
+          ...(m ? { model: m } : {}),
+        }),
       },
     );
     if (!res.ok) throw await this.apiError(res, "Failed to send prompt");
