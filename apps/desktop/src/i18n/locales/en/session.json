@@ -7,7 +7,8 @@
     "placeholder": {
       "default": "Ask anything",
       "arguments": "Arguments (optional) — Enter to run",
-      "shell": "Run a shell command in the workspace folder"
+      "shell": "Run a shell command in the workspace folder",
+      "plan": "Describe what to plan — no files will be changed"
     },
     "commandsAria": "Commands",
     "source": {
@@ -35,6 +36,20 @@
     },
     "send": {
       "aria": "Send"
+    },
+    "agent": {
+      "aria": "Agent mode",
+      "title": "Plan first or build right away",
+      "menuAria": "Agent modes",
+      "menuTitle": "How should the agent work?",
+      "build": {
+        "label": "Build",
+        "description": "Edits files and runs commands"
+      },
+      "plan": {
+        "label": "Plan",
+        "description": "Read-only: researches and writes a plan file first"
+      }
     },
     "approval": {
       "aria": "Approval mode",

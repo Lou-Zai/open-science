@@ -7,7 +7,8 @@
     "placeholder": {
       "default": "尽情提问",
       "arguments": "参数（可选）— 按 Enter 运行",
-      "shell": "在工作区文件夹中运行 shell 命令"
+      "shell": "在工作区文件夹中运行 shell 命令",
+      "plan": "描述要规划的任务——不会改动任何文件"
     },
     "commandsAria": "命令",
     "source": {
@@ -35,6 +36,20 @@
     },
     "send": {
       "aria": "发送"
+    },
+    "agent": {
+      "aria": "代理模式",
+      "title": "先规划还是直接执行",
+      "menuAria": "代理模式",
+      "menuTitle": "让代理怎么工作？",
+      "build": {
+        "label": "执行",
+        "description": "编辑文件并运行命令"
+      },
+      "plan": {
+        "label": "规划",
+        "description": "只读：先调研并写出计划文件"
+      }
     },
     "approval": {
       "aria": "审批模式",

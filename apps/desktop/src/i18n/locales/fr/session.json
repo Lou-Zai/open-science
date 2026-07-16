@@ -7,7 +7,8 @@
     "placeholder": {
       "default": "Posez n'importe quelle question",
       "arguments": "Arguments (facultatif) — Entrée pour exécuter",
-      "shell": "Exécuter une commande shell dans le dossier de l'espace de travail"
+      "shell": "Exécuter une commande shell dans le dossier de l'espace de travail",
+      "plan": "Décrivez quoi planifier — aucun fichier ne sera modifié"
     },
     "commandsAria": "Commandes",
     "source": {
@@ -35,6 +36,20 @@
     },
     "send": {
       "aria": "Envoyer"
+    },
+    "agent": {
+      "aria": "Mode de l'agent",
+      "title": "Planifier d'abord ou exécuter directement",
+      "menuAria": "Modes de l'agent",
+      "menuTitle": "Comment l'agent doit-il travailler ?",
+      "build": {
+        "label": "Exécuter",
+        "description": "Modifie des fichiers et lance des commandes"
+      },
+      "plan": {
+        "label": "Planifier",
+        "description": "Lecture seule : recherche et rédige d'abord un plan"
+      }
     },
     "approval": {
       "aria": "Mode d'approbation",

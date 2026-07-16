@@ -1,7 +1,20 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowUp, Check, ChevronDown, Hand, Paperclip, Square, Terminal, X, Zap } from "lucide-react";
+import {
+  ArrowUp,
+  Check,
+  ChevronDown,
+  ClipboardList,
+  Hammer,
+  Hand,
+  Paperclip,
+  Square,
+  Terminal,
+  X,
+  Zap,
+} from "lucide-react";
 import { addFilesToWorkspace, addTextToWorkspace, isTauri, type ApprovalMode } from "@/lib/tauri";
+import type { AgentMode } from "@/lib/runtime";
 import { WorkspaceChip } from "@/components/thread/WorkspaceChip";
 import { useUiStore } from "@/lib/store";
 import { toast } from "@/lib/toast";
@@ -50,6 +63,13 @@ const APPROVAL_OPTIONS: { mode: ApprovalMode; icon: typeof Hand }[] = [
   { mode: "full", icon: Zap },
 ];
 
+/** Build (default) or Plan — OpenCode's read-only planning agent. Copy is
+ *  translated at render time (`agentCopy`), mirroring the approval switch. */
+const AGENT_OPTIONS: { mode: AgentMode; icon: typeof Hammer }[] = [
+  { mode: "build", icon: Hammer },
+  { mode: "plan", icon: ClipboardList },
+];
+
 /**
  * The "Ask anything" composer. Static mock sessions pass no `onSend`; the live
  * OpenCode session passes one to submit prompts to the runtime. Attached
@@ -73,6 +93,8 @@ export function Composer({
   placeholder,
   approvalMode,
   onApprovalModeChange,
+  agentMode,
+  onAgentModeChange,
 }: {
   onSend?: (text: string) => void;
   onRunShell?: (command: string) => void;
@@ -88,6 +110,10 @@ export function Composer({
    *  session does; static mock sessions don't). */
   approvalMode?: ApprovalMode;
   onApprovalModeChange?: (mode: ApprovalMode) => void;
+  /** The Build/Plan agent switch — same both-or-nothing contract; the live
+   *  session withholds it when the runtime has no "plan" agent. */
+  agentMode?: AgentMode;
+  onAgentModeChange?: (mode: AgentMode) => void;
 }) {
   const { t } = useTranslation(["session", "common"]);
   const resolvedPlaceholder = placeholder ?? t("composer.placeholder.default");
@@ -101,6 +127,17 @@ export function Composer({
     full: {
       label: t("composer.approval.full.label"),
       description: t("composer.approval.full.description"),
+    },
+  };
+  // Agent-mode copy, same pattern as approvalCopy.
+  const agentCopy: Record<AgentMode, { label: string; description: string }> = {
+    build: {
+      label: t("composer.agent.build.label"),
+      description: t("composer.agent.build.description"),
+    },
+    plan: {
+      label: t("composer.agent.plan.label"),
+      description: t("composer.agent.plan.description"),
     },
   };
   const [value, setValue] = useState("");
@@ -117,6 +154,9 @@ export function Composer({
   /** The approval-mode menu is open. */
   const [approvalOpen, setApprovalOpen] = useState(false);
   const approvalRef = useRef<HTMLDivElement>(null);
+  /** The agent-mode menu is open. */
+  const [agentOpen, setAgentOpen] = useState(false);
+  const agentRef = useRef<HTMLDivElement>(null);
 
   // Dismiss the approval menu on any outside press. (Button blur can't do
   // this: WKWebView never focuses a clicked button, so blur never fires.)
@@ -128,6 +168,15 @@ export function Composer({
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [approvalOpen]);
+  // Same for the agent menu.
+  useEffect(() => {
+    if (!agentOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!agentRef.current?.contains(e.target as Node)) setAgentOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [agentOpen]);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const composerDraft = useUiStore((s) => s.composerDraft);
   const setComposerDraft = useUiStore((s) => s.setComposerDraft);
@@ -367,7 +416,15 @@ export function Composer({
     <div
       className={cn(
         "relative rounded-card border bg-surface px-2 py-2 shadow-card",
-        shellMode ? "border-warn/60" : command ? "border-accent/50" : "border-border",
+        // Plan mode gets the blue link tone — distinct from shell (warn) and
+        // a chipped command (accent) — so a read-only turn is unmistakable.
+        shellMode
+          ? "border-warn/60"
+          : command
+            ? "border-accent/50"
+            : agentMode === "plan"
+              ? "border-link/60"
+              : "border-border",
       )}
     >
       {paletteOpen && (
@@ -484,6 +541,61 @@ export function Composer({
         {/* Folder picker for a fresh draft — renders nothing once the session
             exists (its folder then shows in the header's Files toggle). */}
         <WorkspaceChip />
+        {agentMode && onAgentModeChange && (
+          <div className="relative shrink-0" ref={agentRef}>
+            {agentOpen && (
+              <div
+                role="menu"
+                aria-label={t("composer.agent.menuAria")}
+                className="absolute bottom-full left-0 z-20 mb-2 w-80 rounded-card border border-border bg-surface p-1 shadow-card"
+              >
+                <div className="px-2 pb-1 pt-1.5 text-xs text-muted">
+                  {t("composer.agent.menuTitle")}
+                </div>
+                {AGENT_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.mode}
+                    role="menuitemradio"
+                    aria-checked={opt.mode === agentMode}
+                    className="flex w-full items-start gap-2 rounded-input px-2 py-1.5 text-left hover:bg-surface-2"
+                    // mousedown, not click — a click would blur the textarea first.
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setAgentOpen(false);
+                      if (opt.mode !== agentMode) onAgentModeChange(opt.mode);
+                    }}
+                  >
+                    <opt.icon size={13} className="mt-0.5 shrink-0 text-muted" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs text-text">{agentCopy[opt.mode].label}</span>
+                      <span className="block text-xs text-muted">
+                        {agentCopy[opt.mode].description}
+                      </span>
+                    </span>
+                    {opt.mode === agentMode && (
+                      <Check size={13} className="mt-0.5 shrink-0 text-accent" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              aria-label={t("composer.agent.aria")}
+              title={t("composer.agent.title")}
+              className={cn(
+                "flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs",
+                agentMode === "plan"
+                  ? "bg-link/15 text-link hover:bg-link/25"
+                  : "text-muted hover:bg-surface-2 hover:text-text",
+              )}
+              onClick={() => setAgentOpen((o) => !o)}
+            >
+              {agentMode === "plan" ? <ClipboardList size={12} /> : <Hammer size={12} />}
+              <span>{agentCopy[agentMode].label}</span>
+              <ChevronDown size={11} />
+            </button>
+          </div>
+        )}
         {approvalMode && onApprovalModeChange && (
           <div className="relative shrink-0" ref={approvalRef}>
             {approvalOpen && (

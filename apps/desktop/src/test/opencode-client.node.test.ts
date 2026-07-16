@@ -294,3 +294,24 @@ describe("OpenCodeClient ↔ OpenCode server", () => {
     await expect(client.getMessages("ses_hung")).rejects.toThrow("Timed out waiting for OpenCode");
   });
 });
+
+describe("per-prompt agent pinning", () => {
+  it("sends the optional agent field exactly when passed", async () => {
+    const client = new OpenCodeClient({ baseUrl: `http://127.0.0.1:${server.port}` });
+    await client.connect();
+    const sessionId = await client.createSession();
+    const before = server.promptBodies.length;
+
+    await client.sendPrompt(sessionId, "plan the analysis", "plan");
+    await client.sendPrompt(sessionId, "run a literature review");
+
+    const bodies = server.promptBodies.slice(before) as Array<Record<string, unknown>>;
+    expect(bodies[0]).toMatchObject({
+      agent: "plan",
+      parts: [{ type: "text", text: "plan the analysis" }],
+    });
+    // Build mode stays byte-identical to before: no agent key at all.
+    expect(bodies[1]).not.toHaveProperty("agent");
+    client.close();
+  });
+});

@@ -48,6 +48,16 @@ export interface SessionIdleEvent {
 /** The turn's model call failed and the server is retrying it — OpenCode backs
  *  off exponentially with NO attempt cap, so without surfacing these the UI
  *  shows a bare "Working…" forever while every attempt fails. */
+/** A user message landed carrying its agent — including the build message
+ *  OpenCode injects itself when the plan_exit question is answered Yes. The
+ *  app syncs its per-session agent-mode state from this (never from question
+ *  text, which is locale/version-brittle). */
+export interface MessageAgentEvent {
+  type: "message.agent";
+  sessionId: string;
+  agent: string;
+}
+
 export interface SessionRetryEvent {
   type: "session.retry";
   sessionId: string;
@@ -112,6 +122,7 @@ export type OpenCodeEvent =
   | TextUpdatedEvent
   | ToolUpdatedEvent
   | SessionIdleEvent
+  | MessageAgentEvent
   | SessionRetryEvent
   | RuntimeErrorEvent
   | QuestionAskedEvent
@@ -172,6 +183,10 @@ export interface HistoryMessage {
    *  failed turn whose live session.error was missed (SSE reconnect, app
    *  restart) reloads as an empty reply with no explanation at all. */
   error?: string;
+  /** Agent that drove this message ("build" / "plan" / …) — required upstream
+   *  on user messages; the app derives a session's agent mode from the last
+   *  user message when (re)opening it. */
+  agent?: string;
   parts: HistoryPart[];
 }
 export interface HistoryPart {

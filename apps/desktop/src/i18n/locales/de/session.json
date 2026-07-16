@@ -7,7 +7,8 @@
     "placeholder": {
       "default": "Fragen Sie irgendetwas",
       "arguments": "Argumente (optional) — Enter zum Ausführen",
-      "shell": "Einen Shell-Befehl im Arbeitsbereichsordner ausführen"
+      "shell": "Einen Shell-Befehl im Arbeitsbereichsordner ausführen",
+      "plan": "Beschreibe, was geplant werden soll — keine Dateien werden geändert"
     },
     "commandsAria": "Befehle",
     "source": {
@@ -35,6 +36,20 @@
     },
     "send": {
       "aria": "Senden"
+    },
+    "agent": {
+      "aria": "Agentenmodus",
+      "title": "Erst planen oder direkt umsetzen",
+      "menuAria": "Agentenmodi",
+      "menuTitle": "Wie soll der Agent arbeiten?",
+      "build": {
+        "label": "Umsetzen",
+        "description": "Bearbeitet Dateien und führt Befehle aus"
+      },
+      "plan": {
+        "label": "Planen",
+        "description": "Nur lesen: recherchiert und schreibt zuerst einen Plan"
+      }
     },
     "approval": {
       "aria": "Genehmigungsmodus",

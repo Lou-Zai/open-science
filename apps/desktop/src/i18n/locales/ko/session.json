@@ -7,7 +7,8 @@
     "placeholder": {
       "default": "무엇이든 물어보세요",
       "arguments": "인자 (선택 사항) — Enter를 눌러 실행",
-      "shell": "워크스페이스 폴더에서 셸 명령 실행"
+      "shell": "워크스페이스 폴더에서 셸 명령 실행",
+      "plan": "계획할 내용을 입력하세요 — 파일은 변경되지 않습니다"
     },
     "commandsAria": "명령",
     "source": {
@@ -35,6 +36,20 @@
     },
     "send": {
       "aria": "전송"
+    },
+    "agent": {
+      "aria": "에이전트 모드",
+      "title": "먼저 계획할지 바로 실행할지",
+      "menuAria": "에이전트 모드",
+      "menuTitle": "에이전트 작동 방식",
+      "build": {
+        "label": "실행",
+        "description": "파일을 편집하고 명령을 실행"
+      },
+      "plan": {
+        "label": "계획",
+        "description": "읽기 전용: 조사 후 계획을 먼저 작성"
+      }
     },
     "approval": {
       "aria": "승인 모드",

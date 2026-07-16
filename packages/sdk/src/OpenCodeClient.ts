@@ -328,7 +328,12 @@ export class OpenCodeClient {
     );
     if (!res.ok) throw await this.apiError(res, "Failed to load messages");
     const arr = (await res.json()) as Array<{
-      info: { role: "user" | "assistant"; time?: { completed?: number }; error?: unknown };
+      info: {
+        role: "user" | "assistant";
+        time?: { completed?: number };
+        error?: unknown;
+        agent?: string;
+      };
       parts: HistoryMessage["parts"];
     }>;
     return arr.map((m) => {
@@ -337,6 +342,7 @@ export class OpenCodeClient {
         role: m.info.role,
         completed: m.info.time?.completed,
         ...(error ? { error } : {}),
+        ...(m.info.agent ? { agent: m.info.agent } : {}),
         parts: m.parts ?? [],
       };
     });
@@ -647,14 +653,17 @@ export class OpenCodeClient {
     if (!res.ok) throw await this.apiError(res, `Failed to run /${command}`);
   }
 
-  /** Send a prompt into a session; output streams back via onEvent (SSE). */
-  async sendPrompt(sessionId: string, text: string): Promise<void> {
+  /** Send a prompt into a session; output streams back via onEvent (SSE).
+   *  `agent` pins the turn to a specific agent (e.g. "plan"); omitted, the
+   *  server resolves its default — the key is left out entirely so build-mode
+   *  requests stay byte-identical to before. */
+  async sendPrompt(sessionId: string, text: string, agent?: string): Promise<void> {
     const res = await this.fetchWithTimeout(
       `${this.baseUrl}/session/${encodeURIComponent(sessionId)}/prompt_async`,
       {
         method: "POST",
         headers: this.headers(true),
-        body: JSON.stringify({ parts: [{ type: "text", text }] }),
+        body: JSON.stringify({ parts: [{ type: "text", text }], ...(agent ? { agent } : {}) }),
       },
     );
     if (!res.ok) throw await this.apiError(res, "Failed to send prompt");
@@ -797,8 +806,19 @@ export class OpenCodeClient {
     switch (raw.type) {
       case "message.updated": {
         // Learn each message's role so we can skip the echoed user message parts.
-        const info = props.info as { id?: string; role?: string } | undefined;
+        const info = props.info as
+          | { id?: string; role?: string; sessionID?: string; agent?: string }
+          | undefined;
         if (info?.id && info.role) this.roles.set(info.id, info.role);
+        // A user message names its agent — surface it so the app can keep its
+        // per-session agent mode in sync (plan_exit "Yes" injects a build one).
+        if (info?.role === "user" && typeof info.agent === "string" && info.sessionID) {
+          this.emit({
+            type: "message.agent",
+            sessionId: String(info.sessionID),
+            agent: info.agent,
+          });
+        }
         break;
       }
       case "message.part.updated": {

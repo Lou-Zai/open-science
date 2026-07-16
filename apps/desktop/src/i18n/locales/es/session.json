@@ -7,7 +7,8 @@
     "placeholder": {
       "default": "Pregunta lo que quieras",
       "arguments": "Argumentos (opcional) — Enter para ejecutar",
-      "shell": "Ejecuta un comando de shell en la carpeta del espacio de trabajo"
+      "shell": "Ejecuta un comando de shell en la carpeta del espacio de trabajo",
+      "plan": "Describe qué planificar — no se modificará ningún archivo"
     },
     "commandsAria": "Comandos",
     "source": {
@@ -35,6 +36,20 @@
     },
     "send": {
       "aria": "Enviar"
+    },
+    "agent": {
+      "aria": "Modo del agente",
+      "title": "Planificar primero o construir directamente",
+      "menuAria": "Modos del agente",
+      "menuTitle": "¿Cómo debe trabajar el agente?",
+      "build": {
+        "label": "Construir",
+        "description": "Edita archivos y ejecuta comandos"
+      },
+      "plan": {
+        "label": "Planificar",
+        "description": "Solo lectura: investiga y escribe primero un plan"
+      }
     },
     "approval": {
       "aria": "Modo de aprobación",

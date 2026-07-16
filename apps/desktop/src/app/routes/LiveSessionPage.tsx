@@ -62,6 +62,9 @@ export function LiveSessionPage() {
     reconcileRunning,
     approvalMode,
     setApprovalMode,
+    agents,
+    sessionAgents,
+    setAgentMode,
   } = useRuntimeStore();
   const clearingLocalCommand = useRef(false);
 
@@ -205,6 +208,11 @@ export function LiveSessionPage() {
   // artifact or Files browser (mutually exclusive, enforced by the store) and
   // gets it back when the user returns.
   const pane = panes[currentId ?? DRAFT_KEY];
+  // The Build/Plan switch exists only when the runtime actually has the plan
+  // agent (older/custom sidecars may not) — otherwise Composer hides it and
+  // sends never pin an agent.
+  const planAvailable = agents.some((a) => a.name === "plan");
+  const agentMode = sessionAgents[currentId ?? DRAFT_KEY] ?? "build";
   const activeArtifact = pane?.artifact ?? null;
   const showFiles = !activeArtifact && !!pane?.showFiles;
   const showRuns = !activeArtifact && !showFiles && !!pane?.showRuns;
@@ -443,12 +451,16 @@ export function LiveSessionPage() {
               placeholder={
                 working
                   ? t("live.placeholder.waiting")
-                  : connected
-                    ? t("composer.placeholder.default")
-                    : t("live.placeholder.disconnected")
+                  : !connected
+                    ? t("live.placeholder.disconnected")
+                    : planAvailable && agentMode === "plan"
+                      ? t("composer.placeholder.plan")
+                      : t("composer.placeholder.default")
               }
               approvalMode={approvalMode}
               onApprovalModeChange={(mode) => void setApprovalMode(mode)}
+              agentMode={planAvailable ? agentMode : undefined}
+              onAgentModeChange={planAvailable ? setAgentMode : undefined}
             />
           </div>
         </div>

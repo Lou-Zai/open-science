@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   /** Fire a client status flip into the store, as the SDK's reconnect would. */
   fireStatus: (_s: string) => {},
   runShell: vi.fn(),
+  sendPromptSpy: vi.fn(),
   runCommand: vi.fn(),
   replyPermission: vi.fn(),
   abortSession: vi.fn(),
@@ -97,7 +98,10 @@ vi.mock("@ai4s/sdk", () => {
       return [{ name: "stub" }];
     }
     async listAgents() {
-      return [];
+      return [
+        { name: "build", description: "", mode: "primary" },
+        { name: "plan", description: "", mode: "primary" },
+      ];
     }
     async getDefaultModel() {
       return mocks.currentModel;
@@ -114,7 +118,9 @@ vi.mock("@ai4s/sdk", () => {
       }
       return "ses_new";
     }
-    async sendPrompt() {}
+    async sendPrompt(sid: string, text: string, agent?: string) {
+      mocks.sendPromptSpy(sid, text, agent);
+    }
     async listCommands() {
       return [{ name: "init", description: "guided AGENTS.md setup", source: "command" }];
     }
@@ -200,9 +206,13 @@ beforeEach(async () => {
     permissions: [],
     sessionParents: {},
     panes: {},
+    sessionAgents: {},
   });
   await useRuntimeStore.getState().connect();
   expect(useRuntimeStore.getState().status).toBe("ready");
+  // connect() fires loadCatalog without awaiting it — settle it so tests that
+  // override `agents` (or read them) aren't racing the catalog write.
+  await new Promise((r) => setTimeout(r, 0));
 });
 
 describe("runtime authentication", () => {
@@ -974,5 +984,57 @@ describe("model switch failure state", () => {
     useRuntimeStore.setState({ modelSwitchError: "stale" });
     useRuntimeStore.getState().disconnect();
     expect(useRuntimeStore.getState().modelSwitchError).toBe(null);
+  });
+});
+
+describe("plan agent mode", () => {
+  it("pins agent 'plan' on send, and grafts the draft's mode onto the new session", async () => {
+    useRuntimeStore.getState().setAgentMode("plan");
+    const id = await useRuntimeStore.getState().sendPrompt("plan an analysis");
+
+    expect(mocks.sendPromptSpy).toHaveBeenLastCalledWith("ses_new", "plan an analysis", "plan");
+    const { sessionAgents } = useRuntimeStore.getState();
+    expect(sessionAgents[id!]).toBe("plan");
+    expect(sessionAgents["draft"]).toBeUndefined();
+  });
+
+  it("omits the agent field entirely in build mode", async () => {
+    await useRuntimeStore.getState().sendPrompt("hello");
+    expect(mocks.sendPromptSpy).toHaveBeenLastCalledWith("ses_new", "hello", undefined);
+  });
+
+  it("never pins a stale plan mode when the runtime has no plan agent", async () => {
+    useRuntimeStore.setState({ agents: [{ name: "build", description: "", mode: "primary" }] });
+    useRuntimeStore.getState().setAgentMode("plan");
+    await useRuntimeStore.getState().sendPrompt("hi");
+    expect(mocks.sendPromptSpy).toHaveBeenLastCalledWith("ses_new", "hi", undefined);
+  });
+
+  it("follows OpenCode's plan_exit Yes-path: a build user message flips the pill", async () => {
+    useRuntimeStore.getState().setAgentMode("plan");
+    const id = await useRuntimeStore.getState().sendPrompt("plan it");
+    expect(useRuntimeStore.getState().sessionAgents[id!]).toBe("plan");
+
+    // The injected "Execute the plan" user message arrives with agent build.
+    mocks.fireEvent({ type: "message.agent", sessionId: id, agent: "build" });
+
+    expect(useRuntimeStore.getState().sessionAgents[id!]).toBe("build");
+  });
+
+  it("a fresh draft always starts in build", async () => {
+    useRuntimeStore.getState().setAgentMode("plan");
+    useRuntimeStore.getState().startDraft();
+    expect(useRuntimeStore.getState().sessionAgents["draft"]).toBeUndefined();
+  });
+
+  it("reopening a session seeds the mode from the last user message's agent", async () => {
+    mocks.messages = [
+      { role: "user", agent: "build", parts: [{ type: "text", text: "hi" }] },
+      { role: "assistant", completed: 2, parts: [] },
+      { role: "user", agent: "plan", parts: [{ type: "text", text: "plan X" }] },
+      { role: "assistant", completed: 4, parts: [] },
+    ];
+    await useRuntimeStore.getState().openSession("ses_hist");
+    expect(useRuntimeStore.getState().sessionAgents["ses_hist"]).toBe("plan");
   });
 });

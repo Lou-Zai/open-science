@@ -7,12 +7,16 @@ export interface MockOpenCode {
   port: number;
   /** Every request seen, as "METHOD /path" — lets tests assert call order. */
   requests: string[];
+  /** Parsed prompt_async bodies, in order — lets tests assert the wire shape
+   *  (e.g. the optional agent field is present exactly when passed). */
+  promptBodies: unknown[];
   close: () => Promise<void>;
 }
 
 export function startMockOpenCode(port = 0): Promise<MockOpenCode> {
   const clients = new Set<ServerResponse>();
   const requests: string[] = [];
+  const promptBodies: unknown[] = [];
 
   const send = (res: ServerResponse, obj: unknown) =>
     res.write(`data: ${JSON.stringify(obj)}\n\n`);
@@ -219,6 +223,11 @@ export function startMockOpenCode(port = 0): Promise<MockOpenCode> {
       let body = "";
       req.on("data", (chunk) => (body += chunk));
       req.on("end", () => {
+        try {
+          promptBodies.push(JSON.parse(body));
+        } catch {
+          promptBodies.push(body);
+        }
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end("{}");
         const turn = body.includes("flaky") ? streamFlakyTurn : streamTurn;
@@ -237,6 +246,7 @@ export function startMockOpenCode(port = 0): Promise<MockOpenCode> {
       resolve({
         port: actualPort,
         requests,
+        promptBodies,
         close: () =>
           new Promise((r) => {
             for (const c of clients) c.end();

@@ -114,6 +114,11 @@ interface RuntimeState {
    *  its own open artifact / Files browser and gets it back when reopened.
    *  In-memory only: an app restart returns every session to a closed pane. */
   panes: Record<string, PaneState>;
+  /** Composer agent switch per session (DRAFT_KEY for a draft); absent = build.
+   *  In-memory, but reconciled from the message stream and history: OpenCode's
+   *  plan_exit "Yes" continues the session as build — the pill must follow. */
+  sessionAgents: Record<string, AgentMode>;
+  setAgentMode: (mode: AgentMode) => void;
   openArtifact: (a: ArtifactBlock) => void;
   closeArtifact: () => void;
   setShowFiles: (show: boolean) => void;
@@ -214,6 +219,10 @@ const emptyThread = (): Thread => ({ blocks: [], index: {}, loaded: false });
 /** Threads key for the draft conversation — its blocks move to the real
  *  session id once the session exists, so the page never visibly resets. */
 export const DRAFT_KEY = "draft";
+
+/** The composer's agent switch: "build" edits and runs; "plan" is OpenCode's
+ *  read-only planning agent (edits denied except its plan .md file). */
+export type AgentMode = "build" | "plan";
 /** One bounded retry for the first POSTs after a sidecar restart — the old
  *  connection occasionally dies mid-handshake ("Load failed"). */
 async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
@@ -369,7 +378,12 @@ async function performTurn(
           panes[id!] = panes[DRAFT_KEY];
           delete panes[DRAFT_KEY];
         }
-        return { currentId: id, threads, panes };
+        const sessionAgents = { ...s.sessionAgents };
+        if (sessionAgents[DRAFT_KEY]) {
+          sessionAgents[id!] = sessionAgents[DRAFT_KEY];
+          delete sessionAgents[DRAFT_KEY];
+        }
+        return { currentId: id, threads, panes, sessionAgents };
       });
       moveScrollMemory(`chat:${DRAFT_KEY}`, `chat:${id}`);
       void get().refreshSessions();
@@ -469,6 +483,9 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
   permissions: [],
   sessionParents: {},
   panes: {},
+  sessionAgents: {},
+  setAgentMode: (mode) =>
+    set((s) => ({ sessionAgents: { ...s.sessionAgents, [s.currentId ?? DRAFT_KEY]: mode } })),
   projects: [],
   workspace: null,
   workspacePinned: false,
@@ -750,6 +767,17 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
             },
           }));
           return;
+        case "message.agent": {
+          // A user message names its agent. This is how the pill follows
+          // OpenCode's own plan_exit "Yes" (it injects a build user message)
+          // — and it self-confirms our own sends.
+          const mode: AgentMode = event.agent === "plan" ? "plan" : "build";
+          if (get().sessionAgents[event.sessionId] !== mode)
+            set((s) => ({
+              sessionAgents: { ...s.sessionAgents, [event.sessionId]: mode },
+            }));
+          return;
+        }
       }
       const sid = event.sessionId;
       if (!sid) return;
@@ -983,7 +1011,9 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       delete threads[DRAFT_KEY]; // leftovers from an aborted first message
       const panes = { ...s.panes };
       delete panes[DRAFT_KEY]; // a fresh draft starts with a closed pane
-      return { currentId: null, workspacePinned: false, threads, panes };
+      const sessionAgents = { ...s.sessionAgents };
+      delete sessionAgents[DRAFT_KEY]; // and in Build mode
+      return { currentId: null, workspacePinned: false, threads, panes, sessionAgents };
     }),
 
   // Local /new and /clear: clear the visible chat context, but keep the active
@@ -1006,7 +1036,9 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       };
       const panes = { ...s.panes };
       delete panes[DRAFT_KEY];
-      return { currentId: null, workspacePinned: true, threads, panes };
+      const sessionAgents = { ...s.sessionAgents };
+      delete sessionAgents[DRAFT_KEY];
+      return { currentId: null, workspacePinned: true, threads, panes, sessionAgents };
     }),
 
   refreshProjects: async () => {
@@ -1038,7 +1070,9 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         delete threads[DRAFT_KEY];
         const panes = { ...s.panes };
         delete panes[DRAFT_KEY];
-        return { currentId: null, workspacePinned: true, threads, panes };
+        const sessionAgents = { ...s.sessionAgents };
+        delete sessionAgents[DRAFT_KEY];
+        return { currentId: null, workspacePinned: true, threads, panes, sessionAgents };
       });
       return;
     }
@@ -1060,7 +1094,9 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         // files from the previous folder. Session panes keep their memory.
         const panes = { ...s.panes };
         delete panes[DRAFT_KEY];
-        return { currentId: null, panes, workspacePinned: true };
+        const sessionAgents = { ...s.sessionAgents };
+        delete sessionAgents[DRAFT_KEY];
+        return { currentId: null, panes, workspacePinned: true, sessionAgents };
       });
       await get().connectRetry();
       await Promise.all([get().refreshSessions(), get().loadCatalog()]);
@@ -1135,6 +1171,10 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
           ...s.threads,
           [id]: { ...historyToThread(messages, s.commands), loaded: true },
         },
+        // Seed the agent pill from history: a session that was planning when
+        // the app closed (or whose plan_exit flip fell into an SSE gap) must
+        // reopen in the mode the server is actually in.
+        sessionAgents: { ...s.sessionAgents, [id]: lastAgentMode(messages) },
       }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1155,8 +1195,23 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
 
   // The send lifecycle (new → input → send → response) is shared by plain
   // prompts, "!" shell commands and "/" slash commands — see performTurn.
-  sendPrompt: (text) =>
-    performTurn(set, get, text, (sid) => withRetry(() => client!.sendPrompt(sid, text)), false),
+  sendPrompt: (text) => {
+    // Capture the mode BEFORE performTurn: on a draft, currentId is still null
+    // here (the session is created inside), so this reads DRAFT_KEY correctly.
+    // Pin "plan" only when the catalog actually has it — a stale mode against
+    // an older/custom sidecar must not fail every send with "Agent not found".
+    const s = get();
+    const mode = s.sessionAgents[s.currentId ?? DRAFT_KEY];
+    const agent =
+      mode === "plan" && s.agents.some((a) => a.name === "plan") ? "plan" : undefined;
+    return performTurn(
+      set,
+      get,
+      text,
+      (sid) => withRetry(() => client!.sendPrompt(sid, text, agent)),
+      false,
+    );
+  },
 
   // No retry for shell/command: re-POSTing would run the command twice.
   runShell: (command) => {
@@ -1245,6 +1300,8 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
               ...s.threads,
               [sid]: { ...historyToThread(messages, s.commands), loaded: true },
             },
+            // Same for the agent pill (a plan_exit flip may have been missed).
+            sessionAgents: { ...s.sessionAgents, [sid]: lastAgentMode(messages) },
           };
         });
       } catch {
@@ -1268,11 +1325,14 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       delete runningSessions[id];
       const panes = { ...s.panes };
       delete panes[id];
+      const sessionAgents = { ...s.sessionAgents };
+      delete sessionAgents[id];
       return {
         sessions: s.sessions.filter((x) => x.id !== id),
         threads,
         runningSessions,
         panes,
+        sessionAgents,
         currentId: s.currentId === id ? null : s.currentId,
       };
     });
@@ -1558,6 +1618,16 @@ function mapToolStatus(status?: string): ToolCallStatus {
 }
 
 /** Convert loaded message history into thread blocks. */
+/** The agent mode a session's history says it is in: the last user message's
+ *  agent (upstream stamps every user message; unknown agents read as build). */
+export function lastAgentMode(messages: HistoryMessage[]): AgentMode {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === "user" && m.agent) return m.agent === "plan" ? "plan" : "build";
+  }
+  return "build";
+}
+
 export function historyToThread(messages: HistoryMessage[], commands?: CommandInfo[]): FoldState {
   const blocks: ThreadBlock[] = [];
   // OpenCode stores a slash command's EXPANDED template as the user message —

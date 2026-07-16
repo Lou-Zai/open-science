@@ -7,7 +7,8 @@
     "placeholder": {
       "default": "何でも聞いてください",
       "arguments": "引数（任意） — Enter で実行",
-      "shell": "ワークスペースフォルダでシェルコマンドを実行"
+      "shell": "ワークスペースフォルダでシェルコマンドを実行",
+      "plan": "計画する内容を入力 — ファイルは変更されません"
     },
     "commandsAria": "コマンド",
     "source": {
@@ -35,6 +36,20 @@
     },
     "send": {
       "aria": "送信"
+    },
+    "agent": {
+      "aria": "エージェントモード",
+      "title": "まず計画するか、すぐ実行するか",
+      "menuAria": "エージェントモード",
+      "menuTitle": "エージェントの動き方",
+      "build": {
+        "label": "実行",
+        "description": "ファイルを編集しコマンドを実行"
+      },
+      "plan": {
+        "label": "計画",
+        "description": "読み取り専用：調査して先に計画を書く"
+      }
     },
     "approval": {
       "aria": "承認モード",
