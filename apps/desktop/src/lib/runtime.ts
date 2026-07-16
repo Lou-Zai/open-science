@@ -19,6 +19,9 @@ import {
   detectTools as probeTools,
   commitWorkspaceSnapshot,
   createProject as createProjectFolder,
+  importProject as importProjectFolder,
+  setProjectPinned as setProjectPinnedCmd,
+  deleteProject as deleteProjectCmd,
   getApprovalMode,
   isTauri,
   listProjects,
@@ -39,7 +42,7 @@ import {
 import { kernelReset } from "./kernel";
 import { moveScrollMemory } from "./scrollMemory";
 import { deriveArtifact } from "./artifacts";
-import { provenanceInputFromEvent, recordProvenance } from "./provenance";
+import { provenanceInputsFromEvent, recordProvenance } from "./provenance";
 import { recordRun, runInputFromEvent } from "./runs";
 import { splitReview } from "./review";
 import { notifyPermissionRequest } from "./systemNotification";
@@ -145,6 +148,9 @@ interface RuntimeState {
   refreshProjects: () => Promise<void>;
   /** Create a project folder and move into it with a fresh pinned draft. */
   createProject: (name: string) => Promise<ProjectInfo | null>;
+  importProject: (path: string) => Promise<ProjectInfo | null>;
+  setProjectPinned: (id: string, pinned: boolean) => Promise<void>;
+  deleteProject: (id: string) => Promise<void>;
   /** Fresh draft pinned inside `path` (a project folder), so the next new
    *  session lands there. Skips the reconnect when the folder is already active. */
   startDraftInWorkspace: (path: string) => Promise<void>;
@@ -890,11 +896,13 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         }
       }
       applyFold(event);
-      // A completed live write becomes a provenance version (once per call).
-      if (event.type === "tool.updated" && !recordedProvenance.has(event.callId)) {
-        const input = provenanceInputFromEvent(event);
-        if (input) {
-          recordedProvenance.add(event.callId);
+      // A completed live write becomes a provenance version. One apply_patch call
+      // can touch many files, so dedupe per (call, path) rather than per call.
+      if (event.type === "tool.updated") {
+        for (const input of provenanceInputsFromEvent(event)) {
+          const key = `${event.callId}:${input.path}`;
+          if (recordedProvenance.has(key)) continue;
+          recordedProvenance.add(key);
           void recordProvenance(input, sid, get().defaultModel);
         }
       }
@@ -1074,6 +1082,38 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       set({ error: err instanceof Error ? err.message : String(err) });
       return null;
     }
+  },
+
+  importProject: async (path) => {
+    try {
+      const project = await importProjectFolder(path);
+      void get().refreshProjects();
+      await get().switchWorkspace({ path: project.path });
+      return project;
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      return null;
+    }
+  },
+
+  setProjectPinned: async (id, pinned) => {
+    // Optimistic: flip locally so the sidebar reacts immediately, then persist.
+    set((s) => ({ projects: s.projects.map((p) => (p.id === id ? { ...p, pinned } : p)) }));
+    try {
+      await setProjectPinnedCmd(id, pinned);
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+    }
+    void get().refreshProjects();
+  },
+
+  deleteProject: async (id) => {
+    try {
+      await deleteProjectCmd(id);
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+    }
+    void get().refreshProjects();
   },
 
   startDraftInWorkspace: async (path) => {

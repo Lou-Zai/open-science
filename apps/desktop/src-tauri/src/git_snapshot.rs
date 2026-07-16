@@ -362,12 +362,64 @@ fn snapshot_marker(root: &Path) -> PathBuf {
     root.join(".git").join(".openscience-snapshots")
 }
 
+/// Written under a workspace's `.openscience/` to opt it out of app-managed
+/// snapshots entirely — used for IMPORTED workspaces (a repo/folder the user
+/// brought in) so the app never `git init`s or commits into it, even when the
+/// folder isn't a git repo yet.
+const NO_SNAPSHOT_MARKER: &str = ".no-snapshots";
+
+fn no_snapshot_marker(root: &Path) -> PathBuf {
+    root.join(".openscience").join(NO_SNAPSHOT_MARKER)
+}
+
+/// Prepare an IMPORTED (user-brought) workspace so the app never auto-commits
+/// into it. A real git repo is already safe (our commit path skips any repo
+/// without the snapshot marker); there we only keep the app's `.openscience/`
+/// dir out of the user's `git status` via a local `.git/info/exclude` (never
+/// their tracked `.gitignore`). A plain folder gets an explicit opt-out marker
+/// so a later commit never `git init`s it. Best-effort; failures are non-fatal.
+pub fn mark_imported(root: &Path) {
+    if root.join(".git").is_dir() {
+        exclude_locally(root, ".openscience/");
+    } else {
+        let osdir = root.join(".openscience");
+        let _ = std::fs::create_dir_all(&osdir);
+        let _ = std::fs::write(no_snapshot_marker(root), b"imported\n");
+    }
+}
+
+/// Append a pattern to `.git/info/exclude` (a local, untracked ignore that does
+/// not modify the user's committed `.gitignore`) unless already present.
+fn exclude_locally(root: &Path, pattern: &str) {
+    let exclude = root.join(".git").join("info").join("exclude");
+    let existing = std::fs::read_to_string(&exclude).unwrap_or_default();
+    if existing.lines().any(|l| l.trim() == pattern) {
+        return;
+    }
+    if let Some(parent) = exclude.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut content = existing;
+    if !content.is_empty() && !content.ends_with('\n') {
+        content.push('\n');
+    }
+    content.push_str(pattern);
+    content.push('\n');
+    let _ = std::fs::write(&exclude, content);
+}
+
 /// Ensure an app-owned snapshot repo exists. Returns `Ok(false)` when the folder
-/// already holds a git repo we did not create — the caller must then NOT commit,
-/// so the user's own history and staged work are left untouched.
+/// already holds a git repo we did not create, or is an imported workspace —
+/// the caller must then NOT commit, so the user's own history and staged work
+/// are left untouched.
 fn ensure_owned_repo(root: &Path) -> Result<bool, String> {
     if !git_available() {
         return Err("git is not available".into());
+    }
+    // An imported workspace opts out of app-managed snapshots entirely — never
+    // `git init` it and never commit, whether or not it is a git repo.
+    if no_snapshot_marker(root).exists() {
+        return Ok(false);
     }
     if root.join(".git").exists() {
         // A pre-existing repo is only ours if we planted the marker at init.
@@ -531,6 +583,57 @@ mod tests {
         // We must decline it, leave the tree/index alone, and plant no marker.
         assert_eq!(commit(&root, "should be skipped").unwrap(), false);
         assert!(!super::snapshot_marker(&root).exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn imported_plain_folder_is_never_initialized_or_committed() {
+        if !git_available() {
+            eprintln!("git unavailable; skipping git snapshot test");
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("os-git-imported-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("notes.md"), "brought-in work\n").unwrap();
+
+        // Importing a plain (non-repo) folder opts it out of snapshots.
+        super::mark_imported(&root);
+        assert!(super::no_snapshot_marker(&root).exists());
+
+        // A later commit must NOT `git init` it and must NOT commit.
+        assert_eq!(commit(&root, "should be skipped").unwrap(), false);
+        assert!(!root.join(".git").exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn importing_a_repo_keeps_it_pristine_and_excludes_the_provenance_dir() {
+        if !git_available() {
+            eprintln!("git unavailable; skipping git snapshot test");
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("os-git-imported-repo-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        super::run(&root, &["init"]).unwrap();
+
+        super::mark_imported(&root);
+        // A real repo isn't given the opt-out marker (marker-absence already
+        // makes commit() skip it) but gets a LOCAL exclude for .openscience/.
+        assert!(!super::no_snapshot_marker(&root).exists());
+        let exclude = fs::read_to_string(root.join(".git/info/exclude")).unwrap();
+        assert!(exclude.lines().any(|l| l.trim() == ".openscience/"));
+
+        // Still declined by commit(), user's history untouched, and idempotent.
+        assert_eq!(commit(&root, "should be skipped").unwrap(), false);
+        super::mark_imported(&root); // no duplicate exclude line
+        let count = fs::read_to_string(root.join(".git/info/exclude"))
+            .unwrap()
+            .lines()
+            .filter(|l| l.trim() == ".openscience/")
+            .count();
+        assert_eq!(count, 1);
         let _ = fs::remove_dir_all(&root);
     }
 }

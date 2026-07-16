@@ -313,6 +313,7 @@ export class OpenCodeClient implements AgentRuntime {
       slug?: string;
       directory?: string;
       parentID?: string | null;
+      time?: { created?: number; updated?: number };
     }>;
     return arr.map((s) => ({
       id: s.id,
@@ -320,6 +321,8 @@ export class OpenCodeClient implements AgentRuntime {
       slug: s.slug,
       directory: s.directory,
       parentId: s.parentID ?? undefined,
+      created: s.time?.created,
+      updated: s.time?.updated,
     }));
   }
 

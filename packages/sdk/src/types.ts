@@ -143,6 +143,10 @@ export interface SessionMeta {
   directory?: string;
   /** Set on subagent sessions: the session whose task tool spawned this one. */
   parentId?: string;
+  /** Epoch ms the session was created / last updated (from OpenCode's `time`).
+   *  Drives "Updated" timestamps and recency ordering. */
+  created?: number;
+  updated?: number;
 }
 
 export interface SkillInfo {

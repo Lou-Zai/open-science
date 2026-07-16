@@ -12,15 +12,35 @@
     "notebooks": "Notebooks",
     "files": "Dateien",
     "runs": "Durchläufe",
-    "skills": "Skills"
+    "skills": "Skills",
+    "projects": "Projekte"
   },
   "projects": {
     "heading": "Projekte",
     "new": "Neues Projekt",
+    "importedBadge": "importiert",
+    "menuScratch": "Bei null anfangen",
+    "menuExisting": "Vorhandenen Ordner verwenden",
+    "nameTitle": "Projekt benennen",
+    "nameSubtitle": "Kurz und einprägsam halten",
     "namePlaceholder": "Projektname",
     "newSessionAria": "Neue Sitzung in „{{name}}“",
     "noSessions": "Noch keine Sitzungen.",
-    "renameHint": "Zum Umbenennen doppelklicken"
+    "renameHint": "Zum Umbenennen doppelklicken",
+    "pageSearch": "Projekte suchen",
+    "colName": "Name",
+    "colSources": "Quellen",
+    "colUpdated": "Aktualisiert",
+    "noResults": "Keine passenden Projekte.",
+    "pin": "Anheften",
+    "unpin": "Lösen",
+    "rename": "Umbenennen",
+    "remove": "Entfernen",
+    "more": "Mehr",
+    "removeTitle": "{{name}} entfernen?",
+    "removeBody": "Entfernt das Projekt aus der Seitenleiste. Dateien auf der Festplatte werden nicht gelöscht.",
+    "seeAll": "Alle Projekte",
+    "openFolder": "{{path}} öffnen"
   },
   "history": {
     "heading": "Sitzungen",

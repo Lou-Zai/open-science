@@ -417,8 +417,14 @@ export interface ProjectInfo {
   name: string;
   description?: string;
   createdAt: number;
-  /** Absolute workspace folder (canonical, matches session `directory`). */
+  /** Absolute workspace folder (canonical, matches session `directory`). For an
+   *  imported project this is the external repo, not the app's stub folder. */
   path: string;
+  /** True when this project points at a user-brought external repo/folder — the
+   *  app never auto-commits into an imported workspace. */
+  imported: boolean;
+  /** Whether this project is pinned to the sidebar. */
+  pinned: boolean;
 }
 
 /** Create a project folder (with metadata, harness and an initial git
@@ -429,6 +435,14 @@ export async function createProject(name: string): Promise<ProjectInfo> {
   return invoke<ProjectInfo>("create_project", { name });
 }
 
+/** Import an existing repo/folder as a project, referenced in place: the repo
+ *  is not moved, not scaffolded, and never auto-committed into. */
+export async function importProject(path: string): Promise<ProjectInfo> {
+  if (!isTauri) throw new Error("not running in the desktop app");
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<ProjectInfo>("import_project", { path });
+}
+
 /** Every project under the base dir, sorted by name. */
 export async function listProjects(): Promise<ProjectInfo[]> {
   if (!isTauri) return [];
@@ -436,11 +450,35 @@ export async function listProjects(): Promise<ProjectInfo[]> {
   return invoke<ProjectInfo[]>("list_projects");
 }
 
-/** Rename a project's display name (the folder never moves). */
-export async function renameProject(path: string, name: string): Promise<void> {
+/** Rename a project's display name (keyed by id; the folder never moves). */
+export async function renameProject(id: string, name: string): Promise<void> {
   if (!isTauri) throw new Error("not running in the desktop app");
   const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("rename_project", { path, name });
+  await invoke("rename_project", { id, name });
+}
+
+/** Open a project's workspace folder in the OS file manager (Finder / Explorer /
+ *  Linux file manager). Resolved server-side from the project id. */
+export async function openProjectFolder(id: string): Promise<void> {
+  if (!isTauri) throw new Error("not running in the desktop app");
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("open_project_folder", { id });
+}
+
+/** Pin/unpin a project to the sidebar. */
+export async function setProjectPinned(id: string, pinned: boolean): Promise<void> {
+  if (!isTauri) throw new Error("not running in the desktop app");
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("set_project_pinned", { id, pinned });
+}
+
+/** Remove a project from the index. Files on disk are NOT deleted (an imported
+ *  project's external repo is untouched; an app-created project's folder stays,
+ *  demoted to a plain folder). */
+export async function deleteProject(id: string): Promise<void> {
+  if (!isTauri) throw new Error("not running in the desktop app");
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("delete_project", { id });
 }
 
 /** Native folder picker; null on cancel or in the browser. */

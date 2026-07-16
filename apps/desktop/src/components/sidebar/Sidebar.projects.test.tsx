@@ -8,6 +8,8 @@ const PROJECT = {
   name: "BCI Trends",
   createdAt: 1,
   path: "/base/BCI-Trends",
+  imported: false,
+  pinned: false,
 };
 
 afterEach(() =>
@@ -40,7 +42,16 @@ describe("Sidebar projects", () => {
 
   it("offers a new-project entry when no projects exist yet", async () => {
     renderAt("/files");
-    // Header [+] plus the ghost row — both open the inline name input.
+    // Header [+] (the add-project menu trigger) plus the ghost row.
     expect((await screen.findAllByRole("button", { name: "New project" })).length).toBeGreaterThan(0);
+  });
+
+  it("badges an imported project (referenced in place, not auto-committed)", async () => {
+    useRuntimeStore.setState({
+      projects: [{ ...PROJECT, id: "p2", name: "My Repo", path: "/home/me/my-repo", imported: true }],
+    });
+    renderAt("/files");
+    expect(await screen.findByText("My Repo")).toBeInTheDocument();
+    expect(screen.getByText("imported")).toBeInTheDocument();
   });
 });

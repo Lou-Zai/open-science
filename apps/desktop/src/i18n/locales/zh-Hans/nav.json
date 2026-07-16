@@ -12,15 +12,35 @@
     "notebooks": "笔记本",
     "files": "文件",
     "runs": "运行",
-    "skills": "技能"
+    "skills": "技能",
+    "projects": "项目"
   },
   "projects": {
     "heading": "项目",
     "new": "新建项目",
+    "importedBadge": "导入",
+    "menuScratch": "从零开始",
+    "menuExisting": "使用已有文件夹",
+    "nameTitle": "命名项目",
+    "nameSubtitle": "简短好记即可",
     "namePlaceholder": "项目名称",
     "newSessionAria": "在“{{name}}”中新建会话",
     "noSessions": "暂无会话。",
-    "renameHint": "双击重命名"
+    "renameHint": "双击重命名",
+    "pageSearch": "搜索项目",
+    "colName": "名称",
+    "colSources": "来源",
+    "colUpdated": "更新时间",
+    "noResults": "没有匹配的项目。",
+    "pin": "置顶",
+    "unpin": "取消置顶",
+    "rename": "重命名",
+    "remove": "移除",
+    "more": "更多",
+    "removeTitle": "移除 {{name}}?",
+    "removeBody": "这会从侧边栏移除该项目。磁盘上的文件不会被删除。",
+    "seeAll": "全部项目",
+    "openFolder": "打开 {{path}}"
   },
   "history": {
     "heading": "会话",

@@ -12,15 +12,35 @@
     "notebooks": "Notebooks",
     "files": "Fichiers",
     "runs": "Exécutions",
-    "skills": "Compétences"
+    "skills": "Compétences",
+    "projects": "Projets"
   },
   "projects": {
     "heading": "Projets",
     "new": "Nouveau projet",
+    "importedBadge": "importé",
+    "menuScratch": "Partir de zéro",
+    "menuExisting": "Utiliser un dossier existant",
+    "nameTitle": "Nommer le projet",
+    "nameSubtitle": "Court et reconnaissable",
     "namePlaceholder": "Nom du projet",
     "newSessionAria": "Nouvelle session dans « {{name}} »",
     "noSessions": "Aucune session pour l’instant.",
-    "renameHint": "Double-cliquez pour renommer"
+    "renameHint": "Double-cliquez pour renommer",
+    "pageSearch": "Rechercher des projets",
+    "colName": "Nom",
+    "colSources": "Sources",
+    "colUpdated": "Mis à jour",
+    "noResults": "Aucun projet correspondant.",
+    "pin": "Épingler",
+    "unpin": "Détacher",
+    "rename": "Renommer",
+    "remove": "Retirer",
+    "more": "Plus",
+    "removeTitle": "Retirer {{name}} ?",
+    "removeBody": "Retire le projet de la barre latérale. Les fichiers sur le disque ne seront pas supprimés.",
+    "seeAll": "Tous les projets",
+    "openFolder": "Ouvrir {{path}}"
   },
   "history": {
     "heading": "Sessions",
