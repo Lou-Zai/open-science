@@ -7,6 +7,7 @@ vi.mock("@/lib/tauri", () => ({
   isTauri: true,
   addFilesToWorkspace: vi.fn(async () => ["data.csv"]),
   addTextToWorkspace: vi.fn(async () => "pasted.txt"),
+  addBinaryToWorkspace: vi.fn(async () => "pasted.png"),
 }));
 
 describe("Composer attachments (desktop)", () => {
@@ -51,5 +52,25 @@ describe("Composer attachments (desktop)", () => {
     // A short paste stays a normal paste (no new chip).
     fireEvent.paste(input, { clipboardData: { getData: () => "short text" } });
     expect(screen.getAllByText("pasted.txt")).toHaveLength(1);
+  });
+
+  it("turns a pasted image (screenshot) into an image file chip", async () => {
+    render(<Composer onSend={vi.fn()} />);
+    const input = screen.getByLabelText("Ask anything") as HTMLTextAreaElement;
+
+    // A clipboard image item, as macOS/Windows/Linux webviews expose it.
+    fireEvent.paste(input, {
+      clipboardData: {
+        getData: () => "",
+        items: [
+          {
+            type: "image/png",
+            getAsFile: () => new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" }),
+          },
+        ],
+      },
+    });
+    await waitFor(() => expect(screen.getByText("pasted.png")).toBeTruthy());
+    expect(input.value).toBe(""); // the image never lands as text
   });
 });

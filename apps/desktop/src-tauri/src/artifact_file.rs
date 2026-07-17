@@ -508,6 +508,51 @@ pub fn add_text_to_workspace(
     Ok(name)
 }
 
+/// Copy explicit local file paths into the workspace (deduplicated). Used by
+/// drag-and-drop, which hands us OS paths — the native-picker path is
+/// `add_files_to_workspace`. Directories and unreadable entries are skipped.
+#[tauri::command]
+pub fn add_paths_to_workspace(app: AppHandle, paths: Vec<String>) -> Result<Vec<String>, String> {
+    let ws = workspace_dir(&app)?;
+    let mut added = Vec::new();
+    for p in paths {
+        let src = Path::new(&p);
+        if !src.is_file() {
+            continue; // attach files only, not folders
+        }
+        let name = src.file_name().ok_or("path has no file name")?.to_string_lossy().to_string();
+        let dst = unique_name(&ws, &name);
+        std::fs::copy(src, ws.join(&dst)).map_err(|e| format!("copy failed: {e}"))?;
+        added.push(dst);
+    }
+    if !added.is_empty() {
+        crate::git_snapshot::commit_best_effort(&ws, "Add workspace files");
+    }
+    Ok(added)
+}
+
+/// Write binary content (base64-encoded) into the workspace under `filename`
+/// (deduplicated as name-1.ext on collision). Used when a pasted image becomes a
+/// file. Returns the actual name written.
+#[tauri::command]
+pub fn add_binary_to_workspace(
+    app: AppHandle,
+    filename: String,
+    base64: String,
+) -> Result<String, String> {
+    let base = Path::new(&filename)
+        .file_name()
+        .ok_or("invalid file name")?
+        .to_string_lossy()
+        .to_string();
+    let bytes = base64_decode(&base64)?;
+    let ws = workspace_dir(&app)?;
+    let name = unique_name(&ws, &base);
+    std::fs::write(ws.join(&name), bytes).map_err(|e| format!("write failed: {e}"))?;
+    crate::git_snapshot::commit_best_effort(&ws, "Add workspace file");
+    Ok(name)
+}
+
 /// First free variant of `name` in `dir`: name.ext, name-1.ext, name-2.ext, …
 fn unique_name(dir: &Path, name: &str) -> String {
     if !dir.join(name).exists() {
@@ -559,6 +604,39 @@ pub async fn save_text_file(
     Ok(Some(path.to_string_lossy().to_string()))
 }
 
+/// Minimal std-only base64 decode (mirror of `base64_encode`). Skips whitespace,
+/// stops at padding, and errors on any invalid character.
+fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
+    fn val(c: u8) -> Option<u32> {
+        match c {
+            b'A'..=b'Z' => Some((c - b'A') as u32),
+            b'a'..=b'z' => Some((c - b'a' + 26) as u32),
+            b'0'..=b'9' => Some((c - b'0' + 52) as u32),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    }
+    let mut out = Vec::with_capacity(input.len() / 4 * 3);
+    let mut buf = 0u32;
+    let mut bits = 0u32;
+    for &c in input.as_bytes() {
+        if c == b'=' {
+            break;
+        }
+        if c.is_ascii_whitespace() {
+            continue;
+        }
+        buf = (buf << 6) | val(c).ok_or("invalid base64")?;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+        }
+    }
+    Ok(out)
+}
+
 /// Minimal std-only base64 (avoids adding a dependency).
 fn base64_encode(input: &[u8]) -> String {
     const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -577,9 +655,28 @@ fn base64_encode(input: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        base64_encode, dir_entries, encode_for_preview, exceeds_preview_cap, locate_under,
-        mime_for, open_url, unique_name,
+        base64_decode, base64_encode, dir_entries, encode_for_preview, exceeds_preview_cap,
+        locate_under, mime_for, open_url, unique_name,
     };
+
+    #[test]
+    fn base64_round_trips_arbitrary_bytes() {
+        // Covers each padding case (len % 3 == 0/1/2) and non-ASCII/zero bytes —
+        // a pasted PNG is arbitrary binary.
+        for bytes in [
+            &b""[..],
+            &b"f"[..],
+            &b"fo"[..],
+            &b"foo"[..],
+            &[0u8, 255, 16, 128, 1, 2, 3][..],
+            &[137, 80, 78, 71, 13, 10, 26, 10][..], // PNG magic
+        ] {
+            assert_eq!(base64_decode(&base64_encode(bytes)).unwrap(), bytes);
+        }
+        // Whitespace in the payload is ignored; a bad char errors.
+        assert_eq!(base64_decode("Zm9v\nYmFy").unwrap(), b"foobar");
+        assert!(base64_decode("not base64!@#").is_err());
+    }
 
     #[test]
     fn open_url_rejects_non_http_schemes() {

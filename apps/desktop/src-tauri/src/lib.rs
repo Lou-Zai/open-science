@@ -115,6 +115,8 @@ pub fn run() {
             artifact_file::open_url,
             artifact_file::add_files_to_workspace,
             artifact_file::add_text_to_workspace,
+            artifact_file::add_binary_to_workspace,
+            artifact_file::add_paths_to_workspace,
             artifact_file::list_notebooks,
             artifact_file::list_dir,
             artifact_file::write_workspace_file,

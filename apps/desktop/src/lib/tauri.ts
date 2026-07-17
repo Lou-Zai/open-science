@@ -54,6 +54,22 @@ export async function addTextToWorkspace(filename: string, content: string): Pro
   return invoke<string>("add_text_to_workspace", { filename, content });
 }
 
+/** Write binary content (base64) into the workspace as `filename` (deduplicated).
+ *  Used for pasted images. Returns the actual name written. */
+export async function addBinaryToWorkspace(filename: string, base64: string): Promise<string> {
+  if (!isTauri) throw new Error("not running in the desktop app");
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string>("add_binary_to_workspace", { filename, base64 });
+}
+
+/** Copy explicit local file paths into the workspace (deduplicated). Used by
+ *  drag-and-drop. Returns the names written. */
+export async function addPathsToWorkspace(paths: string[]): Promise<string[]> {
+  if (!isTauri) return [];
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string[]>("add_paths_to_workspace", { paths });
+}
+
 /**
  * Explicitly import the user's OpenCode CLI login into the app's private
  * runtime (desktop only). Returns false when no CLI login exists; the sidecar
