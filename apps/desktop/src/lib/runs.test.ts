@@ -108,6 +108,18 @@ describe("looksLikeExecution", () => {
     expect(looksLikeExecution("cd a/b && ./run.sh")).toBe(true);
   });
 
+  it("sees through transparent launch wrappers to the real command", () => {
+    // Backgrounding/launch wrappers must not hide the interpreter.
+    expect(looksLikeExecution("nohup python3 super_snake.py >/dev/null 2>&1 &")).toBe(true);
+    expect(looksLikeExecution("time python train.py")).toBe(true);
+    expect(looksLikeExecution("timeout 30 python train.py")).toBe(true);
+    expect(looksLikeExecution("stdbuf -oL julia sim.jl")).toBe(true);
+    expect(looksLikeExecution("nohup cd exp && python train.py")).toBe(true);
+    // Still gated by the interpreter allowlist — a wrapped non-run stays out.
+    expect(looksLikeExecution("nohup rsync -a a/ b/")).toBe(false);
+    expect(looksLikeExecution("timeout 5 sleep 3")).toBe(false);
+  });
+
   it("recognizes HPC/Modal/notebook batch commands even when not the head", () => {
     // Submitted over SSH — sbatch isn't the head, but it's still a run.
     expect(looksLikeExecution('ssh cluster "sbatch train.slurm"')).toBe(true);
@@ -156,6 +168,16 @@ describe("runInputFromEvent", () => {
   it("records a failed run too (a crashed experiment is provenance)", () => {
     const r = runInputFromEvent(bash({ status: "failed", output: "Traceback…" }));
     expect(r?.status).toBe("failed");
+  });
+
+  it("records a nohup-launched run, preserving the ORIGINAL command verbatim", () => {
+    // The wrapper only feeds detection — the recorded command keeps `nohup`,
+    // redirections, and the trailing `&` so Reproduce re-runs exactly this.
+    const cmd = "nohup python3 super_snake.py >/dev/null 2>&1 &";
+    const r = runInputFromEvent(bash({ input: { command: cmd } }));
+    expect(r).not.toBeNull();
+    expect(r?.command).toBe(cmd);
+    expect(r?.surface).toBe("local");
   });
 
   it("ignores non-bash, non-terminal, pathless, and non-execution commands", () => {

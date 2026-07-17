@@ -71,14 +71,22 @@ const HPC_HEAD = /^(sbatch|srun|salloc|sacct)\b/;
 const MODAL_HEAD = /^modal\s+(run|deploy|serve)\b/;
 const JUPYTER_HEAD = /^papermill\b|^jupyter\s+.*\bnbconvert\b/;
 
-/** Strip leading `VAR=val` env assignments and `cd X &&/;` hops from a command
- *  segment, exposing the operative command (e.g. `CUDA_VISIBLE_DEVICES=0 cd x
- *  && python …` → `python …`). */
+/** Strip leading `VAR=val` env assignments, `cd X &&/;` hops, and transparent
+ *  launch wrappers from a command segment, exposing the operative command (e.g.
+ *  `CUDA_VISIBLE_DEVICES=0 cd x && nohup python …` → `python …`). This feeds
+ *  detection only — the ORIGINAL command (wrappers and all) is what gets
+ *  recorded, so nothing the user typed is lost. */
 function stripPrefixes(segment: string): string {
   let c = segment.trim();
   const cd = /^cd\s+(?:"[^"]*"|'[^']*'|[^\s&;]+)\s*(?:&&|;)\s*/;
   const env = /^\w+=(?:"[^"]*"|'[^']*'|\S*)\s+/;
   const call = /^&\s+/; // PowerShell call operator: `& C:\proj\.venv\Scripts\python.exe`
+  // Transparent wrappers that prefix — but don't change — the command that
+  // actually runs (`nohup python …`, `timeout 30 python …`, `stdbuf -oL julia
+  // …`). Stripping them lets the real interpreter head show through. Wrappers
+  // that take their own argument (`timeout <dur>`, `stdbuf <-flags>`) consume it
+  // too, so the head lands on the operative command.
+  const wrap = /^(?:nohup|time|timeout\s+\S+|stdbuf(?:\s+-\S+)+)\s+/;
   let changed = true;
   while (changed) {
     changed = false;
@@ -92,6 +100,10 @@ function stripPrefixes(segment: string): string {
     }
     if (call.test(c)) {
       c = c.replace(call, "").trim();
+      changed = true;
+    }
+    if (wrap.test(c)) {
+      c = c.replace(wrap, "").trim();
       changed = true;
     }
   }
