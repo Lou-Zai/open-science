@@ -14,7 +14,7 @@ import {
   Zap,
 } from "lucide-react";
 import { addFilesToWorkspace, addTextToWorkspace, isTauri, type ApprovalMode } from "@/lib/tauri";
-import type { AgentMode } from "@/lib/runtime";
+import { useRuntimeStore, type AgentMode } from "@/lib/runtime";
 import { WorkspaceChip } from "@/components/thread/WorkspaceChip";
 import { useUiStore } from "@/lib/store";
 import { toast } from "@/lib/toast";
@@ -374,6 +374,9 @@ export function Composer({
     e.preventDefault();
     void (async () => {
       try {
+        // Materialize the draft's folder first, so the file lands in the same
+        // workspace the session will run in (not the pre-send folder).
+        await useRuntimeStore.getState().ensureDraftWorkspace();
         const name = await addTextToWorkspace("pasted.txt", text);
         setFiles((f) => [...f, name]);
       } catch (err) {
@@ -390,6 +393,8 @@ export function Composer({
   const addFiles = async () => {
     setAdding(true);
     try {
+      // Same as paste: give the draft its folder before copying files in.
+      await useRuntimeStore.getState().ensureDraftWorkspace();
       const names = await addFilesToWorkspace();
       if (names.length > 0) setFiles((f) => [...f, ...names]);
     } catch (err) {

@@ -521,6 +521,25 @@ describe("per-session workspace folders", () => {
     useRuntimeStore.getState().startDraft();
     expect(useRuntimeStore.getState().workspacePinned).toBe(false);
   });
+
+  it("ensureDraftWorkspace materializes a fresh draft's dated folder before files are written", async () => {
+    // A brand-new, unpinned draft → creates+pins its dated folder, so a pasted
+    // or attached file lands in the same workspace the session will run in.
+    useRuntimeStore.setState({ currentId: null, workspacePinned: false });
+    mocks.newDatedWorkspace.mockClear();
+    await useRuntimeStore.getState().ensureDraftWorkspace();
+    expect(mocks.newDatedWorkspace).toHaveBeenCalledTimes(1);
+    expect(useRuntimeStore.getState().workspacePinned).toBe(true);
+
+    // Idempotent: an already-pinned draft (or a live session) is left alone, so
+    // send does not create a second dated folder that would orphan the file.
+    mocks.newDatedWorkspace.mockClear();
+    await useRuntimeStore.getState().ensureDraftWorkspace();
+    expect(mocks.newDatedWorkspace).not.toHaveBeenCalled();
+    useRuntimeStore.setState({ currentId: "ses_1", workspacePinned: false });
+    await useRuntimeStore.getState().ensureDraftWorkspace();
+    expect(mocks.newDatedWorkspace).not.toHaveBeenCalled();
+  });
 });
 
 // A task tool spawns a subagent in a CHILD session; its permission asks carry

@@ -180,6 +180,11 @@ interface RuntimeState {
   retryNotices: Record<string, { attempt: number; message: string }>;
   /** Switch to an existing folder, or (with `dated`) create a new dated one. */
   switchWorkspace: (target: { path: string } | { dated: string }) => Promise<void>;
+  /** Ensure a brand-new draft already has its own (pinned) dated folder before
+   *  composer files are written into it — otherwise a file added to a draft
+   *  lands in the pre-send folder while send would create a different dated one,
+   *  orphaning it. No-op once a session exists or the folder is already pinned. */
+  ensureDraftWorkspace: () => Promise<void>;
   openSession: (id: string) => Promise<void>;
   sendPrompt: (text: string) => Promise<string | null>;
   /** Run a "!" shell command directly in the session's workspace folder —
@@ -1131,6 +1136,15 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       return;
     }
     await get().switchWorkspace({ path });
+  },
+
+  ensureDraftWorkspace: async () => {
+    const s = get();
+    // A session already has its folder; a pinned draft's folder is reused on
+    // send. Only a fresh, unpinned draft needs its dated folder materialized now
+    // so composer files and the eventual session share one workspace.
+    if (!isTauri || s.currentId || s.workspacePinned) return;
+    await get().switchWorkspace({ dated: datedWorkspaceName() });
   },
 
   switchWorkspace: async (target) => {
