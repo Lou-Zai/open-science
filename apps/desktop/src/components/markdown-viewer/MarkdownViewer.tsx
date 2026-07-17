@@ -1,5 +1,8 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { cn } from "@/lib/cn";
 
 /** Two contexts render markdown: chat bubbles (theme colors, compact) and the
@@ -70,7 +73,11 @@ export function MarkdownViewer({
   return (
     <div className={cn(s.root, className)}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        // Render `$…$` / `$$…$$` math (KaTeX). `throwOnError: false` keeps a
+        // malformed expression from blanking the whole message — it shows the
+        // source in red instead.
+        rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}
         components={{
           p: ({ children }) => <p className={s.p}>{children}</p>,
           a: ({ children, href }) => (
