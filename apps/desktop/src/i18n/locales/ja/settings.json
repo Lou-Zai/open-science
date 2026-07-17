@@ -7,7 +7,8 @@
     "runtime": "ランタイム",
     "connectors": "コネクタ",
     "compute": "コンピューティング",
-    "privacy": "プライバシー"
+    "privacy": "プライバシー",
+    "browser": "ブラウザ"
   },
   "appearance": {
     "title": "外観",
@@ -148,6 +149,36 @@
     "commandPlaceholder": "コマンド — 例: npx -y @playwright/mcp",
     "urlPlaceholder": "URL — 例: https://example.com/mcp",
     "addServer": "サーバーを追加"
+  },
+  "browser": {
+    "label": "ブラウザ制御",
+    "title": "ブラウザ",
+    "hint": "エージェントに実際のブラウザを操作させます — ページの移動、クリック、フォーム入力、読み取り。",
+    "description": "エージェントがページを開き、クリックし、フォームに入力し、Web を読み取れるようにします — あなたの Chrome ログインを再利用します。",
+    "browseAs": "使用するプロフィール",
+    "isolated": "分離 — 新規・未ログイン",
+    "showWindow": "ブラウザウィンドウを表示",
+    "noChrome": "Chrome が見つかりません",
+    "download": "ブラウザをダウンロード",
+    "noChromeWillDownload": "Chrome が見つかりません — 初回使用時に専用ブラウザをダウンロードします。",
+    "detected": "使用中",
+    "privateBrowser": "プライベートブラウザ(未ログイン)",
+    "privateNote": "あなたの Chrome に一切触れない、別途ダウンロードしたブラウザを使用します。未ログインで開始し、初回使用時に自動ダウンロードされます。",
+    "reuseNote": "「{{name}}」のコピーを再利用します。エージェントはそのログイン済みアカウントとして操作します。実際の Chrome プロファイルは変更されません。ナビゲーションは承認モードに従います。",
+    "isolatedNote": "分離プロファイル — エージェントは未ログイン状態で開始します。ログインを再利用するには上でアカウントを選択してください。",
+    "downloaded": "ブラウザをダウンロードしました — ブラウザ制御を有効にできます。",
+    "couldNotDownload": "ブラウザをダウンロードできませんでした",
+    "enabledStatus": "有効",
+    "disabledStatus": "無効",
+    "disable": "無効にする",
+    "apply": "変更を適用",
+    "capabilities": "機能",
+    "capCore": "標準 — 移動、クリック、読み取り、スクリーンショット、JS 実行",
+    "capNetwork": "標準 + ネットワークキャプチャ(HAR、リクエスト検査)",
+    "capAll": "すべて(全ツール)",
+    "allowedDomains": "許可するドメイン",
+    "allowedDomainsHint": "1 行に 1 つ。空欄で制限なし。*.example.com のようなパターンに対応。",
+    "allowedDomainsPlaceholder": "example.com\n*.github.com"
   },
   "workspace": {
     "title": "ワークスペース",

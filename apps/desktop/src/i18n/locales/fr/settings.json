@@ -7,7 +7,8 @@
     "runtime": "Environnement d'exécution",
     "connectors": "Connecteurs",
     "compute": "Calcul",
-    "privacy": "Confidentialité"
+    "privacy": "Confidentialité",
+    "browser": "Navigateur"
   },
   "appearance": {
     "title": "Apparence",
@@ -149,6 +150,36 @@
     "commandPlaceholder": "Commande — p. ex. npx -y @playwright/mcp",
     "urlPlaceholder": "URL — p. ex. https://example.com/mcp",
     "addServer": "Ajouter un serveur"
+  },
+  "browser": {
+    "label": "Contrôle du navigateur",
+    "title": "Navigateur",
+    "hint": "Laissez l'agent piloter un vrai navigateur — naviguer, cliquer, remplir des formulaires et lire les pages.",
+    "description": "Permet à l'agent d'ouvrir des pages, de cliquer, de remplir des formulaires et de lire le web, en réutilisant votre session Chrome.",
+    "browseAs": "Naviguer en tant que",
+    "isolated": "Isolé — nouveau, déconnecté",
+    "showWindow": "Afficher la fenêtre du navigateur",
+    "noChrome": "Aucun Chrome trouvé",
+    "download": "Télécharger un navigateur",
+    "noChromeWillDownload": "Aucun Chrome détecté — un navigateur privé sera téléchargé à la première utilisation.",
+    "detected": "Utilise",
+    "privateBrowser": "Navigateur privé (sans connexion)",
+    "privateNote": "Utilise un navigateur téléchargé séparément qui ne touche jamais à votre Chrome. Démarre déconnecté ; téléchargé automatiquement à la première utilisation.",
+    "reuseNote": "Réutilise une copie de « {{name}} ». L'agent agit en tant que ce compte connecté ; votre profil Chrome réel n'est jamais modifié. La navigation suit toujours votre mode d'approbation.",
+    "isolatedNote": "Profil isolé — l'agent démarre déconnecté. Choisissez un compte ci-dessus pour réutiliser ses sessions.",
+    "downloaded": "Navigateur téléchargé — vous pouvez maintenant activer le contrôle du navigateur.",
+    "couldNotDownload": "Impossible de télécharger le navigateur",
+    "enabledStatus": "Activé",
+    "disabledStatus": "Non activé",
+    "disable": "Désactiver",
+    "apply": "Appliquer les modifications",
+    "capabilities": "Capacités",
+    "capCore": "Standard — naviguer, cliquer, lire, capture, exécuter du JS",
+    "capNetwork": "Standard + capture réseau (HAR, inspection des requêtes)",
+    "capAll": "Tout (surface complète d'outils)",
+    "allowedDomains": "Domaines autorisés",
+    "allowedDomainsHint": "Un par ligne. Vide = aucune restriction. Prend en charge des motifs comme *.example.com.",
+    "allowedDomainsPlaceholder": "example.com\n*.github.com"
   },
   "workspace": {
     "title": "Espace de travail",

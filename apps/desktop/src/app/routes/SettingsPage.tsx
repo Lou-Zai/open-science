@@ -5,6 +5,7 @@ import {
   Download,
   ExternalLink,
   FolderOpen,
+  Globe,
   Loader2,
   Minus,
   NotebookPen,
@@ -26,6 +27,11 @@ import { shippedLocales } from "@/i18n/config";
 import { getClient, useRuntimeStore } from "@/lib/runtime";
 import { useUpdateStore } from "@/lib/update";
 import {
+  agentBrowserProfiles,
+  detectChrome,
+  setupBrowserChrome,
+  type BrowserProfile,
+  type ChromeInfo,
   importOpenCodeLogin,
   isMacUA,
   isTauri,
@@ -59,6 +65,12 @@ import { Row, Section, Switch } from "@/components/settings/Section";
 import { resolveSection } from "@/components/settings/sections";
 import { inputCls, selectCls } from "@/components/settings/inputCls";
 import { SCIENCE_CONNECTORS } from "@/lib/scienceConnectors";
+import {
+  BROWSER_MCP_ID,
+  BROWSER_SOURCE,
+  BROWSER_DISPLAY_NAMES,
+  PRIVATE_BROWSER,
+} from "@/lib/browser";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/cn";
 
@@ -118,6 +130,7 @@ export function SettingsPage() {
   // must not discard the "setting up…" state or sever the progress stream.
   const jupyterBusy = useSetupStore((s) => s.jupyterBusy);
   const enablingConnector = useSetupStore((s) => s.connectorId);
+  const browserBusy = useSetupStore((s) => s.browserBusy);
   const setupLine = useSetupStore((s) => s.line);
   const setupGeneration = useSetupStore((s) => s.generation);
 
@@ -131,6 +144,14 @@ export function SettingsPage() {
   const [customIds, setCustomIds] = useState<string[]>([]);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [jupyter, setJupyter] = useState<JupyterStatus | null>(null);
+  // Browser control (agent-browser): detected Chrome + profiles, and the choices
+  // the card collects before enabling.
+  const [browserProfiles, setBrowserProfiles] = useState<BrowserProfile[]>([]);
+  const [chrome, setChrome] = useState<ChromeInfo | null>(null);
+  const [browserProfile, setBrowserProfile] = useState(""); // "" ⇒ isolated
+  const [browserHeaded, setBrowserHeaded] = useState(false);
+  const [browserTools, setBrowserTools] = useState("core");
+  const [browserDomains, setBrowserDomains] = useState(""); // one pattern per line
   // The interpreter local Python kernels resolve to + the manual override input.
   const [pyInfo, setPyInfo] = useState<PythonInterpreter | null>(null);
   const [pyPath, setPyPath] = useState("");
@@ -229,6 +250,45 @@ export function SettingsPage() {
   }, []);
   // Also on setupGeneration: a fresh jupyter-env may now back the local kernel.
   useEffect(refreshPython, [refreshPython, setupGeneration]);
+
+  // Detect Chrome + profiles once connected, and re-detect after a provisioning
+  // run (a Chrome download can appear between renders).
+  useEffect(() => {
+    if (!isTauri || !connected) return;
+    void agentBrowserProfiles().then(setBrowserProfiles);
+    void detectChrome().then((c) => {
+      setChrome(c);
+      // With no system Chrome, the only workable choice is the private browser.
+      if (!c) setBrowserProfile((p) => (p === PRIVATE_BROWSER ? p : PRIVATE_BROWSER));
+    });
+  }, [connected, setupGeneration]);
+
+  // The registered MCP entry is the source of truth for browser settings.
+  const browserServer = mcpServers.find((s) => s.name === BROWSER_MCP_ID) ?? null;
+  const browserEnabled = browserServer !== null;
+  const browserConfigSig = JSON.stringify(browserServer?.config ?? null);
+  // When enabled, mirror the live config into the form so the page shows the
+  // current settings and edits start from them (not stale defaults).
+  useEffect(() => {
+    const cfg = browserServer?.config;
+    if (!cfg || cfg.type !== "local") return;
+    const env = cfg.environment ?? {};
+    // No executable path pinned ⇒ it's the private (downloaded) browser.
+    setBrowserProfile(
+      env.AGENT_BROWSER_EXECUTABLE_PATH ? (env.AGENT_BROWSER_PROFILE ?? "") : PRIVATE_BROWSER,
+    );
+    setBrowserHeaded(env.AGENT_BROWSER_HEADED === "true");
+    setBrowserDomains(
+      (env.AGENT_BROWSER_ALLOWED_DOMAINS ?? "")
+        .split(",")
+        .map((d) => d.trim())
+        .filter(Boolean)
+        .join("\n"),
+    );
+    const ti = cfg.command.indexOf("--tools");
+    setBrowserTools(ti >= 0 && cfg.command[ti + 1] ? cfg.command[ti + 1] : "core");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [browserConfigSig]);
 
   const savePythonPath = async (path: string) => {
     setSavingPy(true);
@@ -569,6 +629,36 @@ export function SettingsPage() {
     setConnectorKeys((k) => ({ ...k, [id]: "" }));
     void useSetupStore.getState().enableConnector(id, key);
   };
+
+  const enableBrowserControl = () => {
+    const useSystemChrome = browserProfile !== PRIVATE_BROWSER;
+    void useSetupStore.getState().enableBrowser({
+      profileDir: useSystemChrome && browserProfile ? browserProfile : undefined,
+      headed: browserHeaded,
+      tools: browserTools,
+      useSystemChrome,
+      allowedDomains: browserDomains
+        .split(/[\n,]/)
+        .map((d) => d.trim())
+        .filter(Boolean),
+    });
+  };
+
+  const disableBrowser = () =>
+    run(t("toast.couldNotRemoveMcp"), async () => {
+      await removeConfigEntry("mcp", BROWSER_MCP_ID);
+      await useRuntimeStore.getState().connectRetry();
+      toast.success(t("toast.mcpRemoved", { name: t("browser.label") }));
+    });
+
+  // Pre-download a private browser when no system Chrome exists (agent-browser
+  // would otherwise fetch one silently on first use). Streams via setup-progress.
+  const downloadBrowser = () =>
+    run(t("browser.couldNotDownload"), async () => {
+      await setupBrowserChrome();
+      setChrome(await detectChrome());
+      toast.success(t("browser.downloaded"));
+    });
 
   const removeMcp = (name: string) =>
     run(t("toast.couldNotRemoveMcp"), async () => {
@@ -1192,6 +1282,181 @@ export function SettingsPage() {
                     {t("mcp.addServer")}
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+        </Section>
+        )}
+
+        {/* ---- Browser control (agent-browser) — its own page, reconfigurable ---- */}
+        {section === "browser" && (
+        <Section title={t("browser.title")} hint={t("browser.hint")}>
+          {!connected ? (
+            <p className="text-[13px] text-muted">{t("mcp.connectPrompt")}</p>
+          ) : (
+            <div className="space-y-4">
+              {/* Status + upstream */}
+              <div className="flex items-start gap-2.5">
+                <Globe size={16} className="mt-0.5 shrink-0 text-muted" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-text">{t("browser.label")}</span>
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium",
+                        browserEnabled
+                          ? "bg-ok/15 text-ok"
+                          : "bg-surface-2 text-muted ring-1 ring-border",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 rounded-full",
+                          browserEnabled ? "bg-ok" : "bg-muted",
+                        )}
+                      />
+                      {browserEnabled ? t("browser.enabledStatus") : t("browser.disabledStatus")}
+                    </span>
+                  </div>
+                  <div className="truncate font-mono text-[11px] text-muted/70">
+                    {BROWSER_SOURCE}
+                  </div>
+                </div>
+              </div>
+
+              {/* Which browser was detected (info only) */}
+              <div className="text-[13px]">
+                {chrome ? (
+                  <span className="text-muted">
+                    {t("browser.detected")}:{" "}
+                    <span className="text-text">
+                      {BROWSER_DISPLAY_NAMES[chrome.kind] ?? chrome.kind}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted">{t("browser.noChromeWillDownload")}</span>
+                )}
+              </div>
+
+              {/* Browse as — reuse a Chrome login, run isolated, or a separate
+                  private (downloaded) browser that never touches Chrome. */}
+              <div className="space-y-1.5">
+                <label className="block text-[13px] font-medium text-text">
+                  {t("browser.browseAs")}
+                </label>
+                <select
+                  value={browserProfile}
+                  onChange={(e) => setBrowserProfile(e.target.value)}
+                  className={selectCls("h-9 w-full max-w-md")}
+                >
+                  {chrome && <option value="">{t("browser.isolated")}</option>}
+                  {chrome &&
+                    browserProfiles.map((p) => (
+                      <option key={p.directory} value={p.directory}>
+                        {p.name} · {p.directory}
+                      </option>
+                    ))}
+                  <option value={PRIVATE_BROWSER}>{t("browser.privateBrowser")}</option>
+                </select>
+                <p className="max-w-md text-[11px] leading-relaxed text-muted/80">
+                  {browserProfile === PRIVATE_BROWSER
+                    ? t("browser.privateNote")
+                    : browserProfile
+                      ? t("browser.reuseNote", {
+                          name:
+                            browserProfiles.find((p) => p.directory === browserProfile)?.name ??
+                            browserProfile,
+                        })
+                      : t("browser.isolatedNote")}
+                </p>
+                {browserProfile === PRIVATE_BROWSER && (
+                  <button
+                    className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline disabled:opacity-50"
+                    onClick={() => void downloadBrowser()}
+                    disabled={browserBusy || busy}
+                  >
+                    <Download size={11} /> {t("browser.download")}
+                  </button>
+                )}
+              </div>
+
+              {/* Capabilities (tool profile) */}
+              <div className="space-y-1.5">
+                <label className="block text-[13px] font-medium text-text">
+                  {t("browser.capabilities")}
+                </label>
+                <select
+                  value={browserTools}
+                  onChange={(e) => setBrowserTools(e.target.value)}
+                  className={selectCls("h-9 w-full max-w-md")}
+                >
+                  <option value="core">{t("browser.capCore")}</option>
+                  <option value="core,network">{t("browser.capNetwork")}</option>
+                  <option value="all">{t("browser.capAll")}</option>
+                </select>
+              </div>
+
+              {/* Allowed domains — the safety guardrail */}
+              <div className="space-y-1.5">
+                <label className="block text-[13px] font-medium text-text">
+                  {t("browser.allowedDomains")}
+                </label>
+                <textarea
+                  value={browserDomains}
+                  onChange={(e) => setBrowserDomains(e.target.value)}
+                  rows={3}
+                  placeholder={t("browser.allowedDomainsPlaceholder")}
+                  className="w-full max-w-md rounded-input border border-border bg-surface-2 px-2.5 py-2 font-mono text-[12px] text-text placeholder:text-muted/50"
+                />
+                <p className="max-w-md text-[11px] leading-relaxed text-muted/80">
+                  {t("browser.allowedDomainsHint")}
+                </p>
+              </div>
+
+              {/* Show the window */}
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={browserHeaded}
+                  onChange={setBrowserHeaded}
+                  label={t("browser.showWindow")}
+                />
+                <span className="text-[13px] text-text">{t("browser.showWindow")}</span>
+              </div>
+
+              {/* Live output during a Chrome download */}
+              {(browserBusy || busy) && setupLine && (
+                <div className="flex items-center gap-2">
+                  <Loader2 size={11} className="shrink-0 animate-spin text-muted" />
+                  <span className="truncate font-mono text-[11px] text-muted">{setupLine}</span>
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  className={btnAccent()}
+                  onClick={enableBrowserControl}
+                  disabled={browserBusy || busy}
+                >
+                  {browserBusy ? (
+                    <>
+                      <Loader2 size={12} className="animate-spin" /> {t("mcp.settingUp")}
+                    </>
+                  ) : browserEnabled ? (
+                    t("browser.apply")
+                  ) : (
+                    t("mcp.enable")
+                  )}
+                </button>
+                {browserEnabled && (
+                  <button
+                    className="flex h-9 items-center rounded-input px-3.5 text-[13px] font-medium text-muted ring-1 ring-border transition-colors hover:text-error"
+                    onClick={() => void disableBrowser()}
+                    disabled={busy || browserBusy}
+                  >
+                    {t("browser.disable")}
+                  </button>
+                )}
               </div>
             </div>
           )}

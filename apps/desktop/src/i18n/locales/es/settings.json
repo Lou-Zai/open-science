@@ -7,7 +7,8 @@
     "runtime": "Entorno de ejecución",
     "connectors": "Conectores",
     "compute": "Cómputo",
-    "privacy": "Privacidad"
+    "privacy": "Privacidad",
+    "browser": "Navegador"
   },
   "appearance": {
     "title": "Apariencia",
@@ -149,6 +150,36 @@
     "commandPlaceholder": "Comando — p. ej., npx -y @playwright/mcp",
     "urlPlaceholder": "URL — p. ej., https://example.com/mcp",
     "addServer": "Añadir servidor"
+  },
+  "browser": {
+    "label": "Control del navegador",
+    "title": "Navegador",
+    "hint": "Deja que el agente controle un navegador real: navegar, hacer clic, rellenar formularios y leer páginas.",
+    "description": "Permite que el agente abra páginas, haga clic, rellene formularios y lea la web, reutilizando tu sesión de Chrome.",
+    "browseAs": "Navegar como",
+    "isolated": "Aislado: nuevo, sin sesión",
+    "showWindow": "Mostrar la ventana del navegador",
+    "noChrome": "No se encontró Chrome",
+    "download": "Descargar un navegador",
+    "noChromeWillDownload": "No se detectó Chrome: se descargará un navegador privado en el primer uso.",
+    "detected": "Usando",
+    "privateBrowser": "Navegador privado (sin sesión)",
+    "privateNote": "Usa un navegador descargado aparte que nunca toca tu Chrome. Empieza sin sesión; se descarga automáticamente en el primer uso.",
+    "reuseNote": "Reutiliza una copia de «{{name}}». El agente actúa como esa cuenta con sesión iniciada; tu perfil real de Chrome nunca se modifica. La navegación sigue tu modo de aprobación.",
+    "isolatedNote": "Perfil aislado: el agente empieza sin sesión. Elige una cuenta arriba para reutilizar sus sesiones.",
+    "downloaded": "Navegador descargado: ya puedes activar el control del navegador.",
+    "couldNotDownload": "No se pudo descargar el navegador",
+    "enabledStatus": "Activado",
+    "disabledStatus": "No activado",
+    "disable": "Desactivar",
+    "apply": "Aplicar cambios",
+    "capabilities": "Capacidades",
+    "capCore": "Estándar: navegar, clic, leer, captura, ejecutar JS",
+    "capNetwork": "Estándar + captura de red (HAR, inspección de peticiones)",
+    "capAll": "Todo (conjunto completo de herramientas)",
+    "allowedDomains": "Dominios permitidos",
+    "allowedDomainsHint": "Uno por línea. Vacío = sin restricción. Admite patrones como *.example.com.",
+    "allowedDomainsPlaceholder": "example.com\n*.github.com"
   },
   "workspace": {
     "title": "Espacio de trabajo",

@@ -275,9 +275,10 @@ export async function setPythonPath(path: string): Promise<void> {
   await invoke("set_python_path", { path });
 }
 
-/** One live output line from a uv provisioning run (jupyter / science MCP). */
+/** One live output line from a provisioning run (jupyter / science MCP env, or
+ *  an agent-browser Chrome download). */
 export interface SetupProgress {
-  task: "jupyter" | "science";
+  task: "jupyter" | "science" | "browser";
   line: string;
 }
 
@@ -304,6 +305,61 @@ export async function setupScienceMcp(pkg: string): Promise<string> {
   if (!isTauri) throw new Error("not running in the desktop app");
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<string>("setup_science_mcp", { package: pkg });
+}
+
+// ---- Browser control (bundled agent-browser sidecar) ----
+
+/** A Chrome profile agent-browser can reuse. `directory` is passed as
+ *  AGENT_BROWSER_PROFILE ("Default", "Profile 4"); `name` is the account label. */
+export interface BrowserProfile {
+  directory: string;
+  name: string;
+}
+
+/** An installed Chromium-family browser we can reuse instead of downloading. */
+export interface ChromeInfo {
+  path: string;
+  kind: "chrome" | "chromium" | "edge" | "brave" | string;
+}
+
+/** Absolute path to the bundled agent-browser sidecar (for the MCP command).
+ *  Throws in browser dev; the caller only needs it inside the desktop app. */
+export async function agentBrowserBin(): Promise<string> {
+  if (!isTauri) throw new Error("not running in the desktop app");
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string>("agent_browser_bin");
+}
+
+/** The user's Chrome profiles (empty when no Chrome / not desktop). */
+export async function agentBrowserProfiles(): Promise<BrowserProfile[]> {
+  if (!isTauri) return [];
+  const { invoke } = await import("@tauri-apps/api/core");
+  try {
+    return await invoke<BrowserProfile[]>("agent_browser_profiles");
+  } catch {
+    return [];
+  }
+}
+
+/** First installed Chrome/Chromium/Edge/Brave, or null. Setting its path as the
+ *  browser executable avoids a Chrome-for-Testing download and (on macOS) lets
+ *  the real profile's cookies decrypt without a Keychain prompt. */
+export async function detectChrome(): Promise<ChromeInfo | null> {
+  if (!isTauri) return null;
+  const { invoke } = await import("@tauri-apps/api/core");
+  try {
+    return await invoke<ChromeInfo | null>("detect_chrome");
+  } catch {
+    return null;
+  }
+}
+
+/** Download a browser (Chrome for Testing) when none is installed. Streams
+ *  progress as `setup-progress` (task "browser") and honors the proxy setting. */
+export async function setupBrowserChrome(): Promise<void> {
+  if (!isTauri) throw new Error("not running in the desktop app");
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("setup_browser_chrome");
 }
 
 /** Auto-start Jupyter on launch when it was enabled before. Silent no-op otherwise. */

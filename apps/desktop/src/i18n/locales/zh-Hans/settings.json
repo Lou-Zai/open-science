@@ -7,7 +7,8 @@
     "runtime": "运行时",
     "connectors": "连接器",
     "compute": "计算",
-    "privacy": "隐私"
+    "privacy": "隐私",
+    "browser": "浏览器"
   },
   "appearance": {
     "title": "外观",
@@ -148,6 +149,36 @@
     "commandPlaceholder": "命令 — 例如 npx -y @playwright/mcp",
     "urlPlaceholder": "URL — 例如 https://example.com/mcp",
     "addServer": "添加服务器"
+  },
+  "browser": {
+    "label": "浏览器控制",
+    "title": "浏览器",
+    "hint": "让智能体驱动真实浏览器——打开网页、点击、填表、读取页面。",
+    "description": "让智能体打开网页、点击、填写表单、读取网页内容——复用你的 Chrome 登录状态。",
+    "browseAs": "浏览身份",
+    "isolated": "隔离 — 全新、未登录",
+    "showWindow": "显示浏览器窗口",
+    "noChrome": "未找到 Chrome",
+    "download": "下载浏览器",
+    "noChromeWillDownload": "未检测到 Chrome — 首次使用时将下载一个独立浏览器。",
+    "detected": "使用",
+    "privateBrowser": "独立浏览器(无登录)",
+    "privateNote": "使用一个单独下载的浏览器,完全不碰你的 Chrome。从未登录状态开始;首次使用时自动下载。",
+    "reuseNote": "复用“{{name}}”的副本。智能体将以该已登录账号的身份操作;你的真实 Chrome 配置不会被修改。导航仍遵循你的审批模式。",
+    "isolatedNote": "隔离配置 — 智能体从未登录状态开始。在上方选择一个账号即可复用其登录。",
+    "downloaded": "浏览器已下载 — 现在可以启用浏览器控制了。",
+    "couldNotDownload": "无法下载浏览器",
+    "enabledStatus": "已启用",
+    "disabledStatus": "未启用",
+    "disable": "停用",
+    "apply": "应用更改",
+    "capabilities": "能力范围",
+    "capCore": "标准 — 导航、点击、读取、截图、执行 JS",
+    "capNetwork": "标准 + 网络抓取(HAR、请求检查)",
+    "capAll": "全部(完整工具集)",
+    "allowedDomains": "允许访问的域名",
+    "allowedDomainsHint": "每行一个。留空表示不限制。支持 *.example.com 这类通配。",
+    "allowedDomainsPlaceholder": "example.com\n*.github.com"
   },
   "workspace": {
     "title": "工作区",

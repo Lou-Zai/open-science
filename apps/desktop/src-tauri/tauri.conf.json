@@ -35,7 +35,8 @@
     "targets": "all",
     "externalBin": [
       "binaries/opencode",
-      "binaries/uv"
+      "binaries/uv",
+      "binaries/agent-browser"
     ],
     "macOS": {
       "minimumSystemVersion": "13.0"

@@ -1,6 +1,7 @@
 // AI4S Workbench — Tauri 2 entry. Hosts the React frontend and supervises the
 // bundled OpenCode sidecar (isolated config/data + dedicated port; killed on exit).
 mod artifact_file;
+mod browser;
 mod debug_log;
 mod examples;
 mod git_snapshot;
@@ -102,6 +103,10 @@ pub fn run() {
             runtime::set_proxy_setting,
             runtime::get_mirror_setting,
             runtime::set_mirror_setting,
+            browser::agent_browser_bin,
+            browser::agent_browser_profiles,
+            browser::detect_chrome,
+            browser::setup_browser_chrome,
             kernel::kernel_execute,
             kernel::kernel_reset,
             kernel::python_interpreter,

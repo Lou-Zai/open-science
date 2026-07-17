@@ -7,7 +7,8 @@
     "runtime": "런타임",
     "connectors": "커넥터",
     "compute": "컴퓨팅",
-    "privacy": "개인정보"
+    "privacy": "개인정보",
+    "browser": "브라우저"
   },
   "appearance": {
     "title": "화면 모드",
@@ -148,6 +149,36 @@
     "commandPlaceholder": "명령 — 예: npx -y @playwright/mcp",
     "urlPlaceholder": "URL — 예: https://example.com/mcp",
     "addServer": "서버 추가"
+  },
+  "browser": {
+    "label": "브라우저 제어",
+    "title": "브라우저",
+    "hint": "에이전트가 실제 브라우저를 조작하게 합니다 — 이동, 클릭, 양식 입력, 페이지 읽기.",
+    "description": "에이전트가 페이지를 열고, 클릭하고, 양식을 채우고, 웹을 읽을 수 있게 합니다 — Chrome 로그인을 재사용합니다.",
+    "browseAs": "탐색 프로필",
+    "isolated": "격리 — 새로 시작, 로그아웃 상태",
+    "showWindow": "브라우저 창 표시",
+    "noChrome": "Chrome을 찾을 수 없음",
+    "download": "브라우저 다운로드",
+    "noChromeWillDownload": "Chrome이 감지되지 않음 — 처음 사용할 때 전용 브라우저를 다운로드합니다.",
+    "detected": "사용 중",
+    "privateBrowser": "독립 브라우저(로그인 없음)",
+    "privateNote": "당신의 Chrome을 전혀 건드리지 않는 별도로 다운로드한 브라우저를 사용합니다. 로그아웃 상태로 시작하며, 처음 사용할 때 자동으로 다운로드됩니다.",
+    "reuseNote": "“{{name}}”의 복사본을 재사용합니다. 에이전트가 로그인된 해당 계정으로 작동하며, 실제 Chrome 프로필은 수정되지 않습니다. 탐색은 여전히 승인 모드를 따릅니다.",
+    "isolatedNote": "격리 프로필 — 에이전트가 로그아웃 상태로 시작합니다. 로그인을 재사용하려면 위에서 계정을 선택하세요.",
+    "downloaded": "브라우저를 다운로드했습니다 — 이제 브라우저 제어를 활성화할 수 있습니다.",
+    "couldNotDownload": "브라우저를 다운로드할 수 없습니다",
+    "enabledStatus": "활성화됨",
+    "disabledStatus": "비활성화됨",
+    "disable": "비활성화",
+    "apply": "변경 사항 적용",
+    "capabilities": "기능",
+    "capCore": "표준 — 이동, 클릭, 읽기, 스크린샷, JS 실행",
+    "capNetwork": "표준 + 네트워크 캡처(HAR, 요청 검사)",
+    "capAll": "전체(모든 도구)",
+    "allowedDomains": "허용 도메인",
+    "allowedDomainsHint": "한 줄에 하나씩. 비워 두면 제한 없음. *.example.com 같은 패턴 지원.",
+    "allowedDomainsPlaceholder": "example.com\n*.github.com"
   },
   "workspace": {
     "title": "워크스페이스",

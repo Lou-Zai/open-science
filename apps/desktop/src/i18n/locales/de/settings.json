@@ -7,7 +7,8 @@
     "runtime": "Laufzeit",
     "connectors": "Konnektoren",
     "compute": "Rechenleistung",
-    "privacy": "Datenschutz"
+    "privacy": "Datenschutz",
+    "browser": "Browser"
   },
   "appearance": {
     "title": "Erscheinungsbild",
@@ -149,6 +150,36 @@
     "commandPlaceholder": "Befehl — z. B. npx -y @playwright/mcp",
     "urlPlaceholder": "URL — z. B. https://example.com/mcp",
     "addServer": "Server hinzufügen"
+  },
+  "browser": {
+    "label": "Browsersteuerung",
+    "title": "Browser",
+    "hint": "Lässt den Agenten einen echten Browser steuern – navigieren, klicken, Formulare ausfüllen und Seiten lesen.",
+    "description": "Lässt den Agenten Seiten öffnen, klicken, Formulare ausfüllen und das Web lesen – unter Wiederverwendung deiner Chrome-Anmeldung.",
+    "browseAs": "Surfen als",
+    "isolated": "Isoliert – neu, abgemeldet",
+    "showWindow": "Browserfenster anzeigen",
+    "noChrome": "Kein Chrome gefunden",
+    "download": "Browser herunterladen",
+    "noChromeWillDownload": "Kein Chrome erkannt – beim ersten Gebrauch wird ein privater Browser heruntergeladen.",
+    "detected": "Verwendet",
+    "privateBrowser": "Privater Browser (ohne Anmeldung)",
+    "privateNote": "Verwendet einen separat heruntergeladenen Browser, der dein Chrome nie berührt. Startet abgemeldet; wird beim ersten Gebrauch automatisch heruntergeladen.",
+    "reuseNote": "Verwendet eine Kopie von „{{name}}“. Der Agent handelt als dieses angemeldete Konto; dein echtes Chrome-Profil wird nie verändert. Die Navigation folgt weiterhin deinem Genehmigungsmodus.",
+    "isolatedNote": "Isoliertes Profil – der Agent startet abgemeldet. Wähle oben ein Konto, um dessen Anmeldungen wiederzuverwenden.",
+    "downloaded": "Browser heruntergeladen – du kannst die Browsersteuerung jetzt aktivieren.",
+    "couldNotDownload": "Browser konnte nicht heruntergeladen werden",
+    "enabledStatus": "Aktiviert",
+    "disabledStatus": "Nicht aktiviert",
+    "disable": "Deaktivieren",
+    "apply": "Änderungen übernehmen",
+    "capabilities": "Funktionen",
+    "capCore": "Standard – navigieren, klicken, lesen, Screenshot, JS ausführen",
+    "capNetwork": "Standard + Netzwerkaufzeichnung (HAR, Anfrageinspektion)",
+    "capAll": "Alles (vollständiger Funktionsumfang)",
+    "allowedDomains": "Erlaubte Domains",
+    "allowedDomainsHint": "Eine pro Zeile. Leer = keine Einschränkung. Unterstützt Muster wie *.example.com.",
+    "allowedDomainsPlaceholder": "example.com\n*.github.com"
   },
   "workspace": {
     "title": "Arbeitsbereich",

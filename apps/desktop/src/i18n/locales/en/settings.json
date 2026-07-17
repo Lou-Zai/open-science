@@ -7,7 +7,8 @@
     "runtime": "Runtime",
     "connectors": "Connectors",
     "compute": "Compute",
-    "privacy": "Privacy"
+    "privacy": "Privacy",
+    "browser": "Browser"
   },
   "appearance": {
     "title": "Appearance",
@@ -149,6 +150,36 @@
     "commandPlaceholder": "Command — e.g. npx -y @playwright/mcp",
     "urlPlaceholder": "URL — e.g. https://example.com/mcp",
     "addServer": "Add server"
+  },
+  "browser": {
+    "label": "Browser control",
+    "title": "Browser",
+    "hint": "Let the agent drive a real browser — navigate, click, fill forms, and read pages.",
+    "description": "Let the agent open pages, click, fill forms, and read the web — reusing your Chrome login.",
+    "browseAs": "Browse as",
+    "isolated": "Isolated — fresh, logged out",
+    "showWindow": "Show the browser window",
+    "noChrome": "No Chrome found",
+    "download": "Download a browser",
+    "noChromeWillDownload": "No Chrome detected — a private browser will be downloaded on first use.",
+    "detected": "Using",
+    "privateBrowser": "Private browser (no login)",
+    "privateNote": "Uses a separate downloaded browser that never touches your Chrome. Starts logged out; downloaded automatically on first use.",
+    "reuseNote": "Reuses a copy of “{{name}}”. The agent acts as that logged-in account; your real Chrome profile is never modified. Navigation still follows your approval mode.",
+    "isolatedNote": "Isolated profile — the agent starts logged out. Pick an account above to reuse its logins.",
+    "downloaded": "Browser downloaded — you can enable browser control now.",
+    "couldNotDownload": "Could not download the browser",
+    "enabledStatus": "Enabled",
+    "disabledStatus": "Not enabled",
+    "disable": "Disable",
+    "apply": "Apply changes",
+    "capabilities": "Capabilities",
+    "capCore": "Standard — navigate, click, read, screenshot, run JS",
+    "capNetwork": "Standard + network capture (HAR, request inspection)",
+    "capAll": "Everything (full tool surface)",
+    "allowedDomains": "Allowed domains",
+    "allowedDomainsHint": "One per line. Empty means no restriction. Supports patterns like *.example.com.",
+    "allowedDomainsPlaceholder": "example.com\n*.github.com"
   },
   "workspace": {
     "title": "Workspace",

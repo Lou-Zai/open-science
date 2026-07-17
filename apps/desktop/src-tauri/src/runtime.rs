@@ -606,6 +606,15 @@ pub(crate) fn uv_network_env(app: &AppHandle) -> Vec<(&'static str, String)> {
     env
 }
 
+/// Proxy env for a bundled sidecar OTHER than opencode (e.g. agent-browser's
+/// Chrome download). Same resolution as the OpenCode sidecar so a first-run
+/// browser install works behind the user's configured proxy, without the uv
+/// mirror vars that only uv understands.
+pub(crate) fn sidecar_proxy_env(app: &AppHandle) -> Vec<(&'static str, String)> {
+    let (mode, url) = read_proxy_setting(app);
+    resolve_proxy_env(&mode, &url)
+}
+
 /// The system-configured proxy as a URL, if one is enabled (macOS: scutil).
 /// HTTP(S) proxies are preferred — an HTTPS proxy endpoint still speaks plain
 /// HTTP CONNECT, hence the http:// scheme — with SOCKS as the fallback.
