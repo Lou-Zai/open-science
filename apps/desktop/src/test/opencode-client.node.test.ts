@@ -1,14 +1,19 @@
 // @vitest-environment node
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OpenCodeClient, type OpenCodeEvent } from "@ai4s/sdk";
 import { startMockOpenCode, type MockOpenCode } from "@ai4s/sdk/mock-server";
 
 let server: MockOpenCode;
 
-beforeAll(async () => {
+// A fresh server per test: it broadcasts turn events to ALL connected SSE
+// clients, so a single shared server would let one test's (async, timer-driven)
+// turn stream into another test's client — an unrelated `session.idle` could
+// then satisfy a `waitFor` before the expected events arrive. Per-test isolation
+// removes that cross-talk (the cause of this file's flakiness under load).
+beforeEach(async () => {
   server = await startMockOpenCode(0);
 });
-afterAll(async () => {
+afterEach(async () => {
   await server.close();
 });
 
@@ -94,10 +99,16 @@ describe("OpenCodeClient ↔ OpenCode server", () => {
   });
 
   it("maps time.completed onto history messages and aborts a session", async () => {
+    const events: OpenCodeEvent[] = [];
     const client = new OpenCodeClient({ baseUrl: `http://127.0.0.1:${server.port}` });
+    client.onEvent((e) => events.push(e));
     await client.connect();
     const sessionId = await client.createSession();
     await client.sendPrompt(sessionId, "run a literature review");
+    // Wait for the turn to finish before reading history — the mock writes the
+    // stored messages when it streams the turn (on a timer), so reading eagerly
+    // races that write (empty history) under load.
+    await waitFor(() => events.some((e) => e.type === "session.idle"));
     const messages = await client.getMessages(sessionId);
     const last = messages[messages.length - 1];
     expect(last.role).toBe("assistant");
