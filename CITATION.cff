@@ -7,9 +7,9 @@ authors:
 repository-code: "https://github.com/ai4s-research/open-science"
 url: "https://openedscience.com"
 license: MIT
-version: 0.2.0
+version: 0.2.1
 doi: 10.5281/zenodo.21351226
-date-released: "2026-07-13"
+date-released: "2026-07-17"
 keywords:
   - AI for science
   - research workbench
