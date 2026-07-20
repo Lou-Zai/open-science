@@ -149,7 +149,7 @@ export function RemoteComputeCard() {
                   onCancel={(id) => void cancel(m.host, id)}
                 />
               ))}
-              <div className={cn("bg-surface-2/50 p-3", machines.length > 0 && "border-t border-border")}>
+              <div className={cn("p-3", machines.length > 0 && "border-t border-faint")}>
                 <div className="flex items-center gap-2">
                   <input
                     list="ssh-hosts"
@@ -209,7 +209,7 @@ function MachineRow({
   const reachable = !!p?.reachable;
   const chips = p && reachable ? capabilityChips(p, t) : [];
   return (
-    <div className={cn("bg-surface", !first && "border-t border-border")}>
+    <div className={cn("bg-surface", !first && "border-t border-faint")}>
       <div className="flex items-center gap-2.5 px-3 py-2.5 text-[13px]">
         <button
           className="shrink-0 text-muted transition-colors hover:text-text"
@@ -250,7 +250,7 @@ function MachineRow({
         </button>
       </div>
       {expanded && reachable && p && (
-        <div className="border-t border-border bg-surface-2/40 px-3 py-2.5">
+        <div className="border-t border-faint px-3 py-2.5">
           {p.slurm ? (
             <SlurmQueue jobs={jobs} onCancel={onCancel} />
           ) : (

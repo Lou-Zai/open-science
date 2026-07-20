@@ -5,7 +5,6 @@ import {
   Download,
   ExternalLink,
   FolderOpen,
-  Globe,
   Loader2,
   Minus,
   NotebookPen,
@@ -64,11 +63,10 @@ import { fallbackDefaultModel } from "@/components/settings/modelCatalog";
 import { ProviderManagerCard } from "@/components/settings/ProviderManagerCard";
 import { Row, Section, Switch } from "@/components/settings/Section";
 import { resolveSection } from "@/components/settings/sections";
-import { inputCls, selectCls } from "@/components/settings/inputCls";
+import { chipCls, inputCls, selectCls } from "@/components/settings/inputCls";
 import { SCIENCE_CONNECTORS } from "@/lib/scienceConnectors";
 import {
   BROWSER_MCP_ID,
-  BROWSER_SOURCE,
   BROWSER_DISPLAY_NAMES,
   PRIVATE_BROWSER,
 } from "@/lib/browser";
@@ -720,60 +718,78 @@ export function SettingsPage() {
       <div className="mx-auto max-w-2xl px-8 pb-16 pt-4">
         <h1 className="font-serif text-2xl text-text">{t(`nav.${section}`)}</h1>
 
-        {/* ---- Agent runtime ---- */}
+        {/* ---- Agent runtime (server + proxy + mirrors, one grouped card) ---- */}
         {section === "runtime" && (
-        <Section title={t("runtime.title")} hint={t("runtime.hint")}>
-          <div className="flex items-center gap-2">
-            <input
-              value={serverUrl}
-              onChange={(e) => setServerUrl(e.target.value)}
-              placeholder={t("runtime.serverUrlPlaceholder")}
-              className={inputCls("flex-1 font-mono")}
-            />
-            {connected ? (
-              <button onClick={disconnect} className={btnGhost()}>
-                {t("runtime.disconnect")}
-              </button>
-            ) : (
-              <button onClick={connect} className={btnAccent()}>
-                {t("runtime.connect")}
-              </button>
-            )}
-          </div>
-          <div className="mt-2.5 flex items-center gap-1.5 text-xs text-muted">
-            <span
-              className={cn(
-                "h-1.5 w-1.5 rounded-full",
-                connected ? "bg-ok" : status === "error" ? "bg-error" : "bg-muted",
-              )}
-            />
-            <span className="capitalize">{status}</span>
-            {connected && defaultModel && (
-              <>
-                <span className="text-border">·</span>
-                <span className="font-mono">{defaultModel}</span>
-              </>
-            )}
-          </div>
+        <Section title={t("runtime.title")} hint={t("runtime.hint")} flush>
+          <div className="divide-y divide-faint">
+            {/* Server URL + connection status */}
+            <Row
+              title={t("runtime.serverLabel")}
+              hint={
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full",
+                      connected ? "bg-ok" : status === "error" ? "bg-error" : "bg-muted",
+                    )}
+                  />
+                  <span className="capitalize">{status}</span>
+                  {connected && defaultModel && (
+                    <>
+                      <span className="text-border">·</span>
+                      <span className="font-mono">{defaultModel}</span>
+                    </>
+                  )}
+                </span>
+              }
+            >
+              <div className="mt-2.5 flex items-center gap-2">
+                <input
+                  value={serverUrl}
+                  onChange={(e) => setServerUrl(e.target.value)}
+                  placeholder={t("runtime.serverUrlPlaceholder")}
+                  className={inputCls("flex-1 font-mono")}
+                />
+                {connected ? (
+                  <button onClick={disconnect} className={btnGhost()}>
+                    {t("runtime.disconnect")}
+                  </button>
+                ) : (
+                  <button onClick={connect} className={btnAccent()}>
+                    {t("runtime.connect")}
+                  </button>
+                )}
+              </div>
+            </Row>
 
-          {/* Network proxy: follow system / custom / direct. system and none
-              apply on select; custom applies on Save (needs a URL first). */}
-          {isTauri && proxy && (
-            <div className="mt-3 border-t border-border pt-3">
-              <div className="flex items-center gap-2">
-                <span className="w-28 shrink-0 text-xs text-muted">{t("runtime.proxyLabel")}</span>
-                <select
-                  value={proxy.mode}
-                  onChange={(e) => changeProxyMode(e.target.value as ProxyMode)}
-                  disabled={busy}
-                  className={selectCls("w-44")}
-                >
-                  <option value="system">{t("runtime.proxySystem")}</option>
-                  <option value="custom">{t("runtime.proxyCustom")}</option>
-                  <option value="none">{t("runtime.proxyNone")}</option>
-                </select>
+            {/* Network proxy: follow system / custom / direct. Mode is a right-side
+                chip; a custom URL field appears below only when "custom" is picked. */}
+            {isTauri && proxy && (
+              <Row
+                title={t("runtime.proxyLabel")}
+                hint={
+                  proxy.mode === "none"
+                    ? t("runtime.proxyDirectHint")
+                    : proxy.effective
+                      ? t("runtime.proxyEffective", { url: proxy.effective })
+                      : t("runtime.proxyNoneDetected")
+                }
+                control={
+                  <select
+                    value={proxy.mode}
+                    onChange={(e) => changeProxyMode(e.target.value as ProxyMode)}
+                    disabled={busy}
+                    aria-label={t("runtime.proxyLabel")}
+                    className={chipCls("shrink-0")}
+                  >
+                    <option value="system">{t("runtime.proxySystem")}</option>
+                    <option value="custom">{t("runtime.proxyCustom")}</option>
+                    <option value="none">{t("runtime.proxyNone")}</option>
+                  </select>
+                }
+              >
                 {proxy.mode === "custom" && (
-                  <>
+                  <div className="mt-2.5 flex items-center gap-2">
                     <input
                       value={proxyUrlInput}
                       onChange={(e) => setProxyUrlInput(e.target.value)}
@@ -790,53 +806,46 @@ export function SettingsPage() {
                     >
                       <Check size={13} /> {t("common:actions.save")}
                     </button>
-                  </>
+                  </div>
                 )}
-              </div>
-              <p className="mt-1.5 pl-28 text-[11px] leading-relaxed text-muted">
-                {proxy.mode === "none"
-                  ? t("runtime.proxyDirectHint")
-                  : proxy.effective
-                    ? t("runtime.proxyEffective", { url: proxy.effective })
-                    : t("runtime.proxyNoneDetected")}
-              </p>
-            </div>
-          )}
+              </Row>
+            )}
 
-          {/* uv download mirrors: only used when setting up Python tools where
-              pypi.org / github.com are slow. Optional; applies on Save. */}
-          {isTauri && mirror && (
-            <div className="mt-3 border-t border-border pt-3">
-              <div className="flex items-center gap-2">
-                <span className="w-28 shrink-0 text-xs text-muted">{t("runtime.mirrorPypi")}</span>
-                <input
-                  value={pypiInput}
-                  onChange={(e) => setPypiInput(e.target.value)}
-                  placeholder={t("runtime.mirrorPypiPlaceholder")}
-                  className={inputCls("flex-1 font-mono")}
-                />
-              </div>
-              <div className="mt-2 flex items-center gap-2">
-                <span className="w-28 shrink-0 text-xs text-muted">{t("runtime.mirrorPython")}</span>
-                <input
-                  value={pythonInput}
-                  onChange={(e) => setPythonInput(e.target.value)}
-                  placeholder={t("runtime.mirrorPythonPlaceholder")}
-                  className={inputCls("flex-1 font-mono")}
-                />
-                <button
-                  className={btnAccent()}
-                  onClick={() => void applyMirror()}
-                  disabled={busy || !mirrorDirty || !validMirror(pypiInput) || !validMirror(pythonInput)}
-                >
-                  <Check size={13} /> {t("common:actions.save")}
-                </button>
-              </div>
-              <p className="mt-1.5 pl-28 text-[11px] leading-relaxed text-muted">
-                {t("runtime.mirrorHint")}
-              </p>
-            </div>
-          )}
+            {/* uv download mirrors — always visible; optional, applies on Save. */}
+            {isTauri && mirror && (
+              <Row title={t("runtime.mirrorTitle")} hint={t("runtime.mirrorHint")}>
+                <div className="mt-2.5 space-y-2.5">
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-muted">{t("runtime.mirrorPypi")}</span>
+                    <input
+                      value={pypiInput}
+                      onChange={(e) => setPypiInput(e.target.value)}
+                      placeholder={t("runtime.mirrorPypiPlaceholder")}
+                      className={inputCls("w-full font-mono")}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-muted">{t("runtime.mirrorPython")}</span>
+                    <input
+                      value={pythonInput}
+                      onChange={(e) => setPythonInput(e.target.value)}
+                      placeholder={t("runtime.mirrorPythonPlaceholder")}
+                      className={inputCls("w-full font-mono")}
+                    />
+                  </label>
+                  <div className="flex justify-end">
+                    <button
+                      className={btnAccent()}
+                      onClick={() => void applyMirror()}
+                      disabled={busy || !mirrorDirty || !validMirror(pypiInput) || !validMirror(pythonInput)}
+                    >
+                      <Check size={13} /> {t("common:actions.save")}
+                    </button>
+                  </div>
+                </div>
+              </Row>
+            )}
+          </div>
         </Section>
         )}
 
@@ -878,7 +887,7 @@ export function SettingsPage() {
                     key={p.id}
                     className={cn(
                       "flex h-10 items-center gap-2.5 bg-surface px-3 text-[13px]",
-                      i > 0 && "border-t border-border",
+                      i > 0 && "border-t border-faint",
                     )}
                   >
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-ok" />
@@ -905,7 +914,7 @@ export function SettingsPage() {
                 ))}
 
                 {/* Connect a provider */}
-                <div className="border-t border-border bg-surface-2/50 p-3">
+                <div className="border-t border-faint p-3">
                   <div className="relative">
                     <Search
                       size={13}
@@ -997,7 +1006,7 @@ export function SettingsPage() {
                   )}
 
                   {oauth && (
-                    <div className="mt-2 space-y-2 rounded-input border border-border bg-surface p-3">
+                    <div className="mt-2 space-y-2 rounded-input bg-surface-2 p-3">
                       <p className="text-xs leading-relaxed text-muted">{oauth.instructions}</p>
                       {oauth.method === "code" ? (
                         <>
@@ -1037,7 +1046,7 @@ export function SettingsPage() {
                 </div>
 
                 {/* Custom endpoint */}
-                <div className="border-t border-border">
+                <div className="border-t border-faint">
                   <button
                     className="flex h-10 w-full items-center gap-2 px-3 text-left text-[13px] text-muted transition-colors hover:text-text"
                     onClick={() => setShowCustom((s) => !s)}
@@ -1101,7 +1110,7 @@ export function SettingsPage() {
 
               {isTauri && (
                 <button
-                  className="flex items-center gap-1.5 border-t border-border px-3 py-2.5 text-xs text-muted transition-colors hover:text-text"
+                  className="flex items-center gap-1.5 border-t border-faint px-3 py-2.5 text-xs text-muted transition-colors hover:text-text"
                   onClick={() => void importLogin()}
                   disabled={busy}
                 >
@@ -1129,7 +1138,7 @@ export function SettingsPage() {
                     return (
                       <div
                         key={c.id}
-                        className="border-b border-border bg-surface px-3 py-2.5 text-[13px]"
+                        className="border-b border-faint bg-surface px-3 py-2.5 text-[13px]"
                       >
                         <div className="flex items-center gap-2.5">
                           <Search size={14} className="shrink-0 text-muted" />
@@ -1171,7 +1180,7 @@ export function SettingsPage() {
                                 setConnectorKeys((k) => ({ ...k, [c.id]: e.target.value }))
                               }
                               placeholder={`${c.apiKeyEnv} ${t("mcp.freeKeySuffix")}`}
-                              className="h-8 min-w-0 flex-1 rounded-input border border-border bg-surface-2 px-2 font-mono text-[12px] text-text placeholder:text-muted/60"
+                              className="h-8 min-w-0 flex-1 rounded-input border border-transparent bg-surface-2 px-2 font-mono text-[12px] text-text outline-none placeholder:text-muted/60 focus:border-accent/55 focus:bg-surface"
                             />
                             {c.apiKeyUrl && (
                               <a
@@ -1191,7 +1200,7 @@ export function SettingsPage() {
                 )}
               {/* Featured: one-click Jupyter (shown until its MCP entry exists). */}
               {isTauri && !mcpServers.some((s) => s.name === "jupyter") && (
-                <div className="flex items-center gap-2.5 border-b border-border bg-surface px-3 py-2.5 text-[13px]">
+                <div className="flex items-center gap-2.5 border-b border-faint bg-surface px-3 py-2.5 text-[13px]">
                   <NotebookPen size={14} className="shrink-0 text-muted" />
                   <div className="min-w-0 flex-1">
                     <span className="font-medium text-text">{t("mcp.jupyterLabel")}</span>
@@ -1219,7 +1228,7 @@ export function SettingsPage() {
               {/* Live uv output while a provisioning run is in flight — a
                   300 MB download must never look like a frozen spinner. */}
               {(jupyterBusy || enablingConnector !== null) && (
-                <div className="flex items-center gap-2 border-b border-border bg-surface-2/50 px-3 py-1.5">
+                <div className="flex items-center gap-2 border-b border-faint bg-surface-2/50 px-3 py-1.5">
                   <Loader2 size={11} className="shrink-0 animate-spin text-muted" />
                   <span className="truncate font-mono text-[11px] text-muted">
                     {setupLine ?? t("mcp.startingDownload")}
@@ -1231,7 +1240,7 @@ export function SettingsPage() {
                   key={s.name}
                   className={cn(
                     "flex h-10 items-center gap-2.5 bg-surface px-3 text-[13px]",
-                    i > 0 && "border-t border-border",
+                    i > 0 && "border-t border-faint",
                   )}
                 >
                   <span
@@ -1267,8 +1276,8 @@ export function SettingsPage() {
 
               <div
                 className={cn(
-                  "space-y-2 bg-surface-2/50 p-3",
-                  mcpServers.length > 0 && "border-t border-border",
+                  "space-y-2 p-3",
+                  mcpServers.length > 0 && "border-t border-faint",
                 )}
               >
                 <div className="flex gap-2">
@@ -1310,149 +1319,137 @@ export function SettingsPage() {
 
         {/* ---- Browser control (agent-browser) — its own page, reconfigurable ---- */}
         {section === "browser" && (
-        <Section title={t("browser.title")} hint={t("browser.hint")}>
+        <Section title={t("browser.title")} hint={t("browser.hint")} flush>
           {!connected ? (
-            <p className="text-[13px] text-muted">{t("mcp.connectPrompt")}</p>
+            <p className="px-4 py-3 text-[13px] text-muted">{t("mcp.connectPrompt")}</p>
           ) : (
-            <div className="space-y-4">
-              {/* Status + upstream */}
-              <div className="flex items-start gap-2.5">
-                <Globe size={16} className="mt-0.5 shrink-0 text-muted" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-text">{t("browser.label")}</span>
-                    <span
-                      className={cn(
-                        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium",
-                        browserEnabled
-                          ? "bg-ok/15 text-ok"
-                          : "bg-surface-2 text-muted ring-1 ring-border",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "h-1.5 w-1.5 rounded-full",
-                          browserEnabled ? "bg-ok" : "bg-muted",
-                        )}
-                      />
-                      {browserEnabled ? t("browser.enabledStatus") : t("browser.disabledStatus")}
-                    </span>
-                  </div>
-                  <div className="truncate font-mono text-[11px] text-muted/70">
-                    {BROWSER_SOURCE}
-                  </div>
-                </div>
-              </div>
-
-              {/* Which browser was detected (info only) */}
-              <div className="text-[13px]">
-                {chrome ? (
-                  <span className="text-muted">
-                    {t("browser.detected")}:{" "}
-                    <span className="text-text">
-                      {BROWSER_DISPLAY_NAMES[chrome.kind] ?? chrome.kind}
-                    </span>
-                  </span>
-                ) : (
-                  <span className="text-xs text-muted">{t("browser.noChromeWillDownload")}</span>
-                )}
-              </div>
-
+            <div className="divide-y divide-faint">
               {/* Browse as — reuse a Chrome login, run isolated, or a separate
                   private (downloaded) browser that never touches Chrome. */}
-              <div className="space-y-1.5">
-                <label className="block text-[13px] font-medium text-text">
-                  {t("browser.browseAs")}
-                </label>
-                <select
-                  value={browserProfile}
-                  onChange={(e) => setBrowserProfile(e.target.value)}
-                  className={selectCls("h-9 w-full max-w-md")}
-                >
-                  {chrome && <option value="">{t("browser.isolated")}</option>}
-                  {chrome &&
-                    browserProfiles.map((p) => (
-                      <option key={p.directory} value={p.directory}>
-                        {p.name} · {p.directory}
-                      </option>
-                    ))}
-                  <option value={PRIVATE_BROWSER}>{t("browser.privateBrowser")}</option>
-                </select>
-                <p className="max-w-md text-[11px] leading-relaxed text-muted/80">
-                  {browserProfile === PRIVATE_BROWSER
-                    ? t("browser.privateNote")
-                    : browserProfile
-                      ? t("browser.reuseNote", {
-                          name:
-                            browserProfiles.find((p) => p.directory === browserProfile)?.name ??
-                            browserProfile,
-                        })
-                      : t("browser.isolatedNote")}
-                </p>
-                {browserProfile === PRIVATE_BROWSER && (
-                  <button
-                    className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline disabled:opacity-50"
-                    onClick={() => void downloadBrowser()}
-                    disabled={browserBusy || busy}
+              <Row
+                title={t("browser.browseAs")}
+                hint={
+                  <>
+                    {browserProfile === PRIVATE_BROWSER
+                      ? t("browser.privateNote")
+                      : browserProfile
+                        ? t("browser.reuseNote", {
+                            name:
+                              browserProfiles.find((p) => p.directory === browserProfile)?.name ??
+                              browserProfile,
+                          })
+                        : t("browser.isolatedNote")}
+                    {chrome ? (
+                      <span className="mt-1 block">
+                        {t("browser.detected")}:{" "}
+                        <span className="text-text">
+                          {BROWSER_DISPLAY_NAMES[chrome.kind] ?? chrome.kind}
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="mt-1 block">{t("browser.noChromeWillDownload")}</span>
+                    )}
+                  </>
+                }
+              >
+                <div className="mt-2.5 flex items-center gap-2">
+                  <select
+                    value={browserProfile}
+                    onChange={(e) => setBrowserProfile(e.target.value)}
+                    aria-label={t("browser.browseAs")}
+                    className={selectCls("min-w-0 flex-1")}
                   >
-                    <Download size={11} /> {t("browser.download")}
-                  </button>
-                )}
-              </div>
+                    {chrome && <option value="">{t("browser.isolated")}</option>}
+                    {chrome &&
+                      browserProfiles.map((p) => (
+                        <option key={p.directory} value={p.directory}>
+                          {p.name} · {p.directory}
+                        </option>
+                      ))}
+                    <option value={PRIVATE_BROWSER}>{t("browser.privateBrowser")}</option>
+                  </select>
+                  {browserProfile === PRIVATE_BROWSER && (
+                    <button
+                      className={btnGhost("gap-1.5")}
+                      onClick={() => void downloadBrowser()}
+                      disabled={browserBusy || busy}
+                    >
+                      <Download size={13} /> {t("browser.download")}
+                    </button>
+                  )}
+                </div>
+              </Row>
 
               {/* Capabilities (tool profile) */}
-              <div className="space-y-1.5">
-                <label className="block text-[13px] font-medium text-text">
-                  {t("browser.capabilities")}
-                </label>
+              <Row title={t("browser.capabilities")}>
                 <select
                   value={browserTools}
                   onChange={(e) => setBrowserTools(e.target.value)}
-                  className={selectCls("h-9 w-full max-w-md")}
+                  aria-label={t("browser.capabilities")}
+                  className={selectCls("mt-2.5 w-full")}
                 >
                   <option value="core">{t("browser.capCore")}</option>
                   <option value="core,network">{t("browser.capNetwork")}</option>
                   <option value="all">{t("browser.capAll")}</option>
                 </select>
-              </div>
+              </Row>
 
               {/* Allowed domains — the safety guardrail */}
-              <div className="space-y-1.5">
-                <label className="block text-[13px] font-medium text-text">
-                  {t("browser.allowedDomains")}
-                </label>
+              <Row title={t("browser.allowedDomains")} hint={t("browser.allowedDomainsHint")}>
                 <textarea
                   value={browserDomains}
                   onChange={(e) => setBrowserDomains(e.target.value)}
                   rows={3}
                   placeholder={t("browser.allowedDomainsPlaceholder")}
-                  className="w-full max-w-md rounded-input border border-border bg-surface-2 px-2.5 py-2 font-mono text-[12px] text-text placeholder:text-muted/50"
+                  aria-label={t("browser.allowedDomains")}
+                  className="mt-2.5 w-full rounded-input border border-transparent bg-surface-2 px-2.5 py-2 font-mono text-[12px] text-text outline-none placeholder:text-muted/50 focus:border-accent/55 focus:bg-surface"
                 />
-                <p className="max-w-md text-[11px] leading-relaxed text-muted/80">
-                  {t("browser.allowedDomainsHint")}
-                </p>
-              </div>
+              </Row>
 
               {/* Show the window */}
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={browserHeaded}
-                  onChange={setBrowserHeaded}
-                  label={t("browser.showWindow")}
-                />
-                <span className="text-[13px] text-text">{t("browser.showWindow")}</span>
-              </div>
+              <Row
+                title={t("browser.showWindow")}
+                control={
+                  <Switch
+                    checked={browserHeaded}
+                    onChange={setBrowserHeaded}
+                    label={t("browser.showWindow")}
+                  />
+                }
+              />
 
-              {/* Live output during a Chrome download */}
-              {(browserBusy || busy) && setupLine && (
-                <div className="flex items-center gap-2">
-                  <Loader2 size={11} className="shrink-0 animate-spin text-muted" />
-                  <span className="truncate font-mono text-[11px] text-muted">{setupLine}</span>
-                </div>
-              )}
-
-              {/* Actions */}
-              <div className="flex items-center gap-2 pt-1">
+              {/* Status + actions */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 text-xs",
+                    browserEnabled ? "text-ok" : "text-muted",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full",
+                      browserEnabled ? "bg-ok" : "bg-muted",
+                    )}
+                  />
+                  {browserEnabled ? t("browser.enabledStatus") : t("browser.disabledStatus")}
+                </span>
+                {(browserBusy || busy) && setupLine && (
+                  <span className="inline-flex min-w-0 items-center gap-1.5 text-muted">
+                    <Loader2 size={11} className="shrink-0 animate-spin" />
+                    <span className="truncate font-mono text-[11px]">{setupLine}</span>
+                  </span>
+                )}
+                <div className="flex-1" />
+                {browserEnabled && (
+                  <button
+                    className={btnGhost("hover:text-error")}
+                    onClick={() => void disableBrowser()}
+                    disabled={busy || browserBusy}
+                  >
+                    {t("browser.disable")}
+                  </button>
+                )}
                 <button
                   className={btnAccent()}
                   onClick={enableBrowserControl}
@@ -1468,15 +1465,6 @@ export function SettingsPage() {
                     t("mcp.enable")
                   )}
                 </button>
-                {browserEnabled && (
-                  <button
-                    className="flex h-9 items-center rounded-input px-3.5 text-[13px] font-medium text-muted ring-1 ring-border transition-colors hover:text-error"
-                    onClick={() => void disableBrowser()}
-                    disabled={busy || browserBusy}
-                  >
-                    {t("browser.disable")}
-                  </button>
-                )}
               </div>
             </div>
           )}
@@ -1487,12 +1475,7 @@ export function SettingsPage() {
         {section === "general" && (
         <Section title={t("workspace.title")} hint={t("workspace.hint")}>
           <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                inputCls("flex-1 truncate font-mono leading-9"),
-                "select-all bg-surface-2 text-muted",
-              )}
-            >
+            <span className="min-w-0 flex-1 select-all truncate font-mono text-[13px] leading-9 text-muted">
               {wsPath ?? t("workspace.unavailable")}
             </span>
             {wsPath && (
@@ -1582,15 +1565,15 @@ export function SettingsPage() {
           <div className="divide-y divide-faint">
             <Row title={t("appearance.themeLabel")}
               control={
-                <div className="inline-flex shrink-0 rounded-input border border-border bg-surface-2 p-0.5">
+                <div className="inline-flex shrink-0 gap-0.5">
                   {/* eslint-disable-next-line i18next/no-literal-string -- internal theme-mode keys, not display text (the visible label is t(`appearance.theme.${mode}`)) */}
                   {(["light", "warm", "dark"] as const).map((mode) => (
                     <button
                       key={mode}
                       onClick={() => setTheme(mode)}
                       className={cn(
-                        "rounded-[5px] px-4 py-1.5 text-[13px] transition-colors",
-                        theme === mode ? "bg-surface text-text shadow-card" : "text-muted hover:text-text",
+                        "rounded-[7px] px-4 py-1.5 text-[13px] transition-colors",
+                        theme === mode ? "bg-surface-2 text-text" : "text-muted hover:text-text",
                       )}
                     >
                       {t(`appearance.theme.${mode}`)}
@@ -1605,7 +1588,7 @@ export function SettingsPage() {
                   value={locale}
                   onChange={(e) => setLocale(e.target.value)}
                   aria-label={t("language.label")}
-                  className={selectCls("w-48")}
+                  className={chipCls()}
                 >
                   {shippedLocales().map((l) => (
                     <option key={l.code} value={l.code}>
@@ -1762,8 +1745,8 @@ export function SettingsPage() {
 // flickers.
 const btnGhost = (extra = "") =>
   cn(
-    "flex h-9 shrink-0 items-center gap-1 rounded-input border border-border bg-surface px-3.5",
-    "text-[13px] text-text transition-colors hover:bg-surface-2 disabled:text-muted",
+    "flex h-9 shrink-0 items-center gap-1 rounded-input border border-transparent bg-surface-2 px-3.5",
+    "text-[13px] text-text transition-colors hover:bg-border/50 disabled:text-muted",
     extra,
   );
 

@@ -34,7 +34,7 @@ export function ProviderManagerCard({
         <button
           aria-expanded={expanded}
           onClick={() => onExpandedChange(!expanded)}
-          className="flex h-8 shrink-0 items-center gap-1 rounded-input border border-border bg-surface px-3 text-[13px] text-text transition-colors hover:bg-surface-2 disabled:text-muted"
+          className="flex h-8 shrink-0 items-center gap-1 rounded-input border border-transparent bg-surface-2 px-3 text-[13px] text-text transition-colors hover:bg-border/50 disabled:text-muted"
         >
           <ChevronRight size={13} className={cn("transition-transform", expanded && "rotate-90")} />
           {t(expanded ? "providers.collapse" : "providers.manage")}
