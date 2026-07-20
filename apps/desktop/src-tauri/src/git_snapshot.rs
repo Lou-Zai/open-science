@@ -22,6 +22,23 @@ fn git_lock() -> &'static Mutex<()> {
 const AUTHOR_NAME: &str = "Open Science Desktop";
 const AUTHOR_EMAIL: &str = "open-science-desktop@local";
 
+/// Snapshots commit to dedicated refs OUTSIDE `refs/heads/*`, never to any
+/// branch — one chain PER user branch, keyed as `<prefix>/<branch>` (following
+/// the `refs/wip/<branch>` convention of git-wip). `git log` / `git branch` /
+/// `git status` never show them; we only add objects and move these refs, never
+/// touching the user's branches, HEAD, working tree, or staging area. Inspect a
+/// branch's history with `git log refs/openscience/snapshots/<branch>`.
+const SNAPSHOT_REF_PREFIX: &str = "refs/openscience/snapshots";
+
+/// The well-known SHA-1 of git's empty tree — used to skip the very first
+/// snapshot of an empty workspace (nothing to record yet).
+const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+/// A dedicated index file (under `.git`) so staging for a snapshot never touches
+/// the user's real index (`.git/index`) — their staged work is left intact.
+/// Kept between snapshots so git's stat cache keeps `add -A` fast on large trees.
+const SNAPSHOT_INDEX: &str = "openscience-index";
+
 /// Files at or above this size are kept out of snapshots. Git stores every
 /// version whole (binaries never delta or compress) and never reclaims the
 /// space, and this app commits on *every* run — so the worst case is one large
@@ -254,6 +271,111 @@ fn run(root: &Path, args: &[&str]) -> Result<(), String> {
     ))
 }
 
+/// `git`, but pointed at the dedicated snapshot index so staging never touches
+/// the user's real `.git/index`. All index-mutating snapshot steps (`add`,
+/// `ls-files`, `update-index`, `write-tree`) go through this.
+fn git_indexed(root: &Path, index: &Path) -> std::process::Command {
+    let mut cmd = git(root);
+    cmd.env("GIT_INDEX_FILE", index);
+    cmd
+}
+
+/// `run`, but against the dedicated snapshot index.
+fn run_indexed(root: &Path, index: &Path, args: &[&str]) -> Result<(), String> {
+    let out = git_indexed(root, index)
+        .args(args)
+        .output()
+        .map_err(|e| format!("git {} failed to start: {e}", args.join(" ")))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(format!(
+        "git {} failed{}",
+        args.join(" "),
+        if stderr.is_empty() {
+            String::new()
+        } else {
+            format!(": {stderr}")
+        },
+    ))
+}
+
+/// `capture`, but against the dedicated snapshot index.
+fn capture_indexed(root: &Path, index: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
+    let out = git_indexed(root, index)
+        .args(args)
+        .output()
+        .map_err(|e| format!("git {} failed to start: {e}", args.join(" ")))?;
+    if out.status.success() {
+        return Ok(out.stdout);
+    }
+    let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(format!(
+        "git {} failed{}",
+        args.join(" "),
+        if stderr.is_empty() {
+            String::new()
+        } else {
+            format!(": {stderr}")
+        },
+    ))
+}
+
+/// The checked-out branch name, or `None` on a detached HEAD. Works on an unborn
+/// branch (fresh `git init` before the first commit) — `HEAD` still symbolically
+/// points at `refs/heads/<name>`.
+fn current_branch(root: &Path) -> Option<String> {
+    let out = git(root)
+        .args(["symbolic-ref", "--quiet", "--short", "HEAD"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
+}
+
+/// Percent-encode `/` (and `%` first, to stay reversible) so a branch name
+/// becomes a single flat ref component. This prevents a git directory/file ref
+/// conflict when two branches share a prefix (e.g. `feature` and `feature/x`
+/// would otherwise want both a `.../feature` ref AND a `.../feature/` dir).
+fn encode_ref_component(name: &str) -> String {
+    name.replace('%', "%25").replace('/', "%2F")
+}
+
+/// The snapshot ref for the workspace's current branch (one chain per branch).
+/// A detached HEAD snapshots into a shared `_detached` bucket.
+fn snapshot_ref(root: &Path) -> String {
+    match current_branch(root) {
+        Some(branch) => format!("{SNAPSHOT_REF_PREFIX}/{}", encode_ref_component(&branch)),
+        None => format!("{SNAPSHOT_REF_PREFIX}/_detached"),
+    }
+}
+
+/// Resolve `rev` to a commit/tree SHA, or `None` if it does not exist (an unborn
+/// HEAD, or a ref not yet created). Never errors on a missing ref.
+fn rev_parse(root: &Path, rev: &str) -> Option<String> {
+    let out = git(root)
+        .args(["rev-parse", "--verify", "--quiet", rev])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if sha.is_empty() {
+        None
+    } else {
+        Some(sha)
+    }
+}
+
 /// Like `run`, but returns captured stdout bytes on success.
 fn capture(root: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
     let out = git(root)
@@ -275,21 +397,19 @@ fn capture(root: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
     ))
 }
 
-/// After `git add -A`, drop any staged file at/over `MAX_BLOB_BYTES` back out of
-/// the index (keeping it on disk) so it never enters git history. `git reset --
-/// <path>` reverts the index entry to HEAD, which both removes a brand-new large
-/// file and preserves the previously committed version of one that just grew —
-/// and it works on an unborn branch (first commit) too.
-fn unstage_oversized(root: &Path) -> Result<(), String> {
-    let stdout = capture(root, &["diff", "--cached", "--name-only", "-z"])?;
+/// After staging into the snapshot index, drop any file at/over `MAX_BLOB_BYTES`
+/// back out (keeping it on disk) so it never enters history. `update-index
+/// --force-remove` deletes the index entry regardless of HEAD, so it works on
+/// the dedicated index and an unborn branch alike; the file stays on disk and is
+/// simply re-added and re-dropped on the next snapshot.
+fn unstage_oversized(root: &Path, index: &Path) -> Result<(), String> {
+    let stdout = capture_indexed(root, index, &["ls-files", "-z"])?;
     let mut skipped: Vec<String> = Vec::new();
     for name in stdout.split(|b| *b == 0) {
         if name.is_empty() {
             continue;
         }
         let rel = String::from_utf8_lossy(name).into_owned();
-        // A staged deletion has no working-tree file; metadata fails and we skip
-        // it, which correctly leaves the deletion staged.
         if let Ok(meta) = std::fs::metadata(root.join(&rel)) {
             if meta.is_file() && meta.len() >= MAX_BLOB_BYTES {
                 skipped.push(rel);
@@ -299,9 +419,9 @@ fn unstage_oversized(root: &Path) -> Result<(), String> {
     if skipped.is_empty() {
         return Ok(());
     }
-    let mut args: Vec<&str> = vec!["reset", "--quiet", "--"];
+    let mut args: Vec<&str> = vec!["update-index", "--force-remove", "--"];
     args.extend(skipped.iter().map(|s| s.as_str()));
-    run(root, &args)?;
+    run_indexed(root, index, &args)?;
     eprintln!(
         "workspace snapshot: skipped {} file(s) >= {} MB: {}",
         skipped.len(),
@@ -311,16 +431,17 @@ fn unstage_oversized(root: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Drop any directory whose freshly-staged files sum to >= `MAX_DIR_BYTES` back
-/// out of the index (files stay on disk). Catches bulk data dumps — thousands of
-/// small files that individually slip past `unstage_oversized`. Grouped by
+/// Drop any directory whose staged files sum to >= `MAX_DIR_BYTES` back out of
+/// the snapshot index (files stay on disk). Catches bulk data dumps — thousands
+/// of small files that individually slip past `unstage_oversized`. Grouped by
 /// immediate parent directory so one bulky folder can't take a sibling with it;
-/// root-level files (no parent dir) are left alone since we would never reset
-/// the whole workspace.
-fn unstage_bulk_dirs(root: &Path) -> Result<(), String> {
+/// root-level files (no parent dir) are left alone since we would never drop the
+/// whole workspace.
+fn unstage_bulk_dirs(root: &Path, index: &Path) -> Result<(), String> {
     use std::collections::BTreeMap;
-    let stdout = capture(root, &["diff", "--cached", "--name-only", "-z"])?;
+    let stdout = capture_indexed(root, index, &["ls-files", "-z"])?;
     let mut by_dir: BTreeMap<String, u64> = BTreeMap::new();
+    let mut files_by_dir: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for name in stdout.split(|b| *b == 0) {
         if name.is_empty() {
             continue;
@@ -332,7 +453,8 @@ fn unstage_bulk_dirs(root: &Path) -> Result<(), String> {
         let size = std::fs::metadata(root.join(&rel))
             .map(|m| if m.is_file() { m.len() } else { 0 })
             .unwrap_or(0);
-        *by_dir.entry(dir).or_insert(0) += size;
+        *by_dir.entry(dir.clone()).or_insert(0) += size;
+        files_by_dir.entry(dir).or_default().push(rel);
     }
     let bulky: Vec<(String, u64)> = by_dir
         .into_iter()
@@ -341,8 +463,14 @@ fn unstage_bulk_dirs(root: &Path) -> Result<(), String> {
     if bulky.is_empty() {
         return Ok(());
     }
+    // Remove the bulky dirs' files from the index by explicit path — a pathspec
+    // (`dir/`) has no meaning to update-index, which works on tracked entries.
     for (dir, _) in &bulky {
-        run(root, &["reset", "--quiet", "--", dir])?;
+        if let Some(files) = files_by_dir.get(dir) {
+            let mut args: Vec<&str> = vec!["update-index", "--force-remove", "--"];
+            args.extend(files.iter().map(|s| s.as_str()));
+            run_indexed(root, index, &args)?;
+        }
     }
     let summary = bulky
         .iter()
@@ -376,12 +504,12 @@ fn no_snapshot_marker(root: &Path) -> PathBuf {
     root.join(".openscience").join(NO_SNAPSHOT_MARKER)
 }
 
-/// Prepare an IMPORTED (user-brought) workspace so the app never auto-commits
-/// into it. A real git repo is already safe (our commit path skips any repo
-/// without the snapshot marker); there we only keep the app's `.openscience/`
-/// dir out of the user's `git status` via a local `.git/info/exclude` (never
-/// their tracked `.gitignore`). A plain folder gets an explicit opt-out marker
-/// so a later commit never `git init`s it. Best-effort; failures are non-fatal.
+/// Prepare an IMPORTED (user-brought) workspace. Snapshots go to a dedicated ref
+/// and never to the user's branches, so a real git repo IS snapshotted — we just
+/// keep the app's `.openscience/` dir out of the user's `git status` via a local
+/// `.git/info/exclude` (never their tracked `.gitignore`). A plain folder instead
+/// gets an explicit opt-out marker so a later snapshot never `git init`s it (we
+/// won't create a repo in a folder that isn't already one). Best-effort.
 pub fn mark_imported(root: &Path) {
     if root.join(".git").is_dir() {
         exclude_locally(root, ".openscience/");
@@ -412,22 +540,23 @@ fn exclude_locally(root: &Path, pattern: &str) {
     let _ = std::fs::write(&exclude, content);
 }
 
-/// Ensure an app-owned snapshot repo exists. Returns `Ok(false)` when the folder
-/// already holds a git repo we did not create, or is an imported workspace —
-/// the caller must then NOT commit, so the user's own history and staged work
-/// are left untouched.
-fn ensure_owned_repo(root: &Path) -> Result<bool, String> {
+/// Ensure a repo exists that we can store snapshots in. Returns `Ok(false)` only
+/// for a workspace explicitly opted out (an imported plain folder). Because
+/// snapshots go to a dedicated ref and a dedicated index — never a branch, HEAD,
+/// or the user's index — it is safe to snapshot into a repo the user brought in,
+/// so a pre-existing `.git` is accepted as-is (we never `git init` over it or
+/// plant a `.gitignore` in it). A plain folder we manage is initialized.
+fn ensure_snapshot_repo(root: &Path) -> Result<bool, String> {
     if !git_available() {
         return Err("git is not available".into());
     }
-    // An imported workspace opts out of app-managed snapshots entirely — never
-    // `git init` it and never commit, whether or not it is a git repo.
+    // An imported plain folder opted out of snapshots entirely — never init it.
     if no_snapshot_marker(root).exists() {
         return Ok(false);
     }
     if root.join(".git").exists() {
-        // A pre-existing repo is only ours if we planted the marker at init.
-        return Ok(snapshot_marker(root).exists());
+        // App-created or user-brought — both are safe for a shadow-ref snapshot.
+        return Ok(true);
     }
     run(root, &["init"])?;
     std::fs::write(snapshot_marker(root), b"1")
@@ -442,23 +571,56 @@ fn ensure_owned_repo(root: &Path) -> Result<bool, String> {
     Ok(true)
 }
 
+/// Record a snapshot of the workspace onto `SNAPSHOT_REF` without touching the
+/// user's branches, HEAD, working tree, or index. Stages the working tree into a
+/// dedicated index, drops oversized/bulk paths, writes a tree, and commits it as
+/// a child of the previous snapshot via plumbing (`commit-tree` + `update-ref`).
+/// Returns `Ok(true)` when a new snapshot was recorded, `Ok(false)` when there
+/// was nothing to record or the workspace opted out.
 pub fn commit(root: &Path, message: &str) -> Result<bool, String> {
     let _lock = git_lock().lock().map_err(|_| "git snapshot lock poisoned".to_string())?;
-    if !ensure_owned_repo(root)? {
-        // Not an app-managed repo — never commit into the user's own history.
+    if !ensure_snapshot_repo(root)? {
         return Ok(false);
     }
-    run(root, &["add", "-A", "--", "."])?;
-    unstage_oversized(root)?;
-    unstage_bulk_dirs(root)?;
-    let status = git(root)
-        .args(["diff", "--cached", "--quiet"])
-        .status()
-        .map_err(|e| format!("git diff failed to start: {e}"))?;
-    if status.success() {
+    let index = root.join(".git").join(SNAPSHOT_INDEX);
+    let sref = snapshot_ref(root);
+
+    // Stage the whole working tree into the DEDICATED index (never the user's).
+    run_indexed(root, &index, &["add", "-A", "--", "."])?;
+    unstage_oversized(root, &index)?;
+    unstage_bulk_dirs(root, &index)?;
+    let tree = String::from_utf8_lossy(&capture_indexed(root, &index, &["write-tree"])?)
+        .trim()
+        .to_string();
+
+    // Parent: continue this branch's snapshot chain if it exists; otherwise root
+    // the first snapshot on the branch's current tip (HEAD) so the history reads
+    // continuously with the user's real commits and diffs are meaningful; on an
+    // unborn branch there is no parent. HEAD is only READ here, never moved.
+    let parent = rev_parse(root, &sref).or_else(|| rev_parse(root, "HEAD"));
+
+    // Nothing to record if the tree is unchanged from the parent (or is the
+    // empty tree on a brand-new, empty workspace).
+    let unchanged = match &parent {
+        Some(p) => rev_parse(root, &format!("{p}^{{tree}}")).as_deref() == Some(tree.as_str()),
+        None => tree == EMPTY_TREE,
+    };
+    if unchanged {
         return Ok(false);
     }
-    run(root, &["commit", "-m", message])?;
+
+    // Build the commit object off the parent and advance the per-branch ref.
+    // No branch, HEAD, or working-tree update happens anywhere here.
+    let mut args: Vec<String> = vec!["commit-tree".into(), tree, "-m".into(), message.into()];
+    if let Some(p) = &parent {
+        args.push("-p".into());
+        args.push(p.clone());
+    }
+    let argrefs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let commit_sha = String::from_utf8_lossy(&capture(root, &argrefs)?)
+        .trim()
+        .to_string();
+    run(root, &["update-ref", &sref, &commit_sha])?;
     Ok(true)
 }
 
@@ -627,9 +789,19 @@ pub fn commit_workspace_snapshot(app: AppHandle, message: String) -> Result<bool
 
 #[cfg(test)]
 mod tests {
-    use super::{commit, git_available, snapshot_due, SNAPSHOT_DEBOUNCE, SNAPSHOT_MAX_WAIT};
+    use super::{
+        commit, current_branch, git_available, rev_parse, snapshot_due, snapshot_ref,
+        SNAPSHOT_DEBOUNCE, SNAPSHOT_MAX_WAIT,
+    };
     use std::fs;
     use std::time::Duration;
+
+    /// Files recorded in the current branch's latest snapshot (its ref's tree).
+    fn snapshot_files(root: &std::path::Path) -> String {
+        let sref = snapshot_ref(root);
+        let out = super::capture(root, &["ls-tree", "-r", "--name-only", &sref]).unwrap();
+        String::from_utf8_lossy(&out).into_owned()
+    }
 
     #[test]
     fn snapshot_due_debounces_bursts_but_caps_at_max_wait() {
@@ -654,10 +826,15 @@ mod tests {
 
         assert_eq!(commit(&root, "Initialize workspace").unwrap(), true);
         assert!(root.join(".git").is_dir());
+        // The snapshot lives on the dedicated per-branch ref, and NO branch
+        // commit was made (HEAD is still unborn) — snapshots never touch a branch.
+        assert!(rev_parse(&root, &snapshot_ref(&root)).is_some());
+        assert!(rev_parse(&root, "HEAD").is_none());
         assert_eq!(commit(&root, "No changes").unwrap(), false);
 
         fs::write(root.join("AGENTS.md"), "rules\nmore\n").unwrap();
         assert_eq!(commit(&root, "Update workspace").unwrap(), true);
+        assert!(snapshot_files(&root).contains("AGENTS.md"));
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -673,10 +850,9 @@ mod tests {
         fs::write(root.join("small.txt"), "keep me\n").unwrap();
         fs::write(root.join("big.bin"), vec![0u8; super::MAX_BLOB_BYTES as usize]).unwrap();
 
-        // The small file is committed; the oversized one is not.
+        // The small file is snapshotted; the oversized one is not.
         assert_eq!(commit(&root, "Initialize workspace").unwrap(), true);
-        let tracked = super::capture(&root, &["ls-files"]).unwrap();
-        let tracked = String::from_utf8_lossy(&tracked);
+        let tracked = snapshot_files(&root);
         assert!(tracked.contains("small.txt"));
         assert!(!tracked.contains("big.bin"));
         // But the big file is left untouched on disk.
@@ -703,11 +879,10 @@ mod tests {
         }
 
         assert_eq!(commit(&root, "Initialize workspace").unwrap(), true);
-        let tracked = super::capture(&root, &["ls-files"]).unwrap();
-        let tracked = String::from_utf8_lossy(&tracked);
+        let tracked = snapshot_files(&root);
         assert!(tracked.contains("train.py"));
         assert!(!tracked.contains("dataset/"));
-        // Files are only unstaged, never removed from disk.
+        // Files are only dropped from the snapshot, never removed from disk.
         assert!(root.join("dataset").join("sample_0.dat").is_file());
         let _ = fs::remove_dir_all(&root);
     }
@@ -734,7 +909,7 @@ mod tests {
     }
 
     #[test]
-    fn commit_never_touches_a_repo_the_user_brought() {
+    fn snapshots_a_user_repo_without_touching_their_branch_or_index() {
         if !git_available() {
             eprintln!("git unavailable; skipping git snapshot test");
             return;
@@ -742,12 +917,27 @@ mod tests {
         let root = std::env::temp_dir().join(format!("os-git-foreign-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
-        // A repo the user brought in: it has a .git but none of our marker.
+        // A repo the user brought in, with their own committed history…
         super::run(&root, &["init"]).unwrap();
-        fs::write(root.join("data.txt"), "user work in progress\n").unwrap();
+        fs::write(root.join("data.txt"), "user work\n").unwrap();
+        super::run(&root, &["add", "data.txt"]).unwrap();
+        super::run(&root, &["commit", "-m", "user commit"]).unwrap();
+        let head_before = rev_parse(&root, "HEAD").unwrap();
+        // …and a staged-but-uncommitted change sitting in their index.
+        fs::write(root.join("staged.txt"), "in progress\n").unwrap();
+        super::run(&root, &["add", "staged.txt"]).unwrap();
 
-        // We must decline it, leave the tree/index alone, and plant no marker.
-        assert_eq!(commit(&root, "should be skipped").unwrap(), false);
+        // We DO snapshot it now — to the dedicated per-branch ref, not their branch.
+        assert_eq!(commit(&root, "snapshot").unwrap(), true);
+        assert!(rev_parse(&root, &snapshot_ref(&root)).is_some());
+        assert!(snapshot_files(&root).contains("data.txt"));
+
+        // Their branch/HEAD is byte-for-byte unchanged…
+        assert_eq!(rev_parse(&root, "HEAD").unwrap(), head_before);
+        // …and their staged work is left exactly as it was (still staged).
+        let staged = super::capture(&root, &["diff", "--cached", "--name-only"]).unwrap();
+        assert!(String::from_utf8_lossy(&staged).contains("staged.txt"));
+        // We planted no marker in a repo we did not create.
         assert!(!super::snapshot_marker(&root).exists());
         let _ = fs::remove_dir_all(&root);
     }
@@ -783,23 +973,67 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         super::run(&root, &["init"]).unwrap();
+        fs::write(root.join("paper.md"), "user content\n").unwrap();
 
         super::mark_imported(&root);
-        // A real repo isn't given the opt-out marker (marker-absence already
-        // makes commit() skip it) but gets a LOCAL exclude for .openscience/.
+        // A real repo isn't given the opt-out marker but gets a LOCAL exclude for
+        // .openscience/ so our provenance dir never shows in the user's status.
         assert!(!super::no_snapshot_marker(&root).exists());
         let exclude = fs::read_to_string(root.join(".git/info/exclude")).unwrap();
         assert!(exclude.lines().any(|l| l.trim() == ".openscience/"));
 
-        // Still declined by commit(), user's history untouched, and idempotent.
-        assert_eq!(commit(&root, "should be skipped").unwrap(), false);
-        super::mark_imported(&root); // no duplicate exclude line
+        // It IS snapshotted (to the dedicated per-branch ref), while the user's
+        // branch stays untouched (HEAD unborn — we never committed to a branch).
+        assert_eq!(commit(&root, "snapshot").unwrap(), true);
+        assert!(rev_parse(&root, &snapshot_ref(&root)).is_some());
+        assert!(rev_parse(&root, "HEAD").is_none());
+        assert!(snapshot_files(&root).contains("paper.md"));
+
+        // mark_imported stays idempotent (no duplicate exclude line).
+        super::mark_imported(&root);
         let count = fs::read_to_string(root.join(".git/info/exclude"))
             .unwrap()
             .lines()
             .filter(|l| l.trim() == ".openscience/")
             .count();
         assert_eq!(count, 1);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn snapshots_are_tracked_per_branch() {
+        if !git_available() {
+            eprintln!("git unavailable; skipping git snapshot test");
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("os-git-perbranch-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        super::run(&root, &["init"]).unwrap();
+        // A base commit, then a working change so there is something to snapshot.
+        fs::write(root.join("a.txt"), "base\n").unwrap();
+        super::run(&root, &["add", "a.txt"]).unwrap();
+        super::run(&root, &["commit", "-m", "base"]).unwrap();
+        fs::write(root.join("a.txt"), "base + wip\n").unwrap();
+
+        assert_eq!(commit(&root, "snap on base branch").unwrap(), true);
+        let base_ref = snapshot_ref(&root);
+        assert!(rev_parse(&root, &base_ref).is_some());
+
+        // Switch to a slashy branch — its snapshots go to a SEPARATE, encoded ref
+        // (no directory/file ref conflict with the base branch's ref).
+        super::run(&root, &["checkout", "-q", "-b", "feature/x"]).unwrap();
+        let feat_ref = snapshot_ref(&root);
+        assert!(feat_ref.ends_with("/feature%2Fx"));
+        assert_ne!(base_ref, feat_ref);
+        assert!(rev_parse(&root, &feat_ref).is_none()); // nothing snapped here yet
+
+        fs::write(root.join("b.txt"), "feature work\n").unwrap();
+        assert_eq!(commit(&root, "snap on feature branch").unwrap(), true);
+        // Both chains exist and are distinct; the base branch's ref is untouched.
+        assert!(rev_parse(&root, &feat_ref).is_some());
+        assert_ne!(rev_parse(&root, &base_ref), rev_parse(&root, &feat_ref));
+        assert_eq!(current_branch(&root).as_deref(), Some("feature/x"));
         let _ = fs::remove_dir_all(&root);
     }
 }
