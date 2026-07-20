@@ -41,7 +41,7 @@ export function ModalCard() {
       action={
         isTauri ? (
           <button
-            className="inline-flex items-center gap-1 rounded-input border border-border px-2 py-1 text-[12px] text-muted hover:text-text"
+            className="inline-flex items-center gap-1 rounded-input border border-transparent bg-surface-2 px-2.5 py-1 text-[12px] text-muted transition-colors hover:bg-border/50 hover:text-text"
             onClick={() => void check()}
             disabled={checking}
             title={t("modal.recheck")}
