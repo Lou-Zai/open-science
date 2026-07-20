@@ -252,6 +252,20 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
     return await fn();
   }
 }
+/** Dedup Sets below hold completed callIds/requestIds that never recur, but a
+ *  long, tool-heavy session keeps adding to them forever (issue #34: unbounded
+ *  frontend state → multi-GB WebContent). Cap each with FIFO eviction of the
+ *  oldest — safe, since an evicted id belongs to a finished call. */
+const DEDUP_CAP = 4000;
+function remember(set: Set<string>, key: string, cap = DEDUP_CAP) {
+  set.add(key);
+  while (set.size > cap) {
+    const oldest = set.values().next().value;
+    if (oldest === undefined) break;
+    set.delete(oldest);
+  }
+}
+
 /** Tool calls already written to provenance — success events can repeat per callId. */
 const recordedProvenance = new Set<string>();
 /** Bash calls already written to the run store — terminal events can repeat per callId. */
@@ -653,6 +667,9 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
 
   setDefaultModel: async (model) => {
     if (!client) throw new Error("Not connected to the OpenCode runtime.");
+    // #37 diagnostics: record what we ask for so a repro (e.g. switching after a
+    // plan's quota runs out) shows the exact target model.
+    void logDebug(`[provider] setDefaultModel → ${model}`);
     // Applying the model PATCHes OpenCode's global config, which closes the
     // event stream server-side. EventSource's own reconnect does not reliably
     // recover from that — it strands the app in "connecting"/disconnected until
@@ -669,7 +686,23 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         );
       }
       set({ modelSwitchError: null });
+      // #37 diagnostics: confirm the switch actually persisted and which providers
+      // the runtime now recognizes — pinpoints "switch doesn't take" / "provider
+      // not recognized" vs. a stale config-vs-auth mismatch. Best-effort, never
+      // fails the switch.
+      try {
+        const oc = opencodeClient;
+        if (oc) {
+          const [applied, provs] = await Promise.all([oc.getDefaultModel(), oc.listProviders()]);
+          void logDebug(
+            `[provider] applied=${applied ?? "null"} providers=[${provs.map((p) => p.id).join(",")}]`,
+          );
+        }
+      } catch (e) {
+        void logDebug(`[provider] post-switch probe failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
     } catch (err) {
+      void logDebug(`[provider] setDefaultModel FAILED (${model}): ${err instanceof Error ? err.message : String(err)}`);
       set({ modelSwitchError: err instanceof Error ? err.message : String(err) });
       throw err;
     } finally {
@@ -719,7 +752,14 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         !(event.type === "tool.updated" && event.status === "running")
       )
         void logDebug(`event ← ${event.type}${"sessionId" in event ? " " + event.sessionId : ""}`);
-      if ("sessionId" in event && event.sessionId) sseLast.set(event.sessionId, ++sseSeq);
+      if ("sessionId" in event && event.sessionId) {
+        sseLast.set(event.sessionId, ++sseSeq);
+        while (sseLast.size > 500) {
+          const oldest = sseLast.keys().next().value;
+          if (oldest === undefined) break;
+          sseLast.delete(oldest);
+        }
+      }
       if (event.type === "error") {
         // A session-scoped error belongs IN the conversation (a red status
         // line where the user is looking), and it ends that session's turn so
@@ -771,7 +811,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
           return;
         case "permission.asked":
           if (!notifiedPermissions.has(event.requestId)) {
-            notifiedPermissions.add(event.requestId);
+            remember(notifiedPermissions, event.requestId);
             void notifyPermissionRequest({ action: event.action, resources: event.resources });
           }
           set((s) => ({
@@ -907,7 +947,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         for (const input of provenanceInputsFromEvent(event)) {
           const key = `${event.callId}:${input.path}`;
           if (recordedProvenance.has(key)) continue;
-          recordedProvenance.add(key);
+          remember(recordedProvenance, key);
           void recordProvenance(input, sid, get().defaultModel);
         }
       }
@@ -916,7 +956,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       if (event.type === "tool.updated" && !recordedRuns.has(event.callId)) {
         const run = runInputFromEvent(event);
         if (run) {
-          recordedRuns.add(event.callId);
+          remember(recordedRuns, event.callId);
           void recordRun(run, sid, get().defaultModel);
         }
       }

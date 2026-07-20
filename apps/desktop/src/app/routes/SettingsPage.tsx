@@ -37,6 +37,7 @@ import {
   isTauri,
   jupyterStatus,
   openExternal,
+  logDebug,
   openWorkspaceBase,
   pickFolder,
   providerAuthExists,
@@ -569,12 +570,23 @@ export function SettingsPage() {
 
   const disconnectProvider = (providerID: string) =>
     run(t("toast.couldNotRemove"), async () => {
-      if (customIds.includes(providerID)) {
+      const custom = customIds.includes(providerID);
+      // #37 diagnostics: record removals so a repro (e.g. "removing one provider
+      // makes every key stop being recognized") shows the provider set before and
+      // after, distinguishing a config vs. auth-store mismatch.
+      void logDebug(`[provider] disconnect ${providerID} (custom=${custom})`);
+      if (custom) {
         // Custom endpoints live in the config file; removal restarts the sidecar.
         await removeConfigEntry("provider", providerID);
         await useRuntimeStore.getState().connectRetry();
       } else {
         await getClient()!.removeProviderAuth(providerID);
+      }
+      try {
+        const provs = await getClient()!.listProviders();
+        void logDebug(`[provider] after removing ${providerID}: providers=[${provs.map((p) => p.id).join(",")}]`);
+      } catch (e) {
+        void logDebug(`[provider] post-remove probe failed: ${e instanceof Error ? e.message : String(e)}`);
       }
       toast.success(t("toast.providerRemoved", { providerID }));
     });
