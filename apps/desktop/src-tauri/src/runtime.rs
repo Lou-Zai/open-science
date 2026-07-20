@@ -840,6 +840,10 @@ pub fn set_workspace(
     std::fs::write(active_workspace_file(&app)?, canon.to_string_lossy().as_bytes())
         .map_err(|e| e.to_string())?;
 
+    // Follow the active folder with the snapshot watcher so out-of-app edits
+    // (external editor, detached process) in the new workspace are captured too.
+    crate::git_snapshot::watch_workspace(&canon);
+
     // No sidecar restart: OpenCode serves every folder from one process via
     // per-directory instances, and the frontend reconnects its event stream
     // with `?directory=<new folder>`. Restarting here used to cost 3-6 s per

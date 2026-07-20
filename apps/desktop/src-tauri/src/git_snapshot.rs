@@ -1,6 +1,10 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tauri::AppHandle;
 
 use crate::runtime::quiet_command;
@@ -464,6 +468,157 @@ pub fn commit_best_effort(root: &Path, message: &str) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Debounced background snapshotter
+//
+// Committing inline on every file add ran git (a subprocess) on the UI thread
+// and produced one commit per file — a directory added file-by-file became
+// dozens of commits in seconds and froze the window (issue #32). Instead,
+// callers and the workspace watcher *request* a snapshot; a single background
+// thread coalesces requests and commits at most once per quiet window, off the
+// main thread.
+// ---------------------------------------------------------------------------
+
+/// Trailing quiet window: commit this long after the LAST change so a burst of
+/// writes coalesces into one snapshot. Comfortably longer than the ~1 s spacing
+/// seen when an agent adds a directory file-by-file, so those collapse to one.
+const SNAPSHOT_DEBOUNCE: Duration = Duration::from_secs(3);
+
+/// Starvation cap: while changes keep arriving, commit at least this often so a
+/// long-running writer (a detached job appending logs) still leaves periodic
+/// snapshots instead of none until it stops.
+const SNAPSHOT_MAX_WAIT: Duration = Duration::from_secs(30);
+
+/// A root with a pending snapshot: when its first and most-recent requests came.
+#[derive(Clone, Copy)]
+struct PendingSnapshot {
+    first: Instant,
+    last: Instant,
+}
+
+/// Whether a pending snapshot is due: the quiet window elapsed since the last
+/// request (debounce), or the max wait elapsed since the first (starvation cap).
+/// Pure, so the timing policy is unit-testable without threads or real sleeps.
+fn snapshot_due(since_last: Duration, since_first: Duration) -> bool {
+    since_last >= SNAPSHOT_DEBOUNCE || since_first >= SNAPSHOT_MAX_WAIT
+}
+
+fn snapshot_tx() -> &'static Sender<PathBuf> {
+    static TX: OnceLock<Sender<PathBuf>> = OnceLock::new();
+    TX.get_or_init(|| {
+        let (tx, rx) = mpsc::channel::<PathBuf>();
+        if let Err(e) = std::thread::Builder::new()
+            .name("git-snapshot".into())
+            .spawn(move || snapshot_loop(rx))
+        {
+            eprintln!("workspace snapshot: could not start snapshot thread: {e}");
+        }
+        tx
+    })
+}
+
+/// Request a debounced snapshot of `root`. Returns immediately; the commit runs
+/// on the background snapshot thread after the quiet window. Safe to call from
+/// the UI thread and from the filesystem-watcher callback.
+pub fn request_snapshot(root: &Path) {
+    let _ = snapshot_tx().send(root.to_path_buf());
+}
+
+fn snapshot_loop(rx: Receiver<PathBuf>) {
+    let mut pending: HashMap<PathBuf, PendingSnapshot> = HashMap::new();
+    loop {
+        // Wait until the nearest deadline, or indefinitely when nothing pends.
+        let timeout = pending
+            .values()
+            .map(|p| {
+                let by_debounce = SNAPSHOT_DEBOUNCE.saturating_sub(p.last.elapsed());
+                let by_max = SNAPSHOT_MAX_WAIT.saturating_sub(p.first.elapsed());
+                by_debounce.min(by_max)
+            })
+            .min()
+            .unwrap_or(Duration::from_secs(3600));
+        match rx.recv_timeout(timeout) {
+            Ok(root) => {
+                let now = Instant::now();
+                pending
+                    .entry(root)
+                    .and_modify(|p| p.last = now)
+                    .or_insert(PendingSnapshot { first: now, last: now });
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return,
+        }
+        let due: Vec<PathBuf> = pending
+            .iter()
+            .filter(|(_, p)| snapshot_due(p.last.elapsed(), p.first.elapsed()))
+            .map(|(root, _)| root.clone())
+            .collect();
+        for root in due {
+            pending.remove(&root);
+            commit_best_effort(&root, "Snapshot workspace changes");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Workspace filesystem watcher
+//
+// Explicit call sites (file adds, session-idle) cannot see every change — a
+// user editing a file in an external editor, or a process the agent detached
+// that writes output after the turn ended, bypasses all of them. So we also
+// watch the active workspace and enqueue a debounced snapshot on any change,
+// ignoring writes under `.git/` (our own commits) to avoid a feedback loop.
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::type_complexity)]
+fn workspace_watcher() -> &'static Mutex<Option<(RecommendedWatcher, PathBuf)>> {
+    static W: OnceLock<Mutex<Option<(RecommendedWatcher, PathBuf)>>> = OnceLock::new();
+    W.get_or_init(|| Mutex::new(None))
+}
+
+/// Watch `root` recursively and enqueue debounced snapshots on change, replacing
+/// any previous watch. Best-effort: a watcher that fails to start just means
+/// snapshots fall back to the explicit call sites. Call on startup and whenever
+/// the active workspace changes.
+pub fn watch_workspace(root: &Path) {
+    let Ok(mut slot) = workspace_watcher().lock() else {
+        return;
+    };
+    if slot.as_ref().is_some_and(|(_, cur)| cur == root) {
+        return; // already watching this root
+    }
+    let cb_root = root.to_path_buf();
+    let handler = move |res: notify::Result<notify::Event>| {
+        let Ok(event) = res else { return };
+        // Access (read/open) events never change content — ignore them.
+        if matches!(event.kind, EventKind::Access(_)) {
+            return;
+        }
+        // Ignore our own git writes; committing must not retrigger a snapshot.
+        let under_git = event
+            .paths
+            .iter()
+            .any(|p| p.components().any(|c| c.as_os_str() == ".git"));
+        if under_git {
+            return;
+        }
+        request_snapshot(&cb_root);
+    };
+    let mut watcher = match notify::recommended_watcher(handler) {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("workspace watcher: could not create: {e}");
+            return;
+        }
+    };
+    if let Err(e) = watcher.watch(root, RecursiveMode::Recursive) {
+        eprintln!("workspace watcher: could not watch {}: {e}", root.display());
+        return;
+    }
+    // Hold the watcher alive in the slot; dropping the old one stops its watch.
+    *slot = Some((watcher, root.to_path_buf()));
+}
+
 #[tauri::command(async)]
 pub fn commit_workspace_snapshot(app: AppHandle, message: String) -> Result<bool, String> {
     let root = crate::runtime::workspace_dir(&app)?;
@@ -472,8 +627,19 @@ pub fn commit_workspace_snapshot(app: AppHandle, message: String) -> Result<bool
 
 #[cfg(test)]
 mod tests {
-    use super::{commit, git_available};
+    use super::{commit, git_available, snapshot_due, SNAPSHOT_DEBOUNCE, SNAPSHOT_MAX_WAIT};
     use std::fs;
+    use std::time::Duration;
+
+    #[test]
+    fn snapshot_due_debounces_bursts_but_caps_at_max_wait() {
+        // Still within the quiet window since the last change → hold (coalesce).
+        assert!(!snapshot_due(Duration::from_millis(500), Duration::from_secs(2)));
+        // Quiet window elapsed since the last change → fire (debounce).
+        assert!(snapshot_due(SNAPSHOT_DEBOUNCE, Duration::from_secs(5)));
+        // Changes still arriving, but the max wait elapsed → fire (no starvation).
+        assert!(snapshot_due(Duration::from_millis(100), SNAPSHOT_MAX_WAIT));
+    }
 
     #[test]
     fn commit_initializes_repo_and_skips_clean_tree() {

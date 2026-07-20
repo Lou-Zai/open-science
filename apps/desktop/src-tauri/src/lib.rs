@@ -55,6 +55,15 @@ pub fn run() {
         .manage(PreviewState::default())
         .manage(ProvenanceState::default())
         .manage(runs::RunState::default())
+        .setup(|app| {
+            // Watch the active workspace so changes made outside the app (an
+            // external editor, a detached process) still enqueue a debounced
+            // snapshot. Re-pointed on every workspace switch in set_workspace.
+            if let Ok(ws) = runtime::workspace_dir(app.handle()) {
+                git_snapshot::watch_workspace(&ws);
+            }
+            Ok(())
+        })
         // The transparent + vibrancy window loses tao's traffic-light inset on
         // some machines (tao only re-applies it from drawRect). Re-pin on the
         // events that cover launch, resize, and the in-app theme switch.

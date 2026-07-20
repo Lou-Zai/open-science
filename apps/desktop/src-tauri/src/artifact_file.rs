@@ -434,7 +434,7 @@ fn dir_entries(root: &Path, rel: &str) -> Result<Vec<DirEntry>, String> {
 
 /// Write text to a root-relative path (used to save notebooks). Rejects
 /// absolute paths and any `..` component; missing parent dirs are created.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn write_workspace_file(
     app: AppHandle,
     path: String,
@@ -455,7 +455,7 @@ pub fn write_workspace_file(
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     std::fs::write(&full, content).map_err(|e| format!("write failed: {e}"))?;
-    crate::git_snapshot::commit_best_effort(&scope, "Update workspace files");
+    crate::git_snapshot::request_snapshot(&scope);
     Ok(())
 }
 
@@ -482,7 +482,7 @@ pub async fn add_files_to_workspace(app: AppHandle) -> Result<Vec<String>, Strin
         added.push(dst_name);
     }
     if !added.is_empty() {
-        crate::git_snapshot::commit_best_effort(&ws, "Add workspace files");
+        crate::git_snapshot::request_snapshot(&ws);
     }
     Ok(added)
 }
@@ -490,7 +490,7 @@ pub async fn add_files_to_workspace(app: AppHandle) -> Result<Vec<String>, Strin
 /// Write text content into the workspace under `filename` (deduplicated as
 /// name-1.ext on collision). Used when a long paste becomes a file. Returns
 /// the actual name written.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn add_text_to_workspace(
     app: AppHandle,
     filename: String,
@@ -504,14 +504,14 @@ pub fn add_text_to_workspace(
     let ws = workspace_dir(&app)?;
     let name = unique_name(&ws, &base);
     std::fs::write(ws.join(&name), content).map_err(|e| format!("write failed: {e}"))?;
-    crate::git_snapshot::commit_best_effort(&ws, "Add workspace file");
+    crate::git_snapshot::request_snapshot(&ws);
     Ok(name)
 }
 
 /// Copy explicit local file paths into the workspace (deduplicated). Used by
 /// drag-and-drop, which hands us OS paths — the native-picker path is
 /// `add_files_to_workspace`. Directories and unreadable entries are skipped.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn add_paths_to_workspace(app: AppHandle, paths: Vec<String>) -> Result<Vec<String>, String> {
     let ws = workspace_dir(&app)?;
     let mut added = Vec::new();
@@ -526,7 +526,7 @@ pub fn add_paths_to_workspace(app: AppHandle, paths: Vec<String>) -> Result<Vec<
         added.push(dst);
     }
     if !added.is_empty() {
-        crate::git_snapshot::commit_best_effort(&ws, "Add workspace files");
+        crate::git_snapshot::request_snapshot(&ws);
     }
     Ok(added)
 }
@@ -534,7 +534,7 @@ pub fn add_paths_to_workspace(app: AppHandle, paths: Vec<String>) -> Result<Vec<
 /// Write binary content (base64-encoded) into the workspace under `filename`
 /// (deduplicated as name-1.ext on collision). Used when a pasted image becomes a
 /// file. Returns the actual name written.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn add_binary_to_workspace(
     app: AppHandle,
     filename: String,
@@ -549,7 +549,7 @@ pub fn add_binary_to_workspace(
     let ws = workspace_dir(&app)?;
     let name = unique_name(&ws, &base);
     std::fs::write(ws.join(&name), bytes).map_err(|e| format!("write failed: {e}"))?;
-    crate::git_snapshot::commit_best_effort(&ws, "Add workspace file");
+    crate::git_snapshot::request_snapshot(&ws);
     Ok(name)
 }
 
