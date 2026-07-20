@@ -31,12 +31,14 @@ export function DataFlowCard({ model, workspace }: { model: string | null; works
           <Item tone="ok">{t("dataFlow.local.providerKeys")}</Item>
         </div>
         <div className="mt-5 border-t border-faint pt-4 sm:mt-0 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0">
-          <div className="mb-1 flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5">
             <span className="grid h-7 w-7 shrink-0 place-items-center rounded-[9px] bg-warn/15 text-warn">
               <Send size={15} />
             </span>
             <span className="text-[13px] font-semibold text-text">{t("dataFlow.remote.heading")}</span>
-            <span className="ml-auto shrink-0 rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-muted">
+          </div>
+          <div className="mb-1 mt-1.5">
+            <span className="inline-block max-w-full break-all rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-muted">
               {model ?? t("dataFlow.remote.noModel")}
             </span>
           </div>
