@@ -12,7 +12,16 @@ import { cn } from "@/lib/cn";
 export function SkillsPage() {
   const { t } = useTranslation(["pages", "common"]);
   const navigate = useNavigate();
-  const { skills, agents, tools, status, loadCatalog, detectTools, installSkill } = useRuntimeStore();
+  // Individual selectors, not a bare `useRuntimeStore()`: the latter re-renders
+  // this page on every unrelated store mutation, including the SSE fold storm of
+  // an active session (#34).
+  const skills = useRuntimeStore((s) => s.skills);
+  const agents = useRuntimeStore((s) => s.agents);
+  const tools = useRuntimeStore((s) => s.tools);
+  const status = useRuntimeStore((s) => s.status);
+  const loadCatalog = useRuntimeStore((s) => s.loadCatalog);
+  const detectTools = useRuntimeStore((s) => s.detectTools);
+  const installSkill = useRuntimeStore((s) => s.installSkill);
   const connected = status === "ready";
   const [text, setText] = useState("");
   const [installing, setInstalling] = useState(false);

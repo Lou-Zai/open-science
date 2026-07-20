@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { ArtifactBlock, FigureAnnotation, ThreadBlock } from "@ai4s/shared";
 import { AgentMessage, DataTable, RunningJobsOverlay, StatusLine, UserMessage } from "./atoms";
 import { ToolCallRow } from "./ToolCallRow";
@@ -12,8 +13,6 @@ export interface BlockHandlers {
   onArtifactOpen?: (a: ArtifactBlock) => void;
   /** Forward a figure annotation to the agent (live session). */
   onFigureComment?: (annotation: FigureAnnotation, figureTitle: string) => void;
-  /** Live one-line activity of the subagent a task tool spawned (live session). */
-  subagentActivity?: (childSessionId: string) => string | undefined;
 }
 
 export function renderBlock(block: ThreadBlock, i: number, handlers?: BlockHandlers) {
@@ -25,15 +24,7 @@ export function renderBlock(block: ThreadBlock, i: number, handlers?: BlockHandl
     case "step-summary":
       return <StepSummaryRow key={i} block={block} />;
     case "tool-call":
-      return (
-        <ToolCallRow
-          key={i}
-          block={block}
-          activity={
-            block.childSessionId ? handlers?.subagentActivity?.(block.childSessionId) : undefined
-          }
-        />
-      );
+      return <ToolCallRow key={i} block={block} />;
     case "reviewer":
       return <ReviewerCard key={i} block={block} />;
     case "table":
@@ -49,7 +40,11 @@ export function renderBlock(block: ThreadBlock, i: number, handlers?: BlockHandl
   }
 }
 
-export function BlockList({
+// Memoized: with `blocks` unchanged (a re-render from unrelated state) the whole
+// list — including groupToolBlocks — is skipped. When `blocks` does change, the
+// per-block memo above ensures only the touched rows actually re-render (#34).
+// Requires callers to pass a stable `handlers` reference (see LiveSessionPage).
+export const BlockList = memo(function BlockList({
   blocks,
   handlers,
 }: {
@@ -62,15 +57,11 @@ export function BlockList({
     <>
       {groupToolBlocks(blocks).map((item) =>
         item.kind === "group" ? (
-          <ToolGroup
-            key={`group:${item.start}`}
-            blocks={item.blocks}
-            activityFor={handlers?.subagentActivity}
-          />
+          <ToolGroup key={`group:${item.start}`} blocks={item.blocks} />
         ) : (
           renderBlock(item.block, item.index, handlers)
         ),
       )}
     </>
   );
-}
+});

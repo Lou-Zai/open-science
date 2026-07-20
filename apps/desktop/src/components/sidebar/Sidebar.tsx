@@ -66,19 +66,19 @@ export function Sidebar({ project }: { project: Project }) {
   // would strand the user with no way back.
   const inSettings = location.pathname.startsWith("/settings");
   const activeSection = resolveSection(location.pathname.split("/")[2]);
-  const {
-    sessions,
-    projects,
-    workspace,
-    hiddenExamples,
-    startDraft,
-    startDraftInWorkspace,
-    createProject,
-    importProject,
-    refreshProjects,
-    deleteSession,
-    hideExample,
-  } = useRuntimeStore();
+  // Select each field individually: a bare `useRuntimeStore()` subscribes to the
+  // whole store, re-rendering the sidebar on every SSE fold during a session (#34).
+  const sessions = useRuntimeStore((s) => s.sessions);
+  const projects = useRuntimeStore((s) => s.projects);
+  const workspace = useRuntimeStore((s) => s.workspace);
+  const hiddenExamples = useRuntimeStore((s) => s.hiddenExamples);
+  const startDraft = useRuntimeStore((s) => s.startDraft);
+  const startDraftInWorkspace = useRuntimeStore((s) => s.startDraftInWorkspace);
+  const createProject = useRuntimeStore((s) => s.createProject);
+  const importProject = useRuntimeStore((s) => s.importProject);
+  const refreshProjects = useRuntimeStore((s) => s.refreshProjects);
+  const deleteSession = useRuntimeStore((s) => s.deleteSession);
+  const hideExample = useRuntimeStore((s) => s.hideExample);
   const showUpdateBadge = useUpdateStore((s) => s.showBadge);
   const {
     sidebarCollapsed,

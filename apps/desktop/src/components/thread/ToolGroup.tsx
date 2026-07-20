@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { ThreadBlock, ToolCallBlock } from "@ai4s/shared";
@@ -6,6 +6,7 @@ import i18n from "@/i18n";
 import { cn } from "@/lib/cn";
 import { DiffView } from "@/components/code-viewer/DiffView";
 import { STATUS } from "./ToolCallRow";
+import { SubagentActivity } from "./SubagentActivity";
 
 // Codex-style tool activity: consecutive quiet tool steps fold into one
 // summary line ("Ran 3 commands, created a file"); expanding shows the list;
@@ -188,7 +189,10 @@ function detailFor(block: ToolCallBlock): React.ReactNode | null {
   return null;
 }
 
-function ToolRow({ block, activity }: { block: ToolCallBlock; activity?: string }) {
+// Memoized on `block`: within a group, only the tool step an SSE event actually
+// changed re-renders — the group's other steps keep their block reference and
+// are skipped, so a long tool run costs O(1) per event instead of O(steps) (#34).
+const ToolRow = memo(function ToolRow({ block }: { block: ToolCallBlock }) {
   const { t } = useTranslation(["session", "common"]);
   const s = STATUS[block.status];
   const running = block.status === "running";
@@ -250,31 +254,17 @@ function ToolRow({ block, activity }: { block: ToolCallBlock; activity?: string 
         )}
         {block.meta && <span className="shrink-0 text-xs text-muted">{block.meta}</span>}
       </div>
-      {/* Live pulse of the subagent this task spawned. */}
-      {activity && running && (
-        <div className="flex items-center gap-2 px-2 pb-0.5 text-xs" data-subagent-activity>
-          <span
-            aria-hidden
-            className="mb-1.5 ml-[6px] h-2 w-2 shrink-0 rounded-bl border-b border-l border-border"
-          />
-          <span aria-hidden className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />
-          <span className="min-w-0 flex-1 truncate font-mono text-muted">{activity}</span>
-        </div>
-      )}
+      {/* Live pulse of the subagent this task spawned — self-subscribing so its
+          child's folds never re-render this memoized row. */}
+      {running && block.childSessionId && <SubagentActivity childId={block.childSessionId} />}
       {/* While running, the output tail is always visible — no click needed. */}
       {running && block.partialOutput && <LiveTail text={block.partialOutput} />}
       {detail && <Collapse open={open}>{detail}</Collapse>}
     </div>
   );
-}
+});
 
-export function ToolGroup({
-  blocks,
-  activityFor,
-}: {
-  blocks: ToolCallBlock[];
-  activityFor?: (childSessionId: string) => string | undefined;
-}) {
+export function ToolGroup({ blocks }: { blocks: ToolCallBlock[] }) {
   const { t } = useTranslation(["session", "common"]);
   // While a step runs the group stays open (the live tail must be visible);
   // once everything settles it folds to the summary. The fold waits a grace
@@ -293,13 +283,7 @@ export function ToolGroup({
   }, [active]);
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const open = userOpen ?? autoOpen;
-  const rows = blocks.map((b, i) => (
-    <ToolRow
-      key={i}
-      block={b}
-      activity={b.childSessionId ? activityFor?.(b.childSessionId) : undefined}
-    />
-  ));
+  const rows = blocks.map((b, i) => <ToolRow key={i} block={b} />);
   if (blocks.length === 1) return <div>{rows}</div>;
   return (
     <div>

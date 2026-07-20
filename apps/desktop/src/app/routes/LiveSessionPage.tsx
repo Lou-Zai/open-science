@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { FlaskConical, FolderOpen, Loader2, NotebookPen, PanelLeft, PlugZap } from "lucide-react";
 import type { RuntimeStatus } from "@ai4s/shared";
-import { DRAFT_KEY, rootSessionOf, subagentActivity, useRuntimeStore } from "@/lib/runtime";
+import { DRAFT_KEY, rootSessionOf, useRuntimeStore } from "@/lib/runtime";
 import { queryRuns } from "@/lib/runs";
 import { useOverlayTitlebar, useUiStore } from "@/lib/store";
 import { overlayTitlebarStyle } from "@/lib/titlebar";
@@ -28,44 +28,49 @@ export function LiveSessionPage() {
   const { t } = useTranslation(["session", "common"]);
   const { sessionId } = useParams();
   const navigate = useNavigate();
-  const {
-    status,
-    switching,
-    sending,
-    runningSessions,
-    retryNotices,
-    serverUrl,
-    sessions,
-    currentId,
-    threads,
-    error,
-    questions,
-    permissions,
-    sessionParents,
-    workspace,
-    panes,
-    commands,
-    connect,
-    openSession,
-    startDraft,
-    sendPrompt,
-    runShell,
-    runCommand,
-    openArtifact,
-    closeArtifact,
-    setShowFiles,
-    setShowRuns,
-    answerQuestion,
-    rejectQuestion,
-    replyPermission,
-    interrupt,
-    reconcileRunning,
-    approvalMode,
-    setApprovalMode,
-    agents,
-    sessionAgents,
-    setAgentMode,
-  } = useRuntimeStore();
+  // Select each field individually rather than a bare `useRuntimeStore()`. A
+  // whole-store subscription re-renders this page — the conversation on screen —
+  // on EVERY mutation, including the SSE fold of every tool/text event for any
+  // session (background subagents included). Under a tool-heavy session that is
+  // a per-event repaint storm that freezes the WebView (#34). The active thread
+  // is selected on its own below, so a background subagent's folds never touch
+  // this page. Actions are stable store references — selecting them never
+  // triggers a render.
+  const status = useRuntimeStore((s) => s.status);
+  const switching = useRuntimeStore((s) => s.switching);
+  const sending = useRuntimeStore((s) => s.sending);
+  const runningSessions = useRuntimeStore((s) => s.runningSessions);
+  const retryNotices = useRuntimeStore((s) => s.retryNotices);
+  const serverUrl = useRuntimeStore((s) => s.serverUrl);
+  const sessions = useRuntimeStore((s) => s.sessions);
+  const currentId = useRuntimeStore((s) => s.currentId);
+  const error = useRuntimeStore((s) => s.error);
+  const questions = useRuntimeStore((s) => s.questions);
+  const permissions = useRuntimeStore((s) => s.permissions);
+  const sessionParents = useRuntimeStore((s) => s.sessionParents);
+  const workspace = useRuntimeStore((s) => s.workspace);
+  const panes = useRuntimeStore((s) => s.panes);
+  const commands = useRuntimeStore((s) => s.commands);
+  const connect = useRuntimeStore((s) => s.connect);
+  const openSession = useRuntimeStore((s) => s.openSession);
+  const startDraft = useRuntimeStore((s) => s.startDraft);
+  const sendPrompt = useRuntimeStore((s) => s.sendPrompt);
+  const runShell = useRuntimeStore((s) => s.runShell);
+  const runCommand = useRuntimeStore((s) => s.runCommand);
+  const openArtifact = useRuntimeStore((s) => s.openArtifact);
+  const closeArtifact = useRuntimeStore((s) => s.closeArtifact);
+  const setShowFiles = useRuntimeStore((s) => s.setShowFiles);
+  const setShowRuns = useRuntimeStore((s) => s.setShowRuns);
+  const answerQuestion = useRuntimeStore((s) => s.answerQuestion);
+  const rejectQuestion = useRuntimeStore((s) => s.rejectQuestion);
+  const replyPermission = useRuntimeStore((s) => s.replyPermission);
+  const interrupt = useRuntimeStore((s) => s.interrupt);
+  const reconcileRunning = useRuntimeStore((s) => s.reconcileRunning);
+  const approvalMode = useRuntimeStore((s) => s.approvalMode);
+  const setApprovalMode = useRuntimeStore((s) => s.setApprovalMode);
+  const agents = useRuntimeStore((s) => s.agents);
+  const sessionAgents = useRuntimeStore((s) => s.sessionAgents);
+  const setAgentMode = useRuntimeStore((s) => s.setAgentMode);
   const clearingLocalCommand = useRef(false);
 
   // A deliberate workspace move restarts the sidecar — expected and brief, so
@@ -123,20 +128,28 @@ export function LiveSessionPage() {
     return [...local, ...commands.filter((c) => !localNames.has(c.name))];
   }, [commands, t]);
 
-  // Interactions from the thread/inspector fold back into the conversation as follow-up prompts.
-  const handlers: BlockHandlers = {
-    onArtifactOpen: openArtifact,
-    onFigureComment: (a, title) =>
-      void sendPrompt(`On the figure ${title}, at (${a.x.toFixed(0)}%, ${a.y.toFixed(0)}%): ${a.note}`),
-    // Subagent events fold into their own thread; a running task row reads
-    // its child's latest step from there.
-    subagentActivity: (childId) => subagentActivity(threads[childId]?.blocks),
-  };
+  // Interactions from the thread/inspector fold back into the conversation as
+  // follow-up prompts. Memoized to a stable reference: BlockList is memoized, so
+  // an unstable handlers object would defeat it and re-render the whole list on
+  // every parent render. `openArtifact`/`sendPrompt` are stable store actions.
+  // Subagent activity is no longer threaded through here — each running task row
+  // self-subscribes to its child thread (see SubagentActivity), so a subagent's
+  // folds never re-render this page (#34).
+  const handlers: BlockHandlers = useMemo(
+    () => ({
+      onArtifactOpen: openArtifact,
+      onFigureComment: (a, title) =>
+        void sendPrompt(`On the figure ${title}, at (${a.x.toFixed(0)}%, ${a.y.toFixed(0)}%): ${a.note}`),
+    }),
+    [openArtifact, sendPrompt],
+  );
   const onEvaluate = (expr: string) => void sendPrompt(`Evaluate in the notebook kernel:\n\`\`\`python\n${expr}\n\`\`\``);
 
   // A draft shows its local thread (the first message echoes there instantly,
   // before any session exists) — it is grafted onto the session id on create.
-  const thread = currentId ? threads[currentId] : threads[DRAFT_KEY];
+  // Selected on its own so ONLY this thread's folds re-render the page — a
+  // background subagent folding into threads[child] leaves this untouched (#34).
+  const thread = useRuntimeStore((s) => (s.currentId ? s.threads[s.currentId] : s.threads[DRAFT_KEY]));
   // Opening a session fetches its history (cross-folder opens also restart the
   // sidecar) — show skeleton shapes meanwhile, never a blank page.
   const historyLoading = connected && !!sessionId && !thread?.loaded;

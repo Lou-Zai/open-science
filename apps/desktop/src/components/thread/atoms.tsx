@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { Loader2, Paperclip } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -13,15 +13,19 @@ import { MarkdownViewer } from "@/components/markdown-viewer/MarkdownViewer";
 import { extractArtifactRefs, refToArtifactBlock } from "@/lib/artifacts";
 import { resolveArtifactPath } from "@/lib/artifactFile";
 
-export function UserMessage({ block }: { block: UserMessageBlock }) {
+// All block atoms are memoized on their props: a fold rebuilds only the one
+// block object it changed (the blocks-array copy preserves the rest by
+// reference), so an SSE event re-renders just the affected row — the rest of a
+// long conversation is skipped, keeping render cost flat as history grows (#34).
+export const UserMessage = memo(function UserMessage({ block }: { block: UserMessageBlock }) {
   return (
     <div className="rounded-card bg-surface-2 px-4 py-3 text-[15px] leading-relaxed text-text">
       {block.text}
     </div>
   );
-}
+});
 
-export function AgentMessage({
+export const AgentMessage = memo(function AgentMessage({
   markdown,
   onOpenArtifact,
 }: {
@@ -72,9 +76,9 @@ export function AgentMessage({
       )}
     </div>
   );
-}
+});
 
-export function DataTable({ block }: { block: DataTableBlock }) {
+export const DataTable = memo(function DataTable({ block }: { block: DataTableBlock }) {
   return (
     <div className="overflow-x-auto rounded-card border border-border bg-surface shadow-card">
       {block.caption && (
@@ -110,9 +114,13 @@ export function DataTable({ block }: { block: DataTableBlock }) {
       </table>
     </div>
   );
-}
+});
 
-export function RunningJobsOverlay({ block }: { block: RunningJobsBlock }) {
+export const RunningJobsOverlay = memo(function RunningJobsOverlay({
+  block,
+}: {
+  block: RunningJobsBlock;
+}) {
   return (
     <div className="rounded-card border border-border bg-surface shadow-card">
       <div className="border-b border-border px-4 py-2 text-xs font-medium uppercase tracking-wider text-muted">
@@ -129,7 +137,7 @@ export function RunningJobsOverlay({ block }: { block: RunningJobsBlock }) {
       </ul>
     </div>
   );
-}
+});
 
 const TONE: Record<NonNullable<StatusLineBlock["tone"]>, string> = {
   running: "text-accent",
@@ -138,7 +146,7 @@ const TONE: Record<NonNullable<StatusLineBlock["tone"]>, string> = {
   error: "text-error",
 };
 
-export function StatusLine({ block }: { block: StatusLineBlock }) {
+export const StatusLine = memo(function StatusLine({ block }: { block: StatusLineBlock }) {
   return (
     <div className={cn(block.divider && "border-t border-border pt-4")}>
       <div className={cn("flex items-center gap-2 text-sm", TONE[block.tone ?? "review"])}>
@@ -150,4 +158,4 @@ export function StatusLine({ block }: { block: StatusLineBlock }) {
       </div>
     </div>
   );
-}
+});
