@@ -27,6 +27,10 @@ const mocks = vi.hoisted(() => ({
   /** Records setDefaultModel calls; `currentModel` is what getDefaultModel returns. */
   setDefaultModelSpy: vi.fn(),
   currentModel: null as string | null,
+  /** Providers listProviders returns. [] (default) makes loadCatalog's dangling-
+   *  model self-heal (#18) a no-op — the model is only "dangling" against a known
+   *  provider list, so an empty list yields no fallback. Set to exercise the heal. */
+  providers: [] as { id: string; name: string; models: { id: string; name: string }[] }[],
   /** Next setDefaultModel PATCH throws (server unreachable). */
   failSetModel: false,
   /** History the mock server returns for any session. */
@@ -109,6 +113,9 @@ vi.mock("@ai4s/sdk", () => {
     }
     async getDefaultModel() {
       return mocks.currentModel;
+    }
+    async listProviders() {
+      return mocks.providers;
     }
     async setDefaultModel(model: string) {
       mocks.setDefaultModelSpy(model);
@@ -199,6 +206,7 @@ beforeEach(async () => {
   mocks.failMessages = false;
   mocks.approvalMode = "approve";
   mocks.currentModel = null;
+  mocks.providers = [];
   mocks.failSetModel = false;
   mocks.notifyPermissionRequest.mockResolvedValue(true);
   useRuntimeStore.setState({
@@ -959,6 +967,30 @@ describe("approval mode", () => {
     } finally {
       useRuntimeStore.setState({ switching: false });
     }
+  });
+
+  it("loadCatalog self-heals a dangling default model (#18)", async () => {
+    // The stored default points at a provider/model that no longer exists.
+    mocks.providers = [
+      { id: "anthropic", name: "Anthropic", models: [{ id: "claude-sonnet-5", name: "Sonnet" }] },
+    ];
+    mocks.currentModel = "moonshot/kimi-removed"; // dangling: not in providers
+    useRuntimeStore.setState({ switching: false, defaultModel: "moonshot/kimi-removed" });
+    await useRuntimeStore.getState().loadCatalog();
+    // Re-pointed to the closest surviving model so sends stop failing "model not found".
+    expect(mocks.setDefaultModelSpy).toHaveBeenCalledWith("anthropic/claude-sonnet-5");
+    expect(useRuntimeStore.getState().defaultModel).toBe("anthropic/claude-sonnet-5");
+  });
+
+  it("loadCatalog leaves a valid default model untouched (#18)", async () => {
+    mocks.providers = [
+      { id: "anthropic", name: "Anthropic", models: [{ id: "claude-sonnet-5", name: "Sonnet" }] },
+    ];
+    mocks.currentModel = "anthropic/claude-sonnet-5"; // valid
+    useRuntimeStore.setState({ switching: false, defaultModel: "anthropic/claude-sonnet-5" });
+    await useRuntimeStore.getState().loadCatalog();
+    expect(mocks.setDefaultModelSpy).not.toHaveBeenCalled();
+    expect(useRuntimeStore.getState().defaultModel).toBe("anthropic/claude-sonnet-5");
   });
 });
 

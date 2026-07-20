@@ -46,6 +46,8 @@ import { provenanceInputsFromEvent, recordProvenance } from "./provenance";
 import { recordRun, runInputFromEvent } from "./runs";
 import { splitReview } from "./review";
 import { notifyPermissionRequest } from "./systemNotification";
+import { fallbackDefaultModel } from "@/components/settings/modelCatalog";
+import { toast } from "@/lib/toast";
 import i18n from "@/i18n";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -610,16 +612,39 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
   loadCatalog: async () => {
     if (!client) return;
     try {
-      const [firstSkills, agents, defaultModel, commands] = await Promise.all([
+      const [firstSkills, agents, defaultModel, commands, providers] = await Promise.all([
         client.listSkills(),
         client.listAgents(),
         client.getDefaultModel().catch(() => null),
         client.listCommands().catch(() => []),
+        // listProviders is OpenCodeClient-only (not on the AgentRuntime port);
+        // opencodeClient is the same instance as `client`, set together.
+        opencodeClient ? opencodeClient.listProviders().catch(() => []) : Promise.resolve([]),
       ]);
       // A model switch in flight owns `defaultModel`: this read may predate
       // the switch's config write, and applying it would visibly revert the
       // just-selected model.
       set(get().switching ? { agents, commands } : { agents, defaultModel, commands });
+      // Self-heal a dangling default model. It can go stale out-of-band — its
+      // provider removed, its id renamed, or the config edited outside the app
+      // — and then every send fails with "model not found". Settings only
+      // re-points it after a provider action, which never runs while the user
+      // is just chatting, so heal it here (loadCatalog runs on every connect).
+      // Skip while switching (a switch owns the model); an empty providers list
+      // (transient read failure) yields no fallback, so it stays untouched.
+      if (!get().switching && defaultModel) {
+        const next = fallbackDefaultModel(providers, defaultModel);
+        if (next) {
+          try {
+            await get().setDefaultModel(next);
+            toast.success(
+              i18n.t("settings:toast.defaultModelReset", { old: defaultModel, model: next }),
+            );
+          } catch {
+            // Leave it stale — the send-time error still guides to Settings.
+          }
+        }
+      }
       let skills = firstSkills;
       // The first workspace-scoped /api/skill call triggers OpenCode's lazy
       // instance init and can answer before the scan finishes — poll briefly.
