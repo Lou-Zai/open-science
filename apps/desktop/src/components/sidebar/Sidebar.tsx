@@ -153,8 +153,11 @@ export function Sidebar({ project }: { project: Project }) {
     if (created) navigate("/live");
   };
 
-  // Import an existing repo/folder as a project: pick a folder, then reference
-  // it in place (never moved, never auto-committed into).
+  // Import an existing repo/folder as a project: pick a folder, then make a
+  // faithful copy of it (files, git history, symlinks) into the app's base dir,
+  // leaving the original untouched. The copy lives where the sandboxed sidecar
+  // can reach it — a folder left in place under ~/Documents would fail macOS
+  // TCC (#31). Its AGENTS.md records where it was imported from.
   const handleImport = async () => {
     if (importBusy) return;
     const path = await pickFolder();
@@ -519,14 +522,14 @@ export function Sidebar({ project }: { project: Project }) {
                           e.stopPropagation();
                           setRenamingId(p.id);
                         }}
-                        title={p.imported ? p.path : t("projects.renameHint")}
+                        title={p.imported ? (p.importedFrom ?? p.path) : t("projects.renameHint")}
                       >
                         {p.name}
                       </span>
                       {p.imported && (
                         <span
                           className="shrink-0 rounded bg-surface-2 px-1 text-[9px] uppercase tracking-wide text-muted"
-                          title={p.path}
+                          title={p.importedFrom ?? p.path}
                         >
                           {t("projects.importedBadge")}
                         </span>

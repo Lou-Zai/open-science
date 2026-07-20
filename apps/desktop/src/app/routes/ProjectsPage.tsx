@@ -171,7 +171,10 @@ export function ProjectsPage() {
                         />
                       )}
                       {p.imported && (
-                        <span className="shrink-0 rounded bg-surface-2 px-1 text-[9px] uppercase tracking-wide text-muted">
+                        <span
+                          className="shrink-0 rounded bg-surface-2 px-1 text-[9px] uppercase tracking-wide text-muted"
+                          title={p.importedFrom ?? p.path}
+                        >
                           {t("projects.importedBadge")}
                         </span>
                       )}

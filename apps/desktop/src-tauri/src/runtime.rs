@@ -729,8 +729,39 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<CommandChild, String> {
     }
 
     let (mut rx, child) = cmd.spawn().map_err(|e| format!("failed to spawn opencode: {e}"))?;
-    // Drain events so the child's stdout/stderr buffer never blocks it.
-    tauri::async_runtime::spawn(async move { while rx.recv().await.is_some() {} });
+    // Drain events so the child's stdout/stderr buffer never blocks it, AND record
+    // the failure signals we used to discard. When the ad-hoc-signed sidecar dies
+    // during bootstrap (TCC denial, config-merge abort, panic) the only symptom was
+    // a generic "Could not open OpenCode event stream" in the UI with no cause. Now
+    // stderr, spawn errors, and the exit code land in debug.log next to the
+    // frontend's connection attempts. Stdout is left to OpenCode's own log file
+    // (xdg-data/opencode/log/opencode.log) so request spam never bloats debug.log.
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        use tauri_plugin_shell::process::CommandEvent;
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stderr(bytes) => {
+                    for line in String::from_utf8_lossy(&bytes).split(['\n', '\r']) {
+                        let line = line.trim();
+                        if !line.is_empty() {
+                            crate::debug_log::append(&app, &format!("[opencode] {line}"));
+                        }
+                    }
+                }
+                CommandEvent::Error(e) => {
+                    crate::debug_log::append(&app, &format!("[opencode] error: {e}"));
+                }
+                CommandEvent::Terminated(status) => {
+                    crate::debug_log::append(
+                        &app,
+                        &format!("[opencode] terminated: code={:?} signal={:?}", status.code, status.signal),
+                    );
+                }
+                _ => {}
+            }
+        }
+    });
     Ok(child)
 }
 

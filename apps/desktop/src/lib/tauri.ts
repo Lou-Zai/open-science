@@ -489,12 +489,15 @@ export interface ProjectInfo {
   name: string;
   description?: string;
   createdAt: number;
-  /** Absolute workspace folder (canonical, matches session `directory`). For an
-   *  imported project this is the external repo, not the app's stub folder. */
+  /** Absolute workspace folder (canonical, matches session `directory`). For a
+   *  copy-import this is the local copy under the base dir. */
   path: string;
-  /** True when this project points at a user-brought external repo/folder — the
-   *  app never auto-commits into an imported workspace. */
+  /** True when this project was brought in from elsewhere (a copy-import, or a
+   *  legacy in-place import) — drives the "imported" badge. */
   imported: boolean;
+  /** Where an imported project was brought in from (shown as a hint). Absent for
+   *  app-created projects. */
+  importedFrom?: string;
   /** Whether this project is pinned to the sidebar. */
   pinned: boolean;
 }
