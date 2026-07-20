@@ -992,6 +992,29 @@ describe("approval mode", () => {
     expect(mocks.setDefaultModelSpy).not.toHaveBeenCalled();
     expect(useRuntimeStore.getState().defaultModel).toBe("anthropic/claude-sonnet-5");
   });
+
+  it("loadCatalog does NOT revert a model the user just switched to (#37)", async () => {
+    // A deliberate switch to a valid model — it sticks.
+    mocks.providers = [{ id: "step", name: "StepFun", models: [{ id: "step-2", name: "Step 2" }] }];
+    mocks.currentModel = "step/step-2";
+    await useRuntimeStore.getState().setDefaultModel("step/step-2");
+    await new Promise((r) => setTimeout(r, 0)); // settle the reconnect's fired loadCatalog
+    expect(useRuntimeStore.getState().defaultModel).toBe("step/step-2");
+    mocks.setDefaultModelSpy.mockClear();
+
+    // The very next catalog read comes back WITHOUT step-2 — the transient an
+    // instance returns while it warms right after the switch's reconnect. The
+    // old self-heal judged that "dangling" and reverted the user's choice to an
+    // old model (#37); the grace window must leave the just-switched model alone.
+    mocks.providers = [
+      { id: "anthropic", name: "Anthropic", models: [{ id: "claude-sonnet-5", name: "Sonnet" }] },
+    ];
+    mocks.currentModel = "step/step-2"; // config still says step-2 (the PATCH landed)
+    await useRuntimeStore.getState().loadCatalog();
+
+    expect(mocks.setDefaultModelSpy).not.toHaveBeenCalled();
+    expect(useRuntimeStore.getState().defaultModel).toBe("step/step-2");
+  });
 });
 
 // The store — not the Settings page — owns the fact "a model switch failed":

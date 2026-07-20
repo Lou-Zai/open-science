@@ -579,6 +579,14 @@ export function SettingsPage() {
         // Custom endpoints live in the config file; removal restarts the sidecar.
         await removeConfigEntry("provider", providerID);
         await useRuntimeStore.getState().connectRetry();
+        // A custom provider's id is derived from its display name, and a key set
+        // via the key panel is stored separately in the auth store keyed by that
+        // id. Removing only the config entry leaves that credential behind, so
+        // re-adding the endpoint appears to "only work when the name matches
+        // exactly" — the stale key silently re-attaches (#37). Clear it too.
+        // Best-effort: most custom providers carry their key inline (no auth
+        // entry), and DELETE on a missing one is expected to fail.
+        await getClient()!.removeProviderAuth(providerID).catch(() => undefined);
       } else {
         await getClient()!.removeProviderAuth(providerID);
       }

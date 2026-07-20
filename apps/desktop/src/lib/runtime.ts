@@ -212,6 +212,17 @@ interface RuntimeState {
 let client: AgentRuntime | null = null;
 let opencodeClient: OpenCodeClient | null = null;
 let openSessionSeq = 0;
+/** The model the user last DELIBERATELY switched to, and when. A switch does a
+ *  masked reconnect, and connect() fires loadCatalog() un-awaited — so the
+ *  self-heal there can run just after `switching` clears, read the reconnecting
+ *  instance's not-yet-complete provider list, judge the just-picked model
+ *  "dangling", and revert it to an old one (a switch then "doesn't take"; #37).
+ *  Remember the choice briefly so the self-heal won't fight it during that
+ *  window; a model that is GENUINELY gone still heals once the window lapses,
+ *  and the send-time "model not found" error covers the gap meanwhile. */
+let lastSwitchModel: string | null = null;
+let lastSwitchAt = 0;
+const SWITCH_HEAL_GRACE_MS = 15_000;
 /** React StrictMode mounts effects twice in development. Share the same boot
  *  promise so duplicate AppShell effects cannot start dueling connect loops. */
 let bootstrapInFlight: Promise<void> | null = null;
@@ -631,8 +642,14 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       // re-points it after a provider action, which never runs while the user
       // is just chatting, so heal it here (loadCatalog runs on every connect).
       // Skip while switching (a switch owns the model); an empty providers list
-      // (transient read failure) yields no fallback, so it stays untouched.
-      if (!get().switching && defaultModel) {
+      // (transient read failure) yields no fallback, so it stays untouched. Also
+      // skip a model the user just deliberately switched to (within the grace
+      // window): right after a switch the reconnecting instance's provider list
+      // can be incomplete, and reverting on that transient reads the user's own
+      // switch as "dangling" and points it back at an old model (#37).
+      const justSwitched =
+        defaultModel === lastSwitchModel && Date.now() - lastSwitchAt < SWITCH_HEAL_GRACE_MS;
+      if (!get().switching && !justSwitched && defaultModel) {
         const next = fallbackDefaultModel(providers, defaultModel);
         if (next) {
           try {
@@ -695,6 +712,10 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     // #37 diagnostics: record what we ask for so a repro (e.g. switching after a
     // plan's quota runs out) shows the exact target model.
     void logDebug(`[provider] setDefaultModel → ${model}`);
+    // Mark this as a deliberate switch so the reconnect's self-heal (loadCatalog)
+    // won't revert it against a still-warming provider list (#37).
+    lastSwitchModel = model;
+    lastSwitchAt = Date.now();
     // Applying the model PATCHes OpenCode's global config, which closes the
     // event stream server-side. EventSource's own reconnect does not reliably
     // recover from that — it strands the app in "connecting"/disconnected until
