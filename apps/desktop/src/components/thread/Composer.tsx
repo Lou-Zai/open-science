@@ -19,6 +19,7 @@ import {
   addPathsToWorkspace,
   addTextToWorkspace,
   isTauri,
+  logDebug,
   type ApprovalMode,
 } from "@/lib/tauri";
 import { useRuntimeStore, type AgentMode } from "@/lib/runtime";
@@ -444,18 +445,25 @@ export function Composer({
     let unlisten: (() => void) | undefined;
     let cancelled = false;
     void (async () => {
-      const { getCurrentWebview } = await import("@tauri-apps/api/webview");
-      const un = await getCurrentWebview().onDragDropEvent((event) => {
-        const p = event.payload;
-        if (p.type === "enter" || p.type === "over") setDragOver(true);
-        else if (p.type === "leave") setDragOver(false);
-        else if (p.type === "drop") {
-          setDragOver(false);
-          if (p.paths.length > 0) void addWorkspaceFile(() => addPathsToWorkspace(p.paths));
-        }
-      });
-      if (cancelled) un();
-      else unlisten = un;
+      try {
+        const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+        const un = await getCurrentWebview().onDragDropEvent((event) => {
+          const p = event.payload;
+          if (p.type === "enter" || p.type === "over") setDragOver(true);
+          else if (p.type === "leave") setDragOver(false);
+          else if (p.type === "drop") {
+            setDragOver(false);
+            if (p.paths.length > 0) void addWorkspaceFile(() => addPathsToWorkspace(p.paths));
+          }
+        });
+        if (cancelled) un();
+        else unlisten = un;
+      } catch (err) {
+        // The webview drag-drop API can be unavailable (partial Tauri bridge,
+        // test env) — native file drops are an enhancement, so degrade quietly
+        // rather than surfacing an unhandled rejection.
+        void logDebug(`composer drag-drop unavailable: ${err instanceof Error ? err.message : String(err)}`);
+      }
     })();
     return () => {
       cancelled = true;

@@ -8,6 +8,15 @@ vi.mock("@/lib/tauri", () => ({
   addFilesToWorkspace: vi.fn(async () => ["data.csv"]),
   addTextToWorkspace: vi.fn(async () => "pasted.txt"),
   addBinaryToWorkspace: vi.fn(async () => "pasted.png"),
+  addPathsToWorkspace: vi.fn(async () => ["dropped.csv"]),
+  logDebug: vi.fn(async () => {}),
+}));
+
+// The composer subscribes to the webview's native drag-drop event on mount.
+// Without a Tauri runtime `getCurrentWebview()` throws — stub it so the effect
+// subscribes cleanly instead of leaving an unhandled rejection.
+vi.mock("@tauri-apps/api/webview", () => ({
+  getCurrentWebview: () => ({ onDragDropEvent: vi.fn(async () => () => {}) }),
 }));
 
 describe("Composer attachments (desktop)", () => {
