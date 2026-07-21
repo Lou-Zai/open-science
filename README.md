@@ -76,6 +76,13 @@ write-up, in one continuous, auditable session.
   stay pluggable.
 - **Reproducible by construction** — local, SSH/Slurm, Modal, and notebook-batch runs
   are captured as reproducible run records, not loose terminal scrollback.
+- **Reach it from anywhere** — a built-in, token-authenticated gateway serves the
+  *real* desktop UI to a browser on your LAN or phone (or, with a tunnel, from
+  anywhere) — kick off a run at your desk and check on it from your phone over lunch.
+  Off by default; loopback-only until you opt in, and API keys never leave the machine.
+- **Drives your own browser** — the agent can control your real Chrome, with your
+  profile and logins intact, to read the live web the way you do — or an isolated
+  private browser when you'd rather it not.
 - **Extensible** — agent skills, MCP servers and one-click science connectors,
   `/` commands, `!` shell mode, and a model-agnostic SDK.
 
@@ -95,10 +102,27 @@ PDF, and audit citations, unsourced numbers, and figure/code consistency.
 
 ![Literature survey producing a rendered PDF manuscript with a traceability review](./docs/assets/showcase-literature.webp)
 
+**Research from anywhere — even your phone.** A built-in authenticated gateway serves
+the *real* desktop UI to a browser on your LAN (or a tunnel), so you can start a run at
+your desk and read the finished figure and report on your phone.
+
+<p align="center">
+  <img src="./docs/assets/showcase-mobile-home.webp" alt="The workbench running in a phone browser: the new-session screen" width="44%">
+  &nbsp;&nbsp;
+  <img src="./docs/assets/showcase-mobile-run.webp" alt="A completed dose-response analysis — figure and report — viewed on a phone" width="44%">
+</p>
+
+**Drives your own Chrome.** The agent reads the live web through your real browser
+profile — logins and all — then turns what it finds into a figure and a sortable CSV.
+
+![The agent driving the user's own Chrome via browser-control to harvest bioRxiv preprints into a chart and CSV](./docs/assets/showcase-browser.webp)
+
 <details>
 <summary><b>More screenshots</b></summary>
 
 <br>
+
+![Reproducing an scVI benchmark on a remote A100 with a pinned environment, execution log, and provenance](./docs/assets/showcase-remote.webp)
 
 ![The agent driving a Jupyter notebook with a live matplotlib figure](./docs/assets/showcase-notebook.webp)
 
@@ -135,6 +159,8 @@ office/document skills below.
 | Runtime | Bundled OpenCode sidecar, auto-started by the app, isolated from the user's own OpenCode config/data. |
 | Sessions | Multi-session chat/history, dated workspace folders, global history across workspaces, `/` commands, and `!` shell mode. |
 | Files | Global and per-session file browsing, context menu actions, external open/reveal, copy path, and local preview server. |
+| Remote access | Token-authenticated gateway that serves the real UI to a CLI, a LAN web browser, or your phone (loopback by default, LAN opt-in); read-only vs full access modes; copy a link with the token embedded to connect in one tap. API keys never cross the wire. |
+| Browser control | The agent drives your own Chrome — profile and login state preserved — reading pages through the accessibility tree, or an isolated/private browser on demand. |
 | Notebooks | Real `.ipynb` files, Python and R notebook creation, local kernel execution, managed Jupyter environment via bundled `uv`, and an Open JupyterLab action. |
 | Runs | Append-only run logs, global SQLite run index, search/facets/pagination, local/remote surfaces, output links, logs, and reproduce prompts. |
 | Provenance | `.openscience/provenance.jsonl` tracks file versions and links produced artifacts back to the run or edit that created them. |
@@ -287,7 +313,7 @@ If you use Open Science Desktop in your research, please cite it:
   title   = {Open Science Desktop: a local-first, model-agnostic AI research workbench},
   year    = {2026},
   version = {0.2.3},
-  doi     = {10.5281/zenodo.21465187},
+  doi     = {10.5281/zenodo.21477879},
   url     = {https://github.com/ai4s-research/open-science},
   license = {MIT}
 }
