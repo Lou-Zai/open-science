@@ -1,5 +1,7 @@
 # Progress
 
+2026-07-21 01:25 · docs: v0.2.2 released (GitHub Release published, 8 installers live) + synced Zenodo v0.2.2 DOI 10.5281/zenodo.21465187 into CITATION.cff and all READMEs (concept DOI badge unchanged).
+
 2026-07-20 03:39 · chore(release): v0.2.2 — Settings UI redesign (flat low-chrome controls), SSE render-storm fix (#34), model-switch self-heal guard + custom-provider disconnect auth (#37), privacy header fix. Tagged v0.2.2; CI (build.yml) builds the macOS/Windows/Linux installers into a draft GitHub Release. Zenodo DOI to sync after publishing.
 
 2026-07-20 02:58 · refactor(desktop): redesign Settings UI (UI-only, no behavior change) — replaced bordered controls-inside-cards ("box-in-box") with one low-chrome language: borderless filled "well" inputs, right-aligned transparent dropdown chips (fill on hover), and soft-filled ghost buttons (inputCls.ts + btnGhost). Grouped Runtime's server/proxy/mirrors into one card of rows; flattened the surface-2 add-form panels in Providers/MCP/Compute and the ModelBrowser's inner frame + shaded sidebar (transparent filters, faint dividers, borderless rows); read-only paths (workspace, Python) are plain mono text; Appearance theme lost its segmented track and language became a chip; Privacy reworked into a two-side data-flow with tinted icons + hairline rows. +1 i18n key (runtime.serverLabel) across 7 locales. lint + tsc + vite build clean; 35 settings tests pass. (Worktree.)
