@@ -240,7 +240,8 @@
     "allowOnce": "Autoriser une fois"
   },
   "reasoning": {
-    "label": "Réflexion"
+    "thinking": "Réflexion…",
+    "thought": "Réflexion faite"
   },
   "stepSummary": {
     "steps": "{{count}} étapes"

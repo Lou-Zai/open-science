@@ -240,7 +240,8 @@
     "allowOnce": "Permitir una vez"
   },
   "reasoning": {
-    "label": "Razonando"
+    "thinking": "Pensando…",
+    "thought": "Pensado"
   },
   "stepSummary": {
     "steps": "{{count}} pasos"

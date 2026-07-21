@@ -16,14 +16,19 @@ export interface BlockHandlers {
   onFigureComment?: (annotation: FigureAnnotation, figureTitle: string) => void;
 }
 
-export function renderBlock(block: ThreadBlock, i: number, handlers?: BlockHandlers) {
+export function renderBlock(
+  block: ThreadBlock,
+  i: number,
+  handlers?: BlockHandlers,
+  liveReasoningIndex?: number,
+) {
   switch (block.kind) {
     case "user":
       return <UserMessage key={i} block={block} />;
     case "agent":
       return <AgentMessage key={i} markdown={block.markdown} onOpenArtifact={handlers?.onArtifactOpen} />;
     case "reasoning":
-      return <ReasoningRow key={i} block={block} />;
+      return <ReasoningRow key={i} block={block} streaming={i === liveReasoningIndex} />;
     case "step-summary":
       return <StepSummaryRow key={i} block={block} />;
     case "tool-call":
@@ -50,9 +55,13 @@ export function renderBlock(block: ThreadBlock, i: number, handlers?: BlockHandl
 export const BlockList = memo(function BlockList({
   blocks,
   handlers,
+  liveReasoningIndex,
 }: {
   blocks: ThreadBlock[];
   handlers?: BlockHandlers;
+  /** Global index of the reasoning block streaming right now (live session);
+   *  that block renders expanded and unfolds/collapses itself as it streams. */
+  liveReasoningIndex?: number;
 }) {
   // Runs of quiet tool steps render as one collapsible group (Codex-style);
   // everything else — text, artifacts, prominent tool cards — on its own.
@@ -60,9 +69,14 @@ export const BlockList = memo(function BlockList({
     <>
       {groupToolBlocks(blocks).map((item) =>
         item.kind === "group" ? (
-          <ToolGroup key={`group:${item.start}`} blocks={item.blocks} />
+          <ToolGroup
+            key={`group:${item.start}`}
+            blocks={item.blocks}
+            start={item.start}
+            liveReasoningIndex={liveReasoningIndex}
+          />
         ) : (
-          renderBlock(item.block, item.index, handlers)
+          renderBlock(item.block, item.index, handlers, liveReasoningIndex)
         ),
       )}
     </>

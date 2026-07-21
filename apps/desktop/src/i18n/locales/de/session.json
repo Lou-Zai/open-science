@@ -240,7 +240,8 @@
     "allowOnce": "Einmal erlauben"
   },
   "reasoning": {
-    "label": "Denkt nach"
+    "thinking": "Denkt nach…",
+    "thought": "Nachgedacht"
   },
   "stepSummary": {
     "steps": "{{count}} Schritte"

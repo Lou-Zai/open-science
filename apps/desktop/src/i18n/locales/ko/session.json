@@ -232,7 +232,8 @@
     "allowOnce": "한 번만 허용"
   },
   "reasoning": {
-    "label": "생각 중"
+    "thinking": "생각 중…",
+    "thought": "생각 완료"
   },
   "stepSummary": {
     "steps": "{{count}}단계"

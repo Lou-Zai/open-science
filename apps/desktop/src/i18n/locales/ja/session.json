@@ -232,7 +232,8 @@
     "allowOnce": "今回のみ許可"
   },
   "reasoning": {
-    "label": "思考中"
+    "thinking": "思考中…",
+    "thought": "思考済み"
   },
   "stepSummary": {
     "steps": "{{count}} ステップ"

@@ -6,6 +6,7 @@ import i18n from "@/i18n";
 import { cn } from "@/lib/cn";
 import { DiffView } from "@/components/code-viewer/DiffView";
 import { STATUS } from "./ToolCallRow";
+import { ReasoningRow } from "./ReasoningRow";
 import { SubagentActivity } from "./SubagentActivity";
 
 // Codex-style tool activity: consecutive quiet tool steps fold into one
@@ -15,23 +16,35 @@ import { SubagentActivity } from "./SubagentActivity";
 // shows a live output tail — a long training run never looks hung.
 
 export type BlockListItem =
-  | { kind: "group"; start: number; blocks: ToolCallBlock[] }
+  | { kind: "group"; start: number; blocks: ThreadBlock[] }
   | { kind: "block"; index: number; block: ThreadBlock };
 
-/** Fold runs of tool-call blocks into groups. Failures stay IN the group —
- *  an agent trying, failing, and adjusting is routine, and a card per failed
- *  fetch would drown the thread (the group summary counts them instead).
- *  Only a step that needs the USER (waiting-approval) or a non-tool block
- *  breaks the run and renders on its own. Pure — exported for tests. */
+/** Fold a run of tool calls AND the reasoning between them into ONE activity
+ *  group — thinking and doing are the same working stream, so interleaving them
+ *  keeps consecutive tools merged instead of letting a "thinking" block split
+ *  the run into fragments. Failures stay IN the group (routine trial-and-error;
+ *  the summary counts them). A step that needs the USER (waiting-approval) or a
+ *  non-groupable block (text, artifact, …) breaks the run. A run with no actual
+ *  tool call — e.g. the reasoning that precedes the final answer — is not an
+ *  activity group and renders on its own. Pure — exported for tests. */
 export function groupToolBlocks(blocks: ThreadBlock[]): BlockListItem[] {
   const items: BlockListItem[] = [];
-  let group: { start: number; blocks: ToolCallBlock[] } | null = null;
+  let group: { start: number; blocks: ThreadBlock[] } | null = null;
   const flush = () => {
-    if (group) items.push({ kind: "group", start: group.start, blocks: group.blocks });
+    const g = group;
     group = null;
+    if (!g) return;
+    if (g.blocks.some((b) => b.kind === "tool-call")) {
+      items.push({ kind: "group", start: g.start, blocks: g.blocks });
+    } else {
+      // Reasoning-only run: no tools to summarize — render each on its own.
+      g.blocks.forEach((b, k) => items.push({ kind: "block", index: g.start + k, block: b }));
+    }
   };
   blocks.forEach((b, i) => {
-    if (b.kind === "tool-call" && b.status !== "waiting-approval") {
+    const groupable =
+      (b.kind === "tool-call" && b.status !== "waiting-approval") || b.kind === "reasoning";
+    if (groupable) {
       group ??= { start: i, blocks: [] };
       group.blocks.push(b);
     } else {
@@ -43,10 +56,12 @@ export function groupToolBlocks(blocks: ThreadBlock[]): BlockListItem[] {
   return items;
 }
 
-/** "Ran 3 commands, created a file" — one phrase per verb, in first-seen order. */
-export function summarizeGroup(blocks: ToolCallBlock[]): string {
+/** "Ran 3 commands, created a file" — one phrase per verb, in first-seen order.
+ *  Counts tool calls only; interleaved reasoning doesn't add to the summary. */
+export function summarizeGroup(blocks: ThreadBlock[]): string {
   const counts = new Map<string, number>();
   for (const b of blocks) {
+    if (b.kind !== "tool-call") continue;
     const verb = b.verb ?? "";
     counts.set(verb, (counts.get(verb) ?? 0) + 1);
   }
@@ -264,14 +279,32 @@ const ToolRow = memo(function ToolRow({ block }: { block: ToolCallBlock }) {
   );
 });
 
-export function ToolGroup({ blocks }: { blocks: ToolCallBlock[] }) {
+export function ToolGroup({
+  blocks,
+  start = 0,
+  liveReasoningIndex,
+}: {
+  blocks: ThreadBlock[];
+  /** Thread index of this group's first block — maps a row to its global index. */
+  start?: number;
+  /** Global index of the reasoning block currently streaming (if any). */
+  liveReasoningIndex?: number;
+}) {
   const { t } = useTranslation(["session", "common"]);
   // While a step runs the group stays open (the live tail must be visible);
   // once everything settles it folds to the summary. The fold waits a grace
   // period — within a turn the next command follows in seconds, and an
   // open→shut→open flap between steps would be pure jank. A click overrides.
-  const active = blocks.some((b) => b.status === "running" || b.status === "pending");
-  const failed = blocks.filter((b) => b.status === "failed" || b.status === "warning").length;
+  const tools = blocks.filter((b): b is ToolCallBlock => b.kind === "tool-call");
+  // A thought streaming inside this group keeps it open too, so live thinking
+  // is never hidden by an early fold when no tool happens to be running.
+  const streamingHere =
+    liveReasoningIndex != null &&
+    liveReasoningIndex >= start &&
+    liveReasoningIndex < start + blocks.length;
+  const active =
+    streamingHere || tools.some((b) => b.status === "running" || b.status === "pending");
+  const failed = tools.filter((b) => b.status === "failed" || b.status === "warning").length;
   const [autoOpen, setAutoOpen] = useState(active);
   useEffect(() => {
     if (active) {
@@ -283,8 +316,15 @@ export function ToolGroup({ blocks }: { blocks: ToolCallBlock[] }) {
   }, [active]);
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const open = userOpen ?? autoOpen;
-  const rows = blocks.map((b, i) => <ToolRow key={i} block={b} />);
-  if (blocks.length === 1) return <div>{rows}</div>;
+  const rows = blocks.map((b, i) =>
+    b.kind === "reasoning" ? (
+      <ReasoningRow key={i} block={b} streaming={start + i === liveReasoningIndex} inline />
+    ) : b.kind === "tool-call" ? (
+      <ToolRow key={i} block={b} />
+    ) : null,
+  );
+  // A lone tool step (no interleaved thinking) keeps the bare-row look.
+  if (blocks.length === 1 && blocks[0].kind === "tool-call") return <div>{rows}</div>;
   return (
     <div>
       <button

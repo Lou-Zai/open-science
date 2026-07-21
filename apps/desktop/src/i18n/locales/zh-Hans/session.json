@@ -232,7 +232,8 @@
     "allowOnce": "仅允许一次"
   },
   "reasoning": {
-    "label": "思考中"
+    "thinking": "思考中…",
+    "thought": "已思考"
   },
   "stepSummary": {
     "steps": "{{count}} 个步骤"

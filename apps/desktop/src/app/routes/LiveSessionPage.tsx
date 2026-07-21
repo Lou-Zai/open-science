@@ -177,6 +177,14 @@ export function LiveSessionPage() {
           b.kind === "tool-call" && b.status === "running",
         )
     : undefined;
+  // The thought streaming right now: the last block of a still-running turn.
+  // It renders expanded and live, then collapses to a "Thought" line once the
+  // agent moves on (a later block appears) or the turn ends.
+  const lastBlock = thread?.blocks[thread.blocks.length - 1];
+  const liveReasoningIndex =
+    running && thread && lastBlock?.kind === "reasoning"
+      ? thread.blocks.length - 1
+      : undefined;
 
   // Esc interrupts the running turn (like a terminal agent). Modals own Esc
   // while open; the composer's palette marks its Esc as handled.
@@ -407,7 +415,13 @@ export function LiveSessionPage() {
               <WorkflowStarters onPick={(p) => void onSend(p)} />
             )}
             {historyLoading && <ThreadSkeleton />}
-            {!historyLoading && thread && <BlockList blocks={thread.blocks} handlers={handlers} />}
+            {!historyLoading && thread && (
+              <BlockList
+                blocks={thread.blocks}
+                handlers={handlers}
+                liveReasoningIndex={liveReasoningIndex}
+              />
+            )}
             {working && (
               // Typing-indicator at the bottom of the conversation: the message
               // just echoed above it, so the user always sees the send is alive.
