@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Outlet, useLocation } from "react-router-dom";
 import { PanelLeft } from "lucide-react";
@@ -13,10 +13,16 @@ import { useOverlayTitlebar, useUiStore } from "@/lib/store";
 import { overlayTitlebarStyle } from "@/lib/titlebar";
 import { ensureJupyter, openExternal, watchFullscreen } from "@/lib/tauri";
 import { useUpdateStore } from "@/lib/update";
+import { isGatewayWeb, gatewayToken, setUnauthorizedHandler } from "@/lib/webMode";
+import { WebTokenGate } from "@/components/web/WebTokenGate";
+import { useIsMobile } from "@/lib/useIsMobile";
 
 export function AppShell() {
   const { t } = useTranslation("nav");
   const { sidebarCollapsed, setSidebarCollapsed } = useUiStore();
+  const isMobile = useIsMobile();
+  // Gateway web client: hold the app behind a token gate until authenticated.
+  const [webReady, setWebReady] = useState(!isGatewayWeb || !!gatewayToken());
 
   // Cmd/Ctrl+B toggles the sidebar, matching the button's tooltip. Not in
   // settings: there the sidebar IS the settings navigation (with the only way
@@ -36,6 +42,7 @@ export function AppShell() {
   // In the packaged desktop app, auto-start the bundled OpenCode and connect,
   // and bring the Jupyter server back up if the user enabled it before.
   useEffect(() => {
+    if (isGatewayWeb && !webReady) return; // wait for the token gate
     void useRuntimeStore.getState().bootstrap();
     void ensureJupyter();
     // One app-lifetime listener for uv provisioning progress, so a running
@@ -44,7 +51,22 @@ export function AppShell() {
     if (!import.meta.env.TEST) {
       void useUpdateStore.getState().maybeAutoCheck();
     }
+  }, [webReady]);
+
+  // Web client: if the gateway rejects the token (rotated/revoked), drop back
+  // to the token gate instead of looping on a failed connection.
+  useEffect(() => {
+    if (!isGatewayWeb) return;
+    setUnauthorizedHandler(() => setWebReady(false));
+    return () => setUnauthorizedHandler(null);
   }, []);
+
+  // Mobile: the sidebar is an overlay drawer — keep it closed by default and
+  // close it after navigating (tapping a session or nav item).
+  const drawerPathname = useLocation().pathname;
+  useEffect(() => {
+    if (isMobile) setSidebarCollapsed(true);
+  }, [isMobile, drawerPathname, setSidebarCollapsed]);
 
   // Track native fullscreen: macOS hides the traffic lights there, so headers
   // must drop their traffic-light inset (see useOverlayTitlebar).
@@ -87,16 +109,42 @@ export function AppShell() {
   const pathname = useLocation().pathname;
   const pageOwnsTitlebar = pathname.startsWith("/live") || pathname.startsWith("/example");
 
+  if (isGatewayWeb && !webReady) {
+    return <WebTokenGate onConnect={() => setWebReady(true)} />;
+  }
+
   return (
     // The window background lives on <main>, not the shell: under vibrancy
     // the area behind the (translucent) sidebar must stay transparent.
     <div className="flex h-screen w-screen overflow-hidden text-text">
       <Sidebar project={mockProject} />
+      {/* Mobile: dim + close the overlay drawer by tapping outside it. */}
+      {isMobile && !sidebarCollapsed && (
+        <div
+          className="fixed inset-0 z-30 bg-black/40"
+          onClick={() => setSidebarCollapsed(true)}
+          aria-hidden
+        />
+      )}
       <main className="flex min-w-0 flex-1 flex-col bg-bg">
+        {/* Mobile top bar: a hamburger to open the drawer. Skipped on pages that
+            own their header (live/example sessions already render a toggle) so
+            the two don't stack. */}
+        {isMobile && !pageOwnsTitlebar && (
+          <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2">
+            <button
+              onClick={() => setSidebarCollapsed(false)}
+              aria-label={t("sidebar.expand")}
+              className="rounded p-2 text-text hover:bg-surface-2"
+            >
+              <PanelLeft size={18} strokeWidth={1.5} />
+            </button>
+          </div>
+        )}
         {/* Titlebar strip for pages that don't own one: keeps the whole top
             of the content area draggable under the macOS overlay titlebar,
             and hosts the expand button while the sidebar is collapsed. */}
-        {!pageOwnsTitlebar && (overlayTitlebar || (sidebarCollapsed && !inSettings)) && (
+        {!isMobile && !pageOwnsTitlebar && (overlayTitlebar || (sidebarCollapsed && !inSettings)) && (
           <div
             data-tauri-drag-region={overlayTitlebar || undefined}
             style={

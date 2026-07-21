@@ -4,6 +4,7 @@ mod artifact_file;
 mod browser;
 mod debug_log;
 mod examples;
+mod gateway;
 mod git_snapshot;
 mod goal;
 mod harness;
@@ -55,6 +56,7 @@ pub fn run() {
         .manage(PreviewState::default())
         .manage(ProvenanceState::default())
         .manage(runs::RunState::default())
+        .manage(gateway::GatewayState::default())
         .setup(|app| {
             // Watch the active workspace so changes made outside the app (an
             // external editor, a detached process) still enqueue a debounced
@@ -62,6 +64,8 @@ pub fn run() {
             if let Ok(ws) = runtime::workspace_dir(app.handle()) {
                 git_snapshot::watch_workspace(&ws);
             }
+            // Bring the remote-access gateway back up if the user left it enabled.
+            gateway::autostart(app.handle());
             Ok(())
         })
         // The transparent + vibrancy window loses tao's traffic-light inset on
@@ -81,6 +85,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             runtime::start_runtime,
             runtime::runtime_password,
+            gateway::gateway_status,
+            gateway::set_gateway_config,
+            gateway::regenerate_gateway_token,
             runtime::stop_runtime,
             runtime::workspace_path,
             runtime::workspace_base,
@@ -170,6 +177,7 @@ pub fn run() {
                 runtime::kill_child(&app.state::<RuntimeState>());
                 kernel::kill_kernel(&app.state::<KernelState>());
                 jupyter::kill_jupyter(&app.state::<JupyterState>());
+                gateway::shutdown(app.state::<gateway::GatewayState>().inner());
             }
         });
 }

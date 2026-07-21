@@ -26,12 +26,19 @@ pub struct RuntimeState {
 }
 
 /// App-private runtime root, e.g. ~/Library/Application Support/com.ai4s.workbench/runtime
-fn runtime_root(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn runtime_root(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app
         .path()
         .app_data_dir()
         .map_err(|e| e.to_string())?
         .join("runtime"))
+}
+
+/// The running sidecar's base URL (`http://127.0.0.1:<port>`), or None when the
+/// runtime is not started yet. The gateway proxies agent calls here, adding the
+/// per-run Basic-auth password (`server_password`) itself.
+pub(crate) fn sidecar_url(state: &RuntimeState) -> Option<String> {
+    state.lifecycle.lock().unwrap().url.clone()
 }
 
 fn xdg_config_home(app: &AppHandle) -> Result<PathBuf, String> {

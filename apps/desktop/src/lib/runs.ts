@@ -7,6 +7,7 @@
 import type { RunArtifact, RunRecord } from "@ai4s/shared";
 import type { ToolUpdatedEvent } from "@ai4s/sdk";
 import { isTauri, logDebug } from "./tauri";
+import { isGatewayWeb, gatewayGet } from "./webMode";
 
 /** The compute surface a run targeted. Only "local" runs produce workspace
  *  files we can hash; remote surfaces are recorded honestly with their command
@@ -246,6 +247,13 @@ export async function recordRun(
 
 /** All recorded runs, newest first ([] in browser dev). */
 export async function listRuns(): Promise<RunRecord[]> {
+  if (isGatewayWeb) {
+    try {
+      return (await gatewayGet<RunRecord[]>("/v1/runs")) ?? [];
+    } catch {
+      return [];
+    }
+  }
   if (!isTauri) return [];
   try {
     const { invoke } = await import("@tauri-apps/api/core");
@@ -287,6 +295,14 @@ const EMPTY_PAGE: RunPage = { rows: [], total: 0, facets: { status: [], surface:
 
 /** Query the runs index (indexed, paginated, faceted). Empty page in browser dev. */
 export async function queryRuns(query: RunQuery): Promise<RunPage> {
+  if (isGatewayWeb) {
+    try {
+      const q = encodeURIComponent(JSON.stringify(query));
+      return (await gatewayGet<RunPage>(`/v1/runs/query?q=${q}`)) ?? EMPTY_PAGE;
+    } catch {
+      return EMPTY_PAGE;
+    }
+  }
   if (!isTauri) return EMPTY_PAGE;
   try {
     const { invoke } = await import("@tauri-apps/api/core");
@@ -298,6 +314,13 @@ export async function queryRuns(query: RunQuery): Promise<RunPage> {
 
 /** A run's captured stdout/stderr by its log hash (null if unreadable). */
 export async function readRunLog(hash: string): Promise<string | null> {
+  if (isGatewayWeb) {
+    try {
+      return await gatewayGet<string>(`/v1/runs/log?hash=${encodeURIComponent(hash)}`);
+    } catch {
+      return null;
+    }
+  }
   if (!isTauri) return null;
   try {
     const { invoke } = await import("@tauri-apps/api/core");

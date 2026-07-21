@@ -8,7 +8,8 @@
     "connectors": "连接器",
     "compute": "计算",
     "privacy": "隐私",
-    "browser": "浏览器"
+    "browser": "浏览器",
+    "remote": "远程访问"
   },
   "appearance": {
     "title": "外观",
@@ -300,5 +301,36 @@
       "couldNotCancel": "无法取消 {{id}}",
       "jobCanceled": "任务 {{id}} 已取消"
     }
+  },
+  "remote": {
+    "title": "远程访问",
+    "hint": "把这台桌面变成一个安全的 API——从手机、局域网内的另一台电脑、CLI 或穿透隧道访问你的会话和文件。默认关闭。",
+    "enable": "启用远程访问",
+    "enableHint": "启动带鉴权的网关。在你于下方允许局域网之前,仅绑定本机。",
+    "loopbackUrl": "本机",
+    "loopbackUrlHint": "在本机浏览器中打开,或让 CLI 指向这里。",
+    "binding": "可访问范围",
+    "bindingHint": "网关监听的位置。只在你信任的网络上开启局域网。",
+    "bindingLoopback": "仅本机",
+    "bindingLan": "局域网",
+    "lanWarn": "这会把网关暴露给局域网内的所有人。任何拿到令牌的人都能驱动 agent 并读取你的工作区文件。请只在你信任的网络上这样做。是否继续?",
+    "lanActive": "局域网内其他设备可访问。请对令牌保密。",
+    "mode": "访问权限",
+    "modeFull": "完全访问",
+    "modeReadonly": "只读",
+    "modeFullHint": "客户端可创建会话、发送消息、运行工具并回应审批。",
+    "modeReadonlyHint": "客户端仅可读取会话和文件——不能发消息、运行工具或审批。",
+    "token": "访问令牌",
+    "tokenHint": "客户端用此 Bearer 令牌进行鉴权。",
+    "reveal": "显示令牌",
+    "hide": "隐藏令牌",
+    "copy": "复制",
+    "regenerate": "重新生成令牌",
+    "regenerated": "已生成新令牌——现有客户端需重新连接。",
+    "openHint": "在浏览器中打开上面的网址,然后粘贴此令牌进行连接。",
+    "copied": "已复制到剪贴板",
+    "error": "远程访问设置修改失败",
+    "connect": "连接",
+    "connectPrompt": "输入桌面应用中的访问令牌:设置 → 远程访问。"
   }
 }

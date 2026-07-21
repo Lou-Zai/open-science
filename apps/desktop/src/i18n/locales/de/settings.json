@@ -8,7 +8,8 @@
     "connectors": "Konnektoren",
     "compute": "Rechenleistung",
     "privacy": "Datenschutz",
-    "browser": "Browser"
+    "browser": "Browser",
+    "remote": "Fernzugriff"
   },
   "appearance": {
     "title": "Erscheinungsbild",
@@ -302,5 +303,36 @@
       "couldNotCancel": "{{id}} konnte nicht abgebrochen werden",
       "jobCanceled": "Job {{id}} abgebrochen"
     }
+  },
+  "remote": {
+    "title": "Fernzugriff",
+    "hint": "Macht diesen Desktop zu einer sicheren API – erreiche deine Sitzungen und Dateien vom Handy oder einem anderen Rechner im Netzwerk, per CLI oder Tunnel. Standardmäßig aus.",
+    "enable": "Fernzugriff aktivieren",
+    "enableHint": "Startet das authentifizierte Gateway. Nur an dieses Gerät gebunden, bis du unten das lokale Netzwerk erlaubst.",
+    "loopbackUrl": "Dieses Gerät",
+    "loopbackUrlHint": "In einem Browser auf diesem Mac öffnen oder eine CLI hierher zeigen lassen.",
+    "binding": "Erreichbar von",
+    "bindingHint": "Wo das Gateway lauscht. Aktiviere das lokale Netzwerk nur in einem vertrauenswürdigen Netz.",
+    "bindingLoopback": "Nur dieses Gerät",
+    "bindingLan": "Lokales Netzwerk",
+    "lanWarn": "Damit ist das Gateway für alle in deinem lokalen Netzwerk erreichbar. Jeder mit dem Token kann den Agenten steuern und deine Arbeitsbereichsdateien lesen. Tu dies nur in einem vertrauenswürdigen Netz. Fortfahren?",
+    "lanActive": "Von anderen Geräten in deinem Netzwerk erreichbar. Halte das Token geheim.",
+    "mode": "Zugriffsebene",
+    "modeFull": "Vollzugriff",
+    "modeReadonly": "Nur lesen",
+    "modeFullHint": "Clients können Sitzungen erstellen, Prompts senden, Tools ausführen und Freigaben beantworten.",
+    "modeReadonlyHint": "Clients können nur Sitzungen und Dateien lesen – keine Prompts, Tools oder Freigaben.",
+    "token": "Zugriffstoken",
+    "tokenHint": "Clients authentifizieren sich mit diesem Bearer-Token.",
+    "reveal": "Token anzeigen",
+    "hide": "Token verbergen",
+    "copy": "Kopieren",
+    "regenerate": "Token neu erzeugen",
+    "regenerated": "Neues Token erzeugt – bestehende Clients müssen sich neu verbinden.",
+    "openHint": "Öffne die obige URL in einem Browser und füge dieses Token zum Verbinden ein.",
+    "copied": "In die Zwischenablage kopiert",
+    "error": "Ändern des Fernzugriffs fehlgeschlagen",
+    "connect": "Verbinden",
+    "connectPrompt": "Gib das Zugriffstoken aus der Desktop-App ein → Einstellungen → Fernzugriff."
   }
 }

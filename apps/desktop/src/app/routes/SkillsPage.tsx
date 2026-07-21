@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Bot, Boxes, Check, Package, Puzzle, X } from "lucide-react";
 import { useRuntimeStore } from "@/lib/runtime";
 import { cn } from "@/lib/cn";
+import { isGatewayWeb } from "@/lib/webMode";
 
 /**
  * Skills, agents, install-a-skill, and detected scientific environment — all real:
@@ -78,20 +79,22 @@ export function SkillsPage() {
           </div>
         </Section>
 
-        {/* Environment (#2) */}
-        <Section title={t("skills.environment.sectionTitle")} icon={<Package size={15} />}>
-          {tools.length === 0 && <Empty>{t("skills.environment.detectionUnavailable")}</Empty>}
-          {tools.map((tool) => (
-            <div key={tool.name} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-              {tool.found ? <Check size={15} className="text-ok" /> : <X size={15} className="text-muted" />}
-              <span className="w-24 text-text">{tool.name}</span>
-              <span className="flex-1 truncate font-mono text-xs text-muted">
-                {tool.found ? tool.version ?? t("skills.environment.found") : t("skills.environment.notFound")}
-              </span>
-            </div>
-          ))}
-          <p className="px-4 py-2 text-xs text-muted">{t("skills.environment.note")}</p>
-        </Section>
+        {/* Environment (#2) — host tool detection is local-only; hide in web. */}
+        {!isGatewayWeb && (
+          <Section title={t("skills.environment.sectionTitle")} icon={<Package size={15} />}>
+            {tools.length === 0 && <Empty>{t("skills.environment.detectionUnavailable")}</Empty>}
+            {tools.map((tool) => (
+              <div key={tool.name} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                {tool.found ? <Check size={15} className="text-ok" /> : <X size={15} className="text-muted" />}
+                <span className="w-24 text-text">{tool.name}</span>
+                <span className="flex-1 truncate font-mono text-xs text-muted">
+                  {tool.found ? tool.version ?? t("skills.environment.found") : t("skills.environment.notFound")}
+                </span>
+              </div>
+            ))}
+            <p className="px-4 py-2 text-xs text-muted">{t("skills.environment.note")}</p>
+          </Section>
+        )}
 
         {connected ? (
           <>

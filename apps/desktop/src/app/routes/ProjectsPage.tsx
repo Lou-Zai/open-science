@@ -15,6 +15,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { cn } from "@/lib/cn";
 import { useRuntimeStore } from "@/lib/runtime";
 import { openProjectFolder, renameProject, type ProjectInfo } from "@/lib/tauri";
+import { isGatewayWeb } from "@/lib/webMode";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 /** Compact "time ago" like the reference UI: 37m · 18h · 3d · 1w · 9mo · 2y.
@@ -184,8 +185,9 @@ export function ProjectsPage() {
                     <div className="min-w-0">
                       <button
                         onClick={() => void openProjectFolder(p.id)}
+                        disabled={isGatewayWeb}
                         title={t("projects.openFolder", { path: p.path })}
-                        className="inline-flex max-w-full items-center gap-1.5 truncate rounded-md border border-border bg-surface px-2 py-1 text-xs text-text outline-none hover:border-accent hover:bg-surface-2"
+                        className="inline-flex max-w-full items-center gap-1.5 truncate rounded-md border border-border bg-surface px-2 py-1 text-xs text-text outline-none enabled:hover:border-accent enabled:hover:bg-surface-2 disabled:cursor-default"
                       >
                         <Folder size={12} className="shrink-0 text-muted" />
                         <span className="truncate">{baseName(p.path)}</span>
@@ -195,7 +197,8 @@ export function ProjectsPage() {
                     {/* Updated */}
                     <span className="text-sm tabular-nums text-muted">{timeAgo(p.updated, now)}</span>
 
-                    {/* Actions */}
+                    {/* Actions — rename/remove/pin/open are host-local; hidden in web. */}
+                    {!isGatewayWeb && (
                     <div className="flex items-center justify-end gap-0.5">
                       <DropdownMenu.Root>
                         <DropdownMenu.Trigger asChild>
@@ -244,6 +247,7 @@ export function ProjectsPage() {
                         <Pencil size={14} />
                       </button>
                     </div>
+                    )}
                   </div>
 
                   {/* Expanded sessions */}

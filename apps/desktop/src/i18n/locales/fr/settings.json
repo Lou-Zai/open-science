@@ -8,7 +8,8 @@
     "connectors": "Connecteurs",
     "compute": "Calcul",
     "privacy": "Confidentialité",
-    "browser": "Navigateur"
+    "browser": "Navigateur",
+    "remote": "Accès distant"
   },
   "appearance": {
     "title": "Apparence",
@@ -302,5 +303,36 @@
       "couldNotCancel": "Impossible d'annuler {{id}}",
       "jobCanceled": "Tâche {{id}} annulée"
     }
+  },
+  "remote": {
+    "title": "Accès distant",
+    "hint": "Transforme ce poste en une API sécurisée : accède à tes sessions et fichiers depuis un téléphone ou un autre ordinateur de ton réseau, une CLI ou un tunnel. Désactivé par défaut.",
+    "enable": "Activer l'accès distant",
+    "enableHint": "Démarre la passerelle authentifiée. Liée à ce seul appareil jusqu'à ce que tu autorises le réseau local ci-dessous.",
+    "loopbackUrl": "Cet appareil",
+    "loopbackUrlHint": "Ouvre-la dans un navigateur sur ce Mac, ou pointe une CLI ici.",
+    "binding": "Accessible depuis",
+    "bindingHint": "Où la passerelle écoute. N'active le réseau local que sur un réseau de confiance.",
+    "bindingLoopback": "Cet appareil uniquement",
+    "bindingLan": "Réseau local",
+    "lanWarn": "Cela expose la passerelle à tout le monde sur ton réseau local. Quiconque possède le jeton peut piloter l'agent et lire les fichiers de ton espace de travail. Ne le fais que sur un réseau de confiance. Continuer ?",
+    "lanActive": "Accessible par d'autres appareils de ton réseau. Garde le jeton secret.",
+    "mode": "Niveau d'accès",
+    "modeFull": "Accès complet",
+    "modeReadonly": "Lecture seule",
+    "modeFullHint": "Les clients peuvent créer des sessions, envoyer des prompts, exécuter des outils et répondre aux approbations.",
+    "modeReadonlyHint": "Les clients peuvent seulement lire les sessions et fichiers — pas de prompts, d'outils ni d'approbations.",
+    "token": "Jeton d'accès",
+    "tokenHint": "Les clients s'authentifient avec ce jeton bearer.",
+    "reveal": "Afficher le jeton",
+    "hide": "Masquer le jeton",
+    "copy": "Copier",
+    "regenerate": "Régénérer le jeton",
+    "regenerated": "Nouveau jeton généré — les clients existants doivent se reconnecter.",
+    "openHint": "Ouvre l'URL ci-dessus dans un navigateur, puis colle ce jeton pour te connecter.",
+    "copied": "Copié dans le presse-papiers",
+    "error": "Échec de la modification de l'accès distant",
+    "connect": "Se connecter",
+    "connectPrompt": "Saisis le jeton d'accès de l'app de bureau → Réglages → Accès distant."
   }
 }

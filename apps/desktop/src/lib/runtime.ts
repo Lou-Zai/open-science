@@ -39,6 +39,7 @@ import {
   type ProxyMode,
   type ToolStatus,
 } from "./tauri";
+import { isGatewayWeb, gatewayToken, gatewayOrigin } from "./webMode";
 import { kernelReset } from "./kernel";
 import { moveScrollMemory } from "./scrollMemory";
 import { deriveArtifact } from "./artifacts";
@@ -241,6 +242,10 @@ const SWITCH_HEAL_GRACE_MS = 15_000;
 /** React StrictMode mounts effects twice in development. Share the same boot
  *  promise so duplicate AppShell effects cannot start dueling connect loops. */
 let bootstrapInFlight: Promise<void> | null = null;
+/** Registered once: the remote-access gateway tells us when a LAN/CLI client
+ *  created or deleted a session so the sidebar re-lists (no OpenCode event for
+ *  session create/delete). See docs/rfc/remote-access-gateway.md. */
+let gatewayListenerBound = false;
 /** Unhook the current client's status listener BEFORE closing it — teardown
  *  emits "offline", and a reconnect attempt must not flash that at the user. */
 let clientStatusUnsub: (() => void) | null = null;
@@ -818,14 +823,34 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     // status must never pass through "offline" — on first boot the retry loop
     // runs for minutes (macOS TCC) and each flip repaints the whole page.
     teardownClient();
-    // Scope skill discovery to the sidecar's workspace (null in browser dev).
-    const directory = await workspacePath();
-    set({ workspace: directory, approvalMode: await getApprovalMode() });
-    // The bundled sidecar requires per-run Basic auth; browser dev (no Tauri)
-    // gets null and connects to a user-run passwordless server.
-    const password = await runtimePassword();
+    let directory: string | null;
+    let password: string | null;
+    let baseUrl = get().serverUrl;
+    if (isGatewayWeb) {
+      // Web client: same-origin gateway; the pasted token is the OpenCodeClient
+      // password, and the workspace directory comes from /v1/whoami.
+      baseUrl = gatewayOrigin();
+      password = gatewayToken();
+      directory = null;
+      try {
+        const r = await fetch(`${baseUrl}/v1/whoami`, {
+          headers: password ? { Authorization: `Bearer ${password}` } : {},
+        });
+        if (r.ok) directory = ((await r.json()) as { directory?: string }).directory ?? null;
+      } catch {
+        /* whoami is best-effort; the client still connects */
+      }
+      set({ serverUrl: baseUrl, workspace: directory });
+    } else {
+      // Scope skill discovery to the sidecar's workspace (null in browser dev).
+      directory = await workspacePath();
+      set({ workspace: directory, approvalMode: await getApprovalMode() });
+      // The bundled sidecar requires per-run Basic auth; browser dev (no Tauri)
+      // gets null and connects to a user-run passwordless server.
+      password = await runtimePassword();
+    }
     const c = new OpenCodeClient({
-      baseUrl: get().serverUrl,
+      baseUrl,
       directory: directory ?? undefined,
       password: password ?? undefined,
     });
@@ -1192,6 +1217,13 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     if (bootstrapInFlight) return bootstrapInFlight;
     const run = (async () => {
       void get().detectTools();
+      // Web client (served by the gateway): the sidecar already runs on the host
+      // — just connect to the gateway (same origin), no Tauri runtime to start.
+      if (isGatewayWeb) {
+        set({ serverUrl: gatewayOrigin() });
+        await get().connectRetry();
+        return;
+      }
       if (!isTauri) return;
       void logDebug("bootstrap: starting bundled runtime");
       try {
@@ -1205,6 +1237,18 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         return;
       }
       await get().connectRetry();
+      // A remote client (LAN web / CLI) that creates or deletes a session emits
+      // no OpenCode session event, so the gateway pings us to re-list — its
+      // sessions then show up in the sidebar exactly like locally-made ones.
+      if (!gatewayListenerBound) {
+        gatewayListenerBound = true;
+        try {
+          const { listen } = await import("@tauri-apps/api/event");
+          await listen("gateway:sessions-changed", () => void get().refreshSessions());
+        } catch {
+          /* event API unavailable — nothing to sync */
+        }
+      }
     })();
     bootstrapInFlight = run;
     const clear = () => {
@@ -1274,7 +1318,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     }),
 
   refreshProjects: async () => {
-    if (!isTauri) return;
+    if (!isTauri && !isGatewayWeb) return;
     try {
       set({ projects: await listProjects() });
     } catch {

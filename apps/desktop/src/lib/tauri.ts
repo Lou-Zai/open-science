@@ -1,6 +1,8 @@
 // Thin bridge to the Tauri Rust side. In a plain browser these are no-ops so the
 // app still runs in `pnpm dev`; in the packaged desktop app they invoke Rust commands.
 
+import { isGatewayWeb, gatewayGet } from "./webMode";
+
 export const isTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -123,6 +125,48 @@ export async function setProxySetting(mode: ProxyMode, url: string): Promise<voi
   if (!isTauri) return;
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("set_proxy_setting", { mode, url });
+}
+
+/** Remote Access gateway — one authenticated API for CLI / LAN web / tunnel.
+ *  See docs/rfc/remote-access-gateway.md. */
+export type GatewayMode = "full" | "read-only";
+export interface GatewayStatus {
+  enabled: boolean;
+  /** false = loopback only (127.0.0.1); true = bound to the LAN (0.0.0.0). */
+  lan: boolean;
+  mode: GatewayMode;
+  running: boolean;
+  port: number | null;
+  loopbackUrl: string | null;
+  /** The LAN URL (with the detected local IP) when `lan` is on and reachable. */
+  lanUrl: string | null;
+  /** The bearer token clients authenticate with (blank until first enabled). */
+  token: string;
+}
+
+/** Current gateway status (desktop only; null in browser). */
+export async function getGatewayStatus(): Promise<GatewayStatus | null> {
+  if (!isTauri) return null;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke<GatewayStatus>("gateway_status");
+}
+
+/** Enable/disable + set binding and access mode; (re)binds the server. */
+export async function setGatewayConfig(
+  enabled: boolean,
+  lan: boolean,
+  mode: GatewayMode,
+): Promise<GatewayStatus | null> {
+  if (!isTauri) return null;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke<GatewayStatus>("set_gateway_config", { enabled, lan, mode });
+}
+
+/** Rotate the bearer token (old clients must re-enter the new one). */
+export async function regenerateGatewayToken(): Promise<GatewayStatus | null> {
+  if (!isTauri) return null;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke<GatewayStatus>("regenerate_gateway_token");
 }
 
 /** uv download mirrors used only when provisioning Python tools (empty ⇒ default). */
@@ -520,6 +564,7 @@ export async function importProject(path: string): Promise<ProjectInfo> {
 
 /** Every project under the base dir, sorted by name. */
 export async function listProjects(): Promise<ProjectInfo[]> {
+  if (isGatewayWeb) return (await gatewayGet<ProjectInfo[]>("/v1/projects")) ?? [];
   if (!isTauri) return [];
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<ProjectInfo[]>("list_projects");

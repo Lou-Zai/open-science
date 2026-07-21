@@ -30,7 +30,9 @@ import {
 } from "@/lib/store";
 import { useUpdateStore } from "@/lib/update";
 import { overlayTitlebarStyle } from "@/lib/titlebar";
-import { SETTINGS_SECTIONS, resolveSection } from "@/components/settings/sections";
+import { visibleSections, resolveSection } from "@/components/settings/sections";
+import { useIsMobile } from "@/lib/useIsMobile";
+import { isGatewayWeb } from "@/lib/webMode";
 import { StatusPills } from "./StatusPills";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import logo from "@/assets/logo.webp";
@@ -257,6 +259,13 @@ export function Sidebar({ project }: { project: Project }) {
   const overlayTitlebar = useOverlayTitlebar();
 
   const width = dragWidth ?? sidebarWidth;
+  const isMobile = useIsMobile();
+  // On mobile the sidebar is an off-canvas overlay drawer (both app AND settings,
+  // opened via the hamburger in AppShell), never sharing horizontal space; on
+  // desktop it stays an inline column (settings can't collapse). Capped width so
+  // it never covers the whole phone screen.
+  const railWidth = isMobile ? Math.min(width, 300) : width;
+  const drawerOpen = isMobile ? !sidebarCollapsed : !(sidebarCollapsed && !inSettings);
 
   const sessionRow = (row: Row) => {
     const running = row.kind === "session" && activeRoots.has(row.id);
@@ -306,14 +315,19 @@ export function Sidebar({ project }: { project: Project }) {
   return (
     <div
       className={cn(
-        "relative h-full shrink-0 overflow-hidden",
-        !dragging && "transition-[width] duration-200 ease-out",
+        "relative h-full overflow-hidden",
+        isMobile ? "fixed inset-y-0 left-0 z-40 shadow-2xl" : "shrink-0",
+        !dragging && "transition-[width,transform] duration-200 ease-out",
       )}
-      style={{ width: sidebarCollapsed && !inSettings ? 0 : width }}
+      style={
+        isMobile
+          ? { width: railWidth, transform: drawerOpen ? "none" : "translateX(-100%)" }
+          : { width: sidebarCollapsed && !inSettings ? 0 : width }
+      }
     >
       <aside
         className="sidebar-surface flex h-full flex-col border-r border-border"
-        style={{ width }}
+        style={{ width: railWidth }}
       >
         {/* The strip clears the traffic lights and hosts the collapse button just
           right of them — same spot the expand button lands when collapsed. */}
@@ -347,7 +361,7 @@ export function Sidebar({ project }: { project: Project }) {
               </button>
             </div>
             <nav className="flex flex-col gap-0.5 px-3">
-              {SETTINGS_SECTIONS.map(({ key, icon: Icon }) => (
+              {visibleSections(isGatewayWeb).map(({ key, icon: Icon }) => (
                 <NavLink
                   key={key}
                   to={`/settings/${key}`}
@@ -398,11 +412,14 @@ export function Sidebar({ project }: { project: Project }) {
             label={t("items.new")}
             onClick={startNew}
           />
-          <NavRow
-            icon={<NotebookPen size={16} />}
-            label={t("items.notebooks")}
-            onClick={() => navigate("/notebooks")}
-          />
+          {/* Notebook execution needs a local kernel — hidden in the web client. */}
+          {!isGatewayWeb && (
+            <NavRow
+              icon={<NotebookPen size={16} />}
+              label={t("items.notebooks")}
+              onClick={() => navigate("/notebooks")}
+            />
+          )}
           <NavRow
             icon={<FolderTree size={16} />}
             label={t("items.files")}
@@ -434,12 +451,16 @@ export function Sidebar({ project }: { project: Project }) {
               <span className="flex-1 truncate text-left">{t("projects.heading")}</span>
               <ChevronRight size={13} className="shrink-0 opacity-60 transition-transform group-hover/head:translate-x-0.5" />
             </button>
+            {/* Creating/importing a project needs local FS access — hidden in web. */}
             <DropdownMenu.Root>
               <DropdownMenu.Trigger asChild>
                 <button
                   aria-label={t("projects.new")}
                   title={t("projects.new")}
-                  className="rounded p-0.5 text-muted outline-none hover:bg-surface-2 hover:text-text"
+                  className={cn(
+                    "rounded p-0.5 text-muted outline-none hover:bg-surface-2 hover:text-text",
+                    isGatewayWeb && "hidden",
+                  )}
                 >
                   <Plus size={13} />
                 </button>

@@ -27,6 +27,7 @@ import { WorkspaceChip } from "@/components/thread/WorkspaceChip";
 import { useUiStore } from "@/lib/store";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/cn";
+import { isGatewayWeb } from "@/lib/webMode";
 
 /** A paste longer than this becomes a workspace file chip instead of raw text. */
 const PASTE_AS_FILE_CHARS = 2000;
@@ -688,7 +689,7 @@ export function Composer({
             </button>
           </div>
         )}
-        {approvalMode && onApprovalModeChange && (
+        {approvalMode && onApprovalModeChange && !isGatewayWeb && (
           <div className="relative shrink-0" ref={approvalRef}>
             {approvalOpen && (
               <div

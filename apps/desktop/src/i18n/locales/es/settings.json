@@ -8,7 +8,8 @@
     "connectors": "Conectores",
     "compute": "Cómputo",
     "privacy": "Privacidad",
-    "browser": "Navegador"
+    "browser": "Navegador",
+    "remote": "Acceso remoto"
   },
   "appearance": {
     "title": "Apariencia",
@@ -302,5 +303,36 @@
       "couldNotCancel": "No se pudo cancelar {{id}}",
       "jobCanceled": "Trabajo {{id}} cancelado"
     }
+  },
+  "remote": {
+    "title": "Acceso remoto",
+    "hint": "Convierte este escritorio en una API segura: accede a tus sesiones y archivos desde un móvil u otro equipo de tu red, una CLI o un túnel. Desactivado por defecto.",
+    "enable": "Activar acceso remoto",
+    "enableHint": "Inicia la pasarela autenticada. Vinculada solo a este dispositivo hasta que permitas la red local abajo.",
+    "loopbackUrl": "Este dispositivo",
+    "loopbackUrlHint": "Ábrelo en un navegador de este Mac, o apunta una CLI aquí.",
+    "binding": "Accesible desde",
+    "bindingHint": "Dónde escucha la pasarela. Activa la red local solo en una red de confianza.",
+    "bindingLoopback": "Solo este dispositivo",
+    "bindingLan": "Red local",
+    "lanWarn": "Esto expone la pasarela a todos en tu red local. Cualquiera con el token puede controlar el agente y leer los archivos de tu espacio de trabajo. Hazlo solo en una red de confianza. ¿Continuar?",
+    "lanActive": "Accesible por otros dispositivos de tu red. Mantén el token en secreto.",
+    "mode": "Nivel de acceso",
+    "modeFull": "Acceso completo",
+    "modeReadonly": "Solo lectura",
+    "modeFullHint": "Los clientes pueden crear sesiones, enviar prompts, ejecutar herramientas y responder aprobaciones.",
+    "modeReadonlyHint": "Los clientes solo pueden leer sesiones y archivos, sin prompts, herramientas ni aprobaciones.",
+    "token": "Token de acceso",
+    "tokenHint": "Los clientes se autentican con este token bearer.",
+    "reveal": "Mostrar token",
+    "hide": "Ocultar token",
+    "copy": "Copiar",
+    "regenerate": "Regenerar token",
+    "regenerated": "Nuevo token generado: los clientes existentes deben reconectarse.",
+    "openHint": "Abre la URL de arriba en un navegador y pega este token para conectar.",
+    "copied": "Copiado al portapapeles",
+    "error": "Error al cambiar el acceso remoto",
+    "connect": "Conectar",
+    "connectPrompt": "Introduce el token de acceso de la app de escritorio → Ajustes → Acceso remoto."
   }
 }

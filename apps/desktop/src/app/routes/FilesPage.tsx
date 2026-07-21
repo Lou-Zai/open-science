@@ -17,6 +17,7 @@ import {
 import { extOf, extToKind, previewKindForName, type PreviewKind } from "@/lib/artifacts";
 import { listDir, type DirEntry } from "@/lib/artifactFile";
 import { isTauri, workspaceBase } from "@/lib/tauri";
+import { isGatewayWeb } from "@/lib/webMode";
 import { useRuntimeStore } from "@/lib/runtime";
 import { baseName } from "@/components/thread/WorkspaceChip";
 import { NotebookEditor } from "@/components/notebook/NotebookEditor";
@@ -131,7 +132,7 @@ export function FilesPage() {
           {error && <div className="p-2 text-sm text-error">{error}</div>}
           {entries && entries.length === 0 && !error && (
             <div className="p-2 text-sm text-muted">
-              {isTauri ? t("files.folderEmpty") : t("files.explorerUnavailableWeb")}
+              {isTauri || isGatewayWeb ? t("files.folderEmpty") : t("files.explorerUnavailableWeb")}
             </div>
           )}
           {entries?.map((entry) => (

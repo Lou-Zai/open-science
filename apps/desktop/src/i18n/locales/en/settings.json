@@ -8,7 +8,8 @@
     "connectors": "Connectors",
     "compute": "Compute",
     "privacy": "Privacy",
-    "browser": "Browser"
+    "browser": "Browser",
+    "remote": "Remote Access"
   },
   "appearance": {
     "title": "Appearance",
@@ -302,5 +303,36 @@
       "couldNotCancel": "Could not cancel {{id}}",
       "jobCanceled": "Job {{id}} canceled"
     }
+  },
+  "remote": {
+    "title": "Remote Access",
+    "hint": "Turn this desktop into a secure API — reach your sessions and files from a phone or another computer on your network, a CLI, or a tunnel. Off by default.",
+    "enable": "Enable remote access",
+    "enableHint": "Start the authenticated gateway. Bound to this device only until you allow the local network below.",
+    "loopbackUrl": "This device",
+    "loopbackUrlHint": "Open in a browser on this Mac, or point a CLI here.",
+    "binding": "Reachable from",
+    "bindingHint": "Where the gateway listens. Only enable the local network on a network you trust.",
+    "bindingLoopback": "This device only",
+    "bindingLan": "Local network",
+    "lanWarn": "This exposes the gateway to everyone on your local network. Anyone with the token can drive the agent and read your workspace files. Only do this on a network you trust. Continue?",
+    "lanActive": "Reachable by other devices on your network. Keep the token secret.",
+    "mode": "Access level",
+    "modeFull": "Full access",
+    "modeReadonly": "Read-only",
+    "modeFullHint": "Clients can create sessions, send prompts, run tools, and answer approvals.",
+    "modeReadonlyHint": "Clients can read sessions and files only — no prompts, tools, or approvals.",
+    "token": "Access token",
+    "tokenHint": "Clients authenticate with this bearer token.",
+    "reveal": "Reveal token",
+    "hide": "Hide token",
+    "copy": "Copy",
+    "regenerate": "Regenerate token",
+    "regenerated": "New token generated — existing clients must reconnect.",
+    "openHint": "Open the URL above in a browser, then paste this token to connect.",
+    "copied": "Copied to clipboard",
+    "error": "Remote access change failed",
+    "connect": "Connect",
+    "connectPrompt": "Enter the access token from the desktop app → Settings → Remote Access."
   }
 }

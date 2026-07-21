@@ -7,7 +7,12 @@ import { LocaleProvider } from "./app/providers/LocaleProvider";
 import { ThemeProvider } from "./app/providers/ThemeProvider";
 import { ZoomProvider } from "./app/providers/ZoomProvider";
 import { router } from "./app/router";
+import { installGatewayAuthGuard } from "./lib/webMode";
 import "./index.css";
+
+// Web client: catch gateway 401s (rotated/revoked token) → re-auth. Installed
+// before any OpenCodeClient binds fetch.
+installGatewayAuthGuard();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
