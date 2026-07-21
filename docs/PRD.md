@@ -367,18 +367,46 @@ discussion. Shipped versions are kept here as the delivery record.
     dangerous only" and "full access" (#20);
   - system-level notifications when the agent is blocked on a permission or
     question (#21).
-- **v0.4.0 Reach & interop** — using Open Science from outside the desktop window:
-  - LAN web UI with authentication (phone / second machine on the same
-    network) (#3);
-  - messaging-platform integrations (Slack / Discord / Telegram / Feishu) for
-    submitting tasks and receiving results (#20);
-  - Agent Client Protocol (ACP) support so external editors/agents can drive
-    the runtime (#14).
+- **v0.4.0 Reach & interop (northbound)** — using Open Science from outside the
+  desktop window. These surfaces are **one deliverable, not many**: they all
+  drive the same runtime-agnostic `AgentRuntime` seam (#24, base class #36)
+  re-exposed as a single **authenticated API gateway** — session management,
+  prompt input, streamed results, and workspace/file browsing over HTTP+SSE /
+  WebSocket, bearer token in the keychain, loopback-bound by default. Everything
+  below is a *client* of that one gateway; the only per-surface work is
+  transport + binding + auth scope.
+  - the gateway itself — the foundation the rest reuse (the file/workspace API
+    is the one gap the current `AgentRuntime` seam still lacks);
+  - LAN web UI (phone / second machine on the same network) (#3);
+  - CLI client (scripting, headless and CI-style runs);
+  - cloud tunnel — reach the same gateway + token over a public URL
+    (cloudflared / frp / ngrok), no new API;
+  - messaging-platform integrations (Slack / Discord / Telegram / Feishu) — each
+    a thin bot client that relays `sendPrompt` → streamed events (#20);
+  - Open Science *as* an ACP server, so external editors/agents drive the
+    runtime through the same seam in ACP's dialect (#14).
+- **v0.5.0 Pluggable & remote runtimes (southbound)** — the same `AgentRuntime`
+  seam consumed in the *other* direction: swap or relocate the execution
+  backend behind a pluggable transport (in-process / HTTP / stdio-JSON-RPC /
+  SSH). This axis shares the seam and base class (#36) with v0.4.0 — a remote
+  runtime is literally the v0.4.0 gateway consumed by a `RemoteRuntime` client,
+  the two halves of one pipe.
+  - ACP as a *client* transport — one `AcpRuntime` spawns any ACP agent (Codex,
+    Gemini CLI, Claude Code, …) instead of a per-agent adapter (#14, #25; Codex
+    prototype under verification #28);
+  - remote agent runtime — run the runtime on another machine, drive it from the
+    desktop over the gateway;
+  - remote Jupyter + remote-first execution — connect to an existing remote
+    Jupyter server and default suitable work (shell, cells, training) to a
+    chosen remote target, building on the shipped SSH / Slurm compute (#35).
 
 Ordering rationale: v0.3.0 items make the core desktop loop better for the
-existing research audience (small-to-medium, high frequency-of-use); v0.4.0
-items open new surfaces (large, security-sensitive — the LAN UI and messaging
-bridges must not weaken the local-first / keychain-only-secrets guarantees).
+existing research audience (small-to-medium, high frequency-of-use); v0.4.0 and
+v0.5.0 open new surfaces (large, security-sensitive) by hardening the one
+`AgentRuntime` seam rather than adding entities per feature — the API gateway,
+LAN UI, and messaging bridges must not weaken the local-first /
+keychain-only-secrets guarantees, and remote execution must never silently fall
+back to local (#35).
 
 ## 10. Non-functional requirements
 
