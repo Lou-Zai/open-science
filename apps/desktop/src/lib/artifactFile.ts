@@ -27,12 +27,14 @@ export async function readArtifact(path: string, root?: FileRoot): Promise<Artif
 /** Local-server URL a workspace file is previewable at (desktop only). The tiny
  *  Rust file server gives the webview a real http://127.0.0.1 URL with correct
  *  MIME, so native viewers (PDF, images, HTML) render it directly. */
-export async function previewUrl(path: string, root?: FileRoot): Promise<string | null> {
+export async function previewUrl(path: string, root?: FileRoot, dir?: string): Promise<string | null> {
   if (isGatewayWeb) {
     const t = gatewayToken();
-    return `${gatewayOrigin()}/v1/fs/read?path=${encodeURIComponent(path)}${root ? `&root=${root}` : ""}${
-      t ? `&token=${encodeURIComponent(t)}` : ""
-    }`;
+    return (
+      `${gatewayOrigin()}/v1/fs/read?path=${encodeURIComponent(path)}` +
+      `${root ? `&root=${root}` : ""}${dir ? `&dir=${encodeURIComponent(dir)}` : ""}` +
+      `${t ? `&token=${encodeURIComponent(t)}` : ""}`
+    );
   }
   if (!isTauri) return null;
   const { invoke } = await import("@tauri-apps/api/core");
@@ -135,10 +137,12 @@ export interface DirEntry {
 }
 
 /** List one directory under the root (non-recursive; "" = the root). Desktop only. */
-export async function listDir(rel: string, root?: FileRoot): Promise<DirEntry[]> {
+export async function listDir(rel: string, root?: FileRoot, dir?: string): Promise<DirEntry[]> {
   if (isGatewayWeb) {
     const t = gatewayToken();
-    const url = `${gatewayOrigin()}/v1/fs/list?path=${encodeURIComponent(rel)}${root ? `&root=${root}` : ""}`;
+    const url =
+      `${gatewayOrigin()}/v1/fs/list?path=${encodeURIComponent(rel)}` +
+      `${root ? `&root=${root}` : ""}${dir ? `&dir=${encodeURIComponent(dir)}` : ""}`;
     try {
       const r = await fetch(url, { headers: t ? { Authorization: `Bearer ${t}` } : {} });
       return r.ok ? ((await r.json()) as DirEntry[]) : [];

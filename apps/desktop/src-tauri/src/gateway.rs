@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use crate::artifact_file::{mime_for, resolve_under, scope_root};
+use crate::artifact_file::{locate_under, mime_for, resolve_under, scope_root};
 use crate::runtime::{random_hex, runtime_root, server_password, sidecar_url, tighten_private, workspace_dir, RuntimeState};
 
 /// The web client + all `/v1` routes are served on this port when free, so a
@@ -570,10 +570,32 @@ fn redact_config(body: &[u8]) -> Vec<u8> {
 
 // ---- workspace file routes (reuse artifact_file, sandboxed) -----------------
 
+/// Resolve which directory a file request is scoped to. A web client viewing a
+/// session that is NOT the host's active one passes that session's absolute
+/// `dir` (from its SessionMeta); we accept it only if it sits under the base
+/// workspace (so a client can't read arbitrary paths). Otherwise fall back to
+/// the `root` scope (workspace = host active, base = the base folder).
+fn fs_base(ctx: &Ctx, req: &Request) -> Result<PathBuf, String> {
+    if let Some(dir) = req.query_get("dir").filter(|d| !d.is_empty()) {
+        let base_root = crate::runtime::base_workspace_dir(&ctx.app)?
+            .canonicalize()
+            .map_err(|e| e.to_string())?;
+        let canon = PathBuf::from(&dir).canonicalize().map_err(|_| "dir not found".to_string())?;
+        if canon.starts_with(&base_root) {
+            return Ok(canon);
+        }
+        return Err("dir is outside the workspace".into());
+    }
+    scope_root(&ctx.app, req.query_get("root").as_deref())
+}
+
 fn fs_list(stream: &mut TcpStream, req: &Request, ctx: &Ctx) {
     let rel = req.query_get("path").unwrap_or_default();
-    let root = req.query_get("root");
-    match crate::artifact_file::list_dir(ctx.app.clone(), rel, root) {
+    let base = match fs_base(ctx, req) {
+        Ok(b) => b,
+        Err(e) => return respond_json(stream, 400, &err_json(&e)),
+    };
+    match crate::artifact_file::dir_entries(&base, &rel) {
         Ok(entries) => {
             let json = serde_json::to_string(&entries).unwrap_or_else(|_| "[]".into());
             respond_json(stream, 200, &json);
@@ -584,12 +606,14 @@ fn fs_list(stream: &mut TcpStream, req: &Request, ctx: &Ctx) {
 
 fn fs_read(stream: &mut TcpStream, req: &Request, ctx: &Ctx) {
     let rel = req.query_get("path").unwrap_or_default();
-    let root = req.query_get("root");
-    let base = match scope_root(&ctx.app, root.as_deref()) {
+    let base = match fs_base(ctx, req) {
         Ok(b) => b,
         Err(e) => return respond_json(stream, 400, &err_json(&e)),
     };
-    let full = match resolve_under(&base, &rel) {
+    // Resolve by basename like the desktop preview server: agent prose often
+    // names a file without its directory ("figure1.png" for "figures/figure1.png").
+    let located = locate_under(&base, &rel).unwrap_or(rel);
+    let full = match resolve_under(&base, &located) {
         Ok(p) => p,
         Err(e) => return respond_json(stream, 404, &err_json(&e)),
     };

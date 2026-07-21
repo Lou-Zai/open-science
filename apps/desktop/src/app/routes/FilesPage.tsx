@@ -214,6 +214,11 @@ export function SessionFilesPane({
 }) {
   const { t } = useTranslation(["pages", "common"]);
   const workspace = useRuntimeStore((s) => s.workspace);
+  // Web client: list the VIEWED session's folder (from SessionMeta), which over
+  // the network is not necessarily the host's active workspace.
+  const sessionDir = useRuntimeStore(
+    (s) => s.sessions.find((x) => x.id === s.currentId)?.directory ?? s.workspace ?? undefined,
+  );
   const [dir, setDir] = useState("");
   const [entries, setEntries] = useState<DirEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -229,7 +234,7 @@ export function SessionFilesPane({
     let cancelled = false;
     setEntries(null);
     setError(null);
-    listDir(dir, "workspace")
+    listDir(dir, "workspace", sessionDir)
       .then((e) => {
         if (!cancelled) setEntries(e);
       })
@@ -242,7 +247,7 @@ export function SessionFilesPane({
     return () => {
       cancelled = true;
     };
-  }, [dir, workspace]);
+  }, [dir, workspace, sessionDir]);
 
   if (selected) {
     return (
