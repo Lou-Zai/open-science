@@ -510,22 +510,36 @@ pub fn add_text_to_workspace(
 
 /// Copy explicit local file paths into the workspace (deduplicated). Used by
 /// drag-and-drop, which hands us OS paths — the native-picker path is
-/// `add_files_to_workspace`. Directories and unreadable entries are skipped.
+/// `add_files_to_workspace`. A path that already lives inside the workspace is
+/// referenced in place (no copy) so dragging a workspace file back into the
+/// composer doesn't spawn a duplicate. Directories and unreadable entries are
+/// skipped.
 #[tauri::command(async)]
 pub fn add_paths_to_workspace(app: AppHandle, paths: Vec<String>) -> Result<Vec<String>, String> {
     let ws = workspace_dir(&app)?;
+    // Canonicalize the workspace root once so we can tell whether a dropped path
+    // already resolves to somewhere inside it (through symlinks / `..` / case).
+    let ws_canon = ws.canonicalize().unwrap_or_else(|_| ws.clone());
     let mut added = Vec::new();
+    let mut copied = false;
     for p in paths {
         let src = Path::new(&p);
         if !src.is_file() {
             continue; // attach files only, not folders
         }
+        // Already inside the workspace → attach its workspace-relative path in
+        // place rather than copying it to the root.
+        if let Some(rel) = workspace_relative(&ws_canon, src) {
+            added.push(rel);
+            continue;
+        }
         let name = src.file_name().ok_or("path has no file name")?.to_string_lossy().to_string();
         let dst = unique_name(&ws, &name);
         std::fs::copy(src, ws.join(&dst)).map_err(|e| format!("copy failed: {e}"))?;
         added.push(dst);
+        copied = true;
     }
-    if !added.is_empty() {
+    if copied {
         crate::git_snapshot::request_snapshot(&ws);
     }
     Ok(added)
@@ -551,6 +565,16 @@ pub fn add_binary_to_workspace(
     std::fs::write(ws.join(&name), bytes).map_err(|e| format!("write failed: {e}"))?;
     crate::git_snapshot::request_snapshot(&ws);
     Ok(name)
+}
+
+/// If `src` resolves to a location inside `ws_canon` (an already-canonicalized
+/// workspace root), returns its workspace-relative path with `/` separators;
+/// otherwise `None`. Lets a dropped workspace file attach in place instead of
+/// being copied to the root as a duplicate.
+fn workspace_relative(ws_canon: &Path, src: &Path) -> Option<String> {
+    let canon = src.canonicalize().ok()?;
+    let rel = canon.strip_prefix(ws_canon).ok()?;
+    Some(rel.to_string_lossy().replace('\\', "/"))
 }
 
 /// First free variant of `name` in `dir`: name.ext, name-1.ext, name-2.ext, …
@@ -656,8 +680,9 @@ fn base64_encode(input: &[u8]) -> String {
 mod tests {
     use super::{
         base64_decode, base64_encode, dir_entries, encode_for_preview, exceeds_preview_cap,
-        locate_under, mime_for, open_url, unique_name,
+        locate_under, mime_for, open_url, unique_name, workspace_relative,
     };
+    use std::path::Path;
 
     #[test]
     fn base64_round_trips_arbitrary_bytes() {
@@ -779,6 +804,33 @@ mod tests {
         assert_eq!(unique_name(&dir, ".env"), ".env-1");
 
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn workspace_relative_detects_in_place_files() {
+        // A file already inside the workspace attaches by its relative path (no
+        // copy); anything outside returns None so it gets copied in. Regression
+        // for issue #44 — dragging a workspace file back in must not duplicate it.
+        let root = std::env::temp_dir().join(format!("ai4s-wsrel-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("results/foo")).unwrap();
+        std::fs::write(root.join("top.png"), "x").unwrap();
+        std::fs::write(root.join("results/foo/bar.png"), "x").unwrap();
+        let ws = root.canonicalize().unwrap();
+
+        assert_eq!(workspace_relative(&ws, &root.join("top.png")).as_deref(), Some("top.png"));
+        assert_eq!(
+            workspace_relative(&ws, &root.join("results/foo/bar.png")).as_deref(),
+            Some("results/foo/bar.png"),
+        );
+        // A file outside the workspace, and a non-existent path, are not in place.
+        let outside = std::env::temp_dir().join(format!("ai4s-wsrel-out-{}.png", std::process::id()));
+        std::fs::write(&outside, "x").unwrap();
+        assert_eq!(workspace_relative(&ws, &outside), None);
+        assert_eq!(workspace_relative(&ws, Path::new("/no/such/file.png")), None);
+
+        let _ = std::fs::remove_file(&outside);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

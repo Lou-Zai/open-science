@@ -437,12 +437,25 @@ export function Composer({
     }
   };
 
+  // Latest drop handler, kept in a ref so the native subscription below can run
+  // exactly once yet always invoke current logic. Re-subscribing on every render
+  // (the previous `[onSend]` dep — onSend is a fresh function each render) leaked
+  // native listeners under render churn, so one drop copied the file ~150 times
+  // into the project root (issue #44). null when drops aren't accepted.
+  const onDropRef = useRef<((paths: string[]) => void) | null>(null);
+  onDropRef.current =
+    isTauri && onSend
+      ? (paths) => {
+          if (paths.length > 0) void addWorkspaceFile(() => addPathsToWorkspace(paths));
+        }
+      : null;
+
   // Drag-and-drop files onto the app → workspace chips. Tauri captures OS file
   // drops natively (the DOM `drop` event never sees them), so we subscribe to
-  // its webview drag-drop event, which hands us absolute paths. Active only
-  // while the composer is mounted; a drop anywhere in the window attaches here.
+  // its webview drag-drop event, which hands us absolute paths. Subscribed once
+  // for the composer's lifetime; a drop anywhere in the window attaches here.
   useEffect(() => {
-    if (!isTauri || !onSend) return;
+    if (!isTauri) return;
     let unlisten: (() => void) | undefined;
     let cancelled = false;
     void (async () => {
@@ -454,7 +467,7 @@ export function Composer({
           else if (p.type === "leave") setDragOver(false);
           else if (p.type === "drop") {
             setDragOver(false);
-            if (p.paths.length > 0) void addWorkspaceFile(() => addPathsToWorkspace(p.paths));
+            onDropRef.current?.(p.paths);
           }
         });
         if (cancelled) un();
@@ -470,10 +483,7 @@ export function Composer({
       cancelled = true;
       unlisten?.();
     };
-    // addWorkspaceFile only closes over stable setFiles/t; re-subscribing the
-    // native listener on every render would needlessly churn it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onSend]);
+  }, []);
 
   // Copy local files into the agent workspace; they appear as chips.
   const addFiles = async () => {
