@@ -271,5 +271,22 @@
     "clearAria": "Clear the goal",
     "unmet": "blocked",
     "limited": "limit reached"
+  },
+  "message": {
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyFailed": "Could not copy to the clipboard.",
+    "edit": "Edit",
+    "editing": {
+      "cancel": "Cancel",
+      "send": "Send"
+    },
+    "revert": "Revert",
+    "confirm": {
+      "title": "Discard everything after this?",
+      "body": "This rolls the conversation back to this message and discards it and every message after it, along with the file changes those turns made. This can't be undone.",
+      "edit": "Edit & resend",
+      "revert": "Revert here"
+    }
   }
 }

@@ -118,6 +118,11 @@ export function startMockOpenCode(port = 0): Promise<MockOpenCode> {
       res.end("true");
       return;
     }
+    if (req.method === "POST" && /^\/session\/[^/]+\/(un)?revert$/.test(url)) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end("{}");
+      return;
+    }
     const mm = url.match(/^\/session\/([^/]+)\/message/);
     if (req.method === "GET" && mm) {
       res.writeHead(200, { "Content-Type": "application/json" });

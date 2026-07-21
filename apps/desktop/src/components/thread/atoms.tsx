@@ -1,6 +1,9 @@
-import { memo, useEffect, useState } from "react";
-import { Loader2, Paperclip } from "lucide-react";
+import { memo, useEffect, useRef, useState } from "react";
+import { Check, Copy, Loader2, Paperclip, Pencil, RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { copyText } from "@/lib/clipboard";
+import { toast } from "@/lib/toast";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import type {
   ArtifactBlock,
   DataTableBlock,
@@ -17,10 +20,155 @@ import { resolveArtifactPath } from "@/lib/artifactFile";
 // block object it changed (the blocks-array copy preserves the rest by
 // reference), so an SSE event re-renders just the affected row — the rest of a
 // long conversation is skipped, keeping render cost flat as history grows (#34).
-export const UserMessage = memo(function UserMessage({ block }: { block: UserMessageBlock }) {
+// A user turn: a right-aligned bubble that hugs its content (short prompts stay
+// small; long ones wrap at 85% of the column). Hovering reveals Copy and — when
+// the message carries a server id and the thread supplies the handlers — Edit
+// (open inline, correct, resend) and Revert (roll back to here, prefill the
+// composer). Edit and Revert both discard this message and everything after it
+// and roll back the files those turns changed, so each confirms first.
+export const UserMessage = memo(function UserMessage({
+  block,
+  onEdit,
+  onRevert,
+}: {
+  block: UserMessageBlock;
+  onEdit?: (messageID: string, newText: string) => void | Promise<void>;
+  onRevert?: (messageID: string, text: string) => void | Promise<void>;
+}) {
+  const { t } = useTranslation(["session", "common"]);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(block.text);
+  const [copied, setCopied] = useState(false);
+  // Which destructive action is awaiting confirmation, if any.
+  const [confirm, setConfirm] = useState<null | "edit" | "revert">(null);
+  const areaRef = useRef<HTMLTextAreaElement>(null);
+  const canEdit = !!onEdit && !!block.messageID;
+  const canRevert = !!onRevert && !!block.messageID;
+
+  const copy = async () => {
+    try {
+      await copyText(block.text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error(t("message.copyFailed"));
+    }
+  };
+
+  const openEditor = () => {
+    setDraft(block.text);
+    setEditing(true);
+  };
+  const runConfirmed = () => {
+    const action = confirm;
+    setConfirm(null);
+    if (!block.messageID) return;
+    if (action === "edit") {
+      const text = draft.trim();
+      if (!text) return;
+      setEditing(false);
+      void onEdit?.(block.messageID, text);
+    } else if (action === "revert") {
+      void onRevert?.(block.messageID, block.text);
+    }
+  };
+
+  // Focus at the end when the editor opens.
+  useEffect(() => {
+    if (!editing) return;
+    const el = areaRef.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [editing]);
+
+  const confirmDialog = confirm && (
+    <ConfirmDialog
+      title={t("message.confirm.title")}
+      body={t("message.confirm.body")}
+      confirmLabel={confirm === "edit" ? t("message.confirm.edit") : t("message.confirm.revert")}
+      onConfirm={runConfirmed}
+      onCancel={() => setConfirm(null)}
+    />
+  );
+
+  if (editing) {
+    return (
+      <div className="flex flex-col items-end">
+        <div className="w-full rounded-card border border-border bg-surface-2 p-2">
+          <textarea
+            ref={areaRef}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setEditing(false);
+              } else if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                e.preventDefault();
+                if (draft.trim()) setConfirm("edit");
+              }
+            }}
+            rows={Math.min(12, Math.max(2, draft.split("\n").length))}
+            className="w-full resize-none bg-transparent px-2 py-1.5 text-[15px] leading-relaxed text-text outline-none"
+          />
+          <div className="flex justify-end gap-2 px-1 pt-1">
+            <button
+              onClick={() => setEditing(false)}
+              className="rounded-input px-3 py-1.5 text-xs font-medium text-muted hover:bg-surface hover:text-text"
+            >
+              {t("message.editing.cancel")}
+            </button>
+            <button
+              onClick={() => draft.trim() && setConfirm("edit")}
+              disabled={!draft.trim()}
+              className="rounded-input bg-accent px-3 py-1.5 text-xs font-medium text-accent-fg hover:opacity-90 disabled:opacity-40"
+            >
+              {t("message.editing.send")}
+            </button>
+          </div>
+        </div>
+        {confirmDialog}
+      </div>
+    );
+  }
+
   return (
-    <div className="rounded-card bg-surface-2 px-4 py-3 text-[15px] leading-relaxed text-text">
-      {block.text}
+    <div className="group flex flex-col items-end">
+      <div className="w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-card bg-surface-2 px-4 py-2.5 text-[15px] leading-relaxed text-text">
+        {block.text}
+      </div>
+      <div className="flex items-center gap-0.5 pr-0.5 pt-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <button
+          onClick={copy}
+          title={copied ? t("message.copied") : t("message.copy")}
+          aria-label={t("message.copy")}
+          className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text"
+        >
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+        </button>
+        {canEdit && (
+          <button
+            onClick={openEditor}
+            title={t("message.edit")}
+            aria-label={t("message.edit")}
+            className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text"
+          >
+            <Pencil size={14} />
+          </button>
+        )}
+        {canRevert && (
+          <button
+            onClick={() => setConfirm("revert")}
+            title={t("message.revert")}
+            aria-label={t("message.revert")}
+            className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text"
+          >
+            <RotateCcw size={14} />
+          </button>
+        )}
+      </div>
+      {confirmDialog}
     </div>
   );
 });

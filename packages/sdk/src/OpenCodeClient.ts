@@ -352,6 +352,7 @@ export class OpenCodeClient implements AgentRuntime {
     if (!res.ok) throw await this.apiError(res, "Failed to load messages");
     const arr = (await res.json()) as Array<{
       info: {
+        id?: string;
         role: "user" | "assistant";
         time?: { completed?: number };
         error?: unknown;
@@ -363,12 +364,40 @@ export class OpenCodeClient implements AgentRuntime {
       const error = errorText(m.info.error);
       return {
         role: m.info.role,
+        ...(m.info.id ? { id: m.info.id } : {}),
         completed: m.info.time?.completed,
         ...(error ? { error } : {}),
         ...(m.info.agent ? { agent: m.info.agent } : {}),
         parts: m.parts ?? [],
       };
     });
+  }
+
+  /** Revert the session to (and including) a message: OpenCode drops that
+   *  message and everything after it, rolling back any workspace files it
+   *  touched. This is how the app edits a past user message — revert to it,
+   *  then send the corrected text. The session must be idle (abort first);
+   *  reverting a busy session is rejected by OpenCode. `partID` reverts to a
+   *  specific part within the message; omit to revert the whole message. */
+  async revert(sessionId: string, messageID: string, partID?: string): Promise<void> {
+    const res = await this.fetchImpl(
+      `${this.baseUrl}/session/${encodeURIComponent(sessionId)}/revert`,
+      {
+        method: "POST",
+        headers: this.headers(true),
+        body: JSON.stringify({ messageID, ...(partID ? { partID } : {}) }),
+      },
+    );
+    if (!res.ok) throw await this.apiError(res, "Failed to revert the message");
+  }
+
+  /** Undo the last revert — restores the reverted messages and files. */
+  async unrevert(sessionId: string): Promise<void> {
+    const res = await this.fetchImpl(
+      `${this.baseUrl}/session/${encodeURIComponent(sessionId)}/unrevert`,
+      { method: "POST", headers: this.headers(true), body: "{}" },
+    );
+    if (!res.ok) throw await this.apiError(res, "Failed to restore the reverted messages");
   }
 
   /** Interrupt the session's current turn (POST /session/:id/abort). A no-op
@@ -846,13 +875,16 @@ export class OpenCodeClient implements AgentRuntime {
           | { id?: string; role?: string; sessionID?: string; agent?: string }
           | undefined;
         if (info?.id && info.role) this.roles.set(info.id, info.role);
-        // A user message names its agent — surface it so the app can keep its
-        // per-session agent mode in sync (plan_exit "Yes" injects a build one).
-        if (info?.role === "user" && typeof info.agent === "string" && info.sessionID) {
+        // A user message surfaces its id (so the app can tag the live block for
+        // editing) and its agent (so the per-session agent mode stays in sync —
+        // plan_exit "Yes" injects a build one). Emitted for every user message,
+        // carrying whichever fields are present.
+        if (info?.role === "user" && info.sessionID && (info.id || typeof info.agent === "string")) {
           this.emit({
             type: "message.agent",
             sessionId: String(info.sessionID),
-            agent: info.agent,
+            ...(info.id ? { messageID: info.id } : {}),
+            ...(typeof info.agent === "string" ? { agent: info.agent } : {}),
           });
         }
         break;

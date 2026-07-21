@@ -271,5 +271,22 @@
     "clearAria": "Retirer l'objectif",
     "unmet": "bloqué",
     "limited": "limite atteinte"
+  },
+  "message": {
+    "copy": "Copier",
+    "copied": "Copié",
+    "copyFailed": "Impossible de copier dans le presse-papiers.",
+    "edit": "Modifier",
+    "editing": {
+      "cancel": "Annuler",
+      "send": "Envoyer"
+    },
+    "revert": "Revenir",
+    "confirm": {
+      "title": "Tout supprimer après ceci ?",
+      "body": "Cela ramène la conversation à ce message et le supprime, ainsi que tous les messages suivants et les modifications de fichiers effectuées lors de ces tours. Action irréversible.",
+      "edit": "Modifier et renvoyer",
+      "revert": "Revenir ici"
+    }
   }
 }

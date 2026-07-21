@@ -1,5 +1,9 @@
 # Progress
 
+2026-07-21 06:15 · feat(desktop): guard message edit/revert as destructive ops — Edit and new Revert (revert-here + prefill composer, no auto-send) both go through a confirm dialog (default Cancel) warning that later messages + their file changes are dropped; verified the two file-history layers are git-isolated (our append-only shadow refs refs/openscience/snapshots/* in the workspace .git vs OpenCode's revert against an isolated git-dir under ~/Library/Application Support/opencode), so revert rolls back working-tree files but pre-revert state stays recoverable; +5 tests, 577 green, DMG rebuilt.
+
+2026-07-21 05:40 · feat(desktop): edit past user messages — SDK gains session revert/unrevert (+ message id on history/live blocks); editMessage stops any running turn, reverts to the message (drops it + everything after, rolls back its files), and resends; user turns now render right-aligned in a content-hugging bubble with hover Copy/Edit and inline editing; +11 tests, typecheck/lint/573 tests green.
+
 2026-07-21 02:44 · feat(#38): agent activity now visible — stream reasoning/"thinking" (was dropped in SDK), show model step count in the working line, mark the tool blocked on approval as waiting-approval in the transcript, and add a cross-session running spinner in the sidebar; +5 tests, typecheck/lint/557 tests green.
 
 2026-07-21 01:25 · docs: v0.2.2 released (GitHub Release published, 8 installers live) + synced Zenodo v0.2.2 DOI 10.5281/zenodo.21465187 into CITATION.cff and all READMEs (concept DOI badge unchanged).

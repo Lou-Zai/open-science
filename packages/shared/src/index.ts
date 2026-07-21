@@ -43,6 +43,10 @@ export type ThreadBlock =
 export interface UserMessageBlock {
   kind: "user";
   text: string;
+  /** OpenCode message id, when known — the handle for editing this message
+   *  (revert + resend). Absent on synthetic echoes (shell/command) and until
+   *  the server confirms a freshly-sent message. No id ⇒ not editable. */
+  messageID?: string;
 }
 
 export interface AgentMessageBlock {

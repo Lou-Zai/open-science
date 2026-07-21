@@ -14,6 +14,12 @@ export interface BlockHandlers {
   onArtifactOpen?: (a: ArtifactBlock) => void;
   /** Forward a figure annotation to the agent (live session). */
   onFigureComment?: (annotation: FigureAnnotation, figureTitle: string) => void;
+  /** Edit a past user message (revert + resend). Present only in the live
+   *  session — its absence hides the per-message Edit button. */
+  onEditMessage?: (messageID: string, newText: string) => void | Promise<void>;
+  /** Revert to a past user message (drop it + everything after) and prefill the
+   *  composer with its text. Present only in the live session. */
+  onRevertMessage?: (messageID: string, text: string) => void | Promise<void>;
 }
 
 export function renderBlock(
@@ -24,7 +30,14 @@ export function renderBlock(
 ) {
   switch (block.kind) {
     case "user":
-      return <UserMessage key={i} block={block} />;
+      return (
+        <UserMessage
+          key={i}
+          block={block}
+          onEdit={handlers?.onEditMessage}
+          onRevert={handlers?.onRevertMessage}
+        />
+      );
     case "agent":
       return <AgentMessage key={i} markdown={block.markdown} onOpenArtifact={handlers?.onArtifactOpen} />;
     case "reasoning":

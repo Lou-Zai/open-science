@@ -47,6 +47,13 @@ export interface AgentRuntime {
    *  binding; omit to use the session/runtime default. See lib/runtime.ts. */
   sendPrompt(sessionId: string, text: string, agent?: string, model?: string | null): Promise<void>;
   abortSession(sessionId: string): Promise<void>;
+  /** Revert the session to (and including) `messageID`, dropping it and every
+   *  message after it (and rolling back any files they changed). Used to edit a
+   *  past user message: revert to it, then `sendPrompt` the corrected text.
+   *  The session must be idle first (abort a running turn before calling). */
+  revert(sessionId: string, messageID: string, partID?: string): Promise<void>;
+  /** Undo the last revert (restore the dropped messages and files). */
+  unrevert(sessionId: string): Promise<void>;
 
   // ---- capability discovery (what this runtime can do) ----
   listSkills(): Promise<SkillInfo[]>;

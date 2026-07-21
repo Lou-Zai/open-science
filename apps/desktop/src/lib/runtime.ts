@@ -200,6 +200,17 @@ interface RuntimeState {
   runCommand: (name: string, args?: string) => Promise<string | null>;
   /** Interrupt the current session's running turn (Stop button / Esc). */
   interrupt: () => Promise<void>;
+  /** Edit a past user message: revert the session to (and including) that
+   *  message — dropping it and everything after, rolling back the files those
+   *  turns changed — then resend the corrected text as a new turn. Destructive:
+   *  callers must confirm first. `messageID` is the id on the user block. */
+  editMessage: (messageID: string, newText: string) => Promise<void>;
+  /** Revert the session to (and including) a past user message WITHOUT
+   *  resending — drops it and everything after and rolls back those turns'
+   *  files, leaving the session idle at that point. Returns whether it
+   *  succeeded (the caller prefills the composer with the message on success).
+   *  Destructive: callers must confirm first. */
+  revertMessage: (messageID: string) => Promise<boolean>;
   /** Check every session holding a running lock against the server: if its
    *  turn is actually over (idle was missed — SSE reconnect windows, the
    *  directory-scoped event stream), reload the missed history and unlock. */
@@ -515,6 +526,40 @@ async function performTurn(
   } finally {
     set({ sending: false });
   }
+}
+
+/** Shared core of the two destructive "go back to a past message" actions
+ *  (edit-and-resend, and plain revert): stop any running turn, revert the
+ *  session to `messageID` — OpenCode drops it and every later message and rolls
+ *  back the files those turns changed — then mirror that truncation in the
+ *  local thread. Returns whether the revert succeeded. OpenCode rejects a
+ *  revert on a busy session, so the abort's trailing session.idle is given a
+ *  few short retries to land first. */
+async function revertToMessage(set: StoreSet, get: StoreGet, messageID: string): Promise<boolean> {
+  const sid = get().currentId;
+  if (!sid || !client) return false;
+  const c = client;
+  if (get().runningSessions[sid]) await get().interrupt();
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      await c.revert(sid, messageID);
+      break;
+    } catch (e) {
+      if (attempt === 4) {
+        set({ error: e instanceof Error ? e.message : "Failed to revert the message." });
+        return false;
+      }
+      await sleep(200);
+    }
+  }
+  set((s) => {
+    const cur = s.threads[sid];
+    if (!cur) return {};
+    const idx = cur.blocks.findIndex((b) => b.kind === "user" && b.messageID === messageID);
+    if (idx < 0) return {};
+    return { threads: { ...s.threads, [sid]: { ...cur, blocks: cur.blocks.slice(0, idx) } } };
+  });
+  return true;
 }
 
 /** The live OpenCode client (Settings talks to the runtime's config API directly). */
@@ -928,14 +973,36 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
           }));
           return;
         case "message.agent": {
+          // A user message landed. Tag the newest still-untagged user block in
+          // this thread with its server id — the optimistic echo from a send
+          // starts id-less, and the id is what makes the row editable later.
+          // Sends are serialized, so the last untagged block is this message.
+          if (event.messageID) {
+            const mid = event.messageID;
+            set((s) => {
+              const cur = s.threads[event.sessionId];
+              if (!cur) return {};
+              const blocks = [...cur.blocks];
+              for (let i = blocks.length - 1; i >= 0; i--) {
+                const b = blocks[i];
+                if (b.kind === "user" && !b.messageID) {
+                  blocks[i] = { ...b, messageID: mid };
+                  return { threads: { ...s.threads, [event.sessionId]: { ...cur, blocks } } };
+                }
+              }
+              return {};
+            });
+          }
           // A user message names its agent. This is how the pill follows
           // OpenCode's own plan_exit "Yes" (it injects a build user message)
           // — and it self-confirms our own sends.
-          const mode: AgentMode = event.agent === "plan" ? "plan" : "build";
-          if (get().sessionAgents[event.sessionId] !== mode)
-            set((s) => ({
-              sessionAgents: { ...s.sessionAgents, [event.sessionId]: mode },
-            }));
+          if (event.agent) {
+            const mode: AgentMode = event.agent === "plan" ? "plan" : "build";
+            if (get().sessionAgents[event.sessionId] !== mode)
+              set((s) => ({
+                sessionAgents: { ...s.sessionAgents, [event.sessionId]: mode },
+              }));
+          }
           return;
         }
       }
@@ -1484,6 +1551,12 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     });
   },
 
+  editMessage: async (messageID, newText) => {
+    if (await revertToMessage(set, get, messageID)) await get().sendPrompt(newText);
+  },
+
+  revertMessage: async (messageID) => revertToMessage(set, get, messageID),
+
   reconcileRunning: async () => {
     const c = client;
     const running = Object.keys(get().runningSessions);
@@ -1895,8 +1968,11 @@ export function historyToThread(messages: HistoryMessage[], commands?: CommandIn
         .join("")
         .trim();
       const command = asTypedCommand(text);
-      if (command) blocks.push({ kind: "user", text: command });
-      else if (text) blocks.push({ kind: "user", text });
+      // Tag with the message id so the row can be edited (revert + resend).
+      // A "/command" echo keeps the id too — editing re-runs the command.
+      const id = m.id ? { messageID: m.id } : {};
+      if (command) blocks.push({ kind: "user", text: command, ...id });
+      else if (text) blocks.push({ kind: "user", text, ...id });
     } else {
       for (const p of m.parts) {
         if (p.type === "text" && p.text?.trim()) {

@@ -271,5 +271,22 @@
     "clearAria": "Quitar el objetivo",
     "unmet": "bloqueado",
     "limited": "límite alcanzado"
+  },
+  "message": {
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "copyFailed": "No se pudo copiar al portapapeles.",
+    "edit": "Editar",
+    "editing": {
+      "cancel": "Cancelar",
+      "send": "Enviar"
+    },
+    "revert": "Revertir",
+    "confirm": {
+      "title": "¿Descartar todo lo posterior?",
+      "body": "Esto revierte la conversación a este mensaje y lo descarta junto con todos los mensajes posteriores y los cambios de archivos que hicieron esos turnos. No se puede deshacer.",
+      "edit": "Editar y reenviar",
+      "revert": "Revertir aquí"
+    }
   }
 }

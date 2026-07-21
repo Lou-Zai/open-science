@@ -66,6 +66,9 @@ export function LiveSessionPage() {
   const rejectQuestion = useRuntimeStore((s) => s.rejectQuestion);
   const replyPermission = useRuntimeStore((s) => s.replyPermission);
   const interrupt = useRuntimeStore((s) => s.interrupt);
+  const editMessage = useRuntimeStore((s) => s.editMessage);
+  const revertMessage = useRuntimeStore((s) => s.revertMessage);
+  const setComposerDraft = useUiStore((s) => s.setComposerDraft);
   const reconcileRunning = useRuntimeStore((s) => s.reconcileRunning);
   const approvalMode = useRuntimeStore((s) => s.approvalMode);
   const setApprovalMode = useRuntimeStore((s) => s.setApprovalMode);
@@ -141,8 +144,14 @@ export function LiveSessionPage() {
       onArtifactOpen: openArtifact,
       onFigureComment: (a, title) =>
         void sendPrompt(`On the figure ${title}, at (${a.x.toFixed(0)}%, ${a.y.toFixed(0)}%): ${a.note}`),
+      onEditMessage: editMessage,
+      // Revert to the message, then drop its text into the composer so the user
+      // can tweak and resend by hand (never auto-sent).
+      onRevertMessage: async (_messageID, text) => {
+        if (await revertMessage(_messageID)) setComposerDraft(text);
+      },
     }),
-    [openArtifact, sendPrompt],
+    [openArtifact, sendPrompt, editMessage, revertMessage, setComposerDraft],
   );
   const onEvaluate = (expr: string) => void sendPrompt(`Evaluate in the notebook kernel:\n\`\`\`python\n${expr}\n\`\`\``);
 

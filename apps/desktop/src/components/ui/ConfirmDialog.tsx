@@ -41,18 +41,22 @@ export function ConfirmDialog({
       >
         <div className="text-sm font-medium text-text">{title}</div>
         <p className="mt-1.5 text-sm text-muted">{body}</p>
+        {/* Destructive action on the left, Cancel on the right and focused by
+            default — so the safe choice is where the primary button usually
+            sits and Enter/Space never triggers the destructive one. */}
         <div className="mt-4 flex justify-end gap-2">
-          <button
-            className="rounded-input border border-border px-3 py-1.5 text-sm text-text hover:bg-surface-2"
-            onClick={onCancel}
-          >
-            {t("actions.cancel")}
-          </button>
           <button
             className="rounded-input bg-error px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
             onClick={onConfirm}
           >
             {confirmLabel}
+          </button>
+          <button
+            autoFocus
+            className="rounded-input border border-border px-3 py-1.5 text-sm text-text hover:bg-surface-2"
+            onClick={onCancel}
+          >
+            {t("actions.cancel")}
           </button>
         </div>
       </div>

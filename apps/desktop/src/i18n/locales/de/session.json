@@ -271,5 +271,22 @@
     "clearAria": "Ziel entfernen",
     "unmet": "blockiert",
     "limited": "Limit erreicht"
+  },
+  "message": {
+    "copy": "Kopieren",
+    "copied": "Kopiert",
+    "copyFailed": "Konnte nicht in die Zwischenablage kopieren.",
+    "edit": "Bearbeiten",
+    "editing": {
+      "cancel": "Abbrechen",
+      "send": "Senden"
+    },
+    "revert": "Zurücksetzen",
+    "confirm": {
+      "title": "Alles danach verwerfen?",
+      "body": "Dies setzt die Unterhaltung auf diese Nachricht zurück und verwirft sie sowie alle nachfolgenden Nachrichten samt der in diesen Runden vorgenommenen Dateiänderungen. Das lässt sich nicht rückgängig machen.",
+      "edit": "Bearbeiten & erneut senden",
+      "revert": "Hierher zurücksetzen"
+    }
   }
 }

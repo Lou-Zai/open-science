@@ -72,7 +72,11 @@ export interface SessionIdleEvent {
 export interface MessageAgentEvent {
   type: "message.agent";
   sessionId: string;
-  agent: string;
+  /** The user message's id, when known — lets the app tag the live message
+   *  block so it can later be edited (revert + resend). */
+  messageID?: string;
+  /** Agent the user message carries; absent when OpenCode didn't set one. */
+  agent?: string;
 }
 
 export interface SessionRetryEvent {
@@ -199,6 +203,9 @@ export interface CommandInfo {
 /** A message loaded from history (GET /session/:id/message). */
 export interface HistoryMessage {
   role: "user" | "assistant";
+  /** OpenCode's message id — the handle for reverting/editing a user message
+   *  (`POST /session/:id/revert`). Absent only on synthetic/mock messages. */
+  id?: string;
   /** Epoch ms when the message finished — unset while it is still streaming.
    *  On the LAST message this is the server's truth for "is the turn over". */
   completed?: number;

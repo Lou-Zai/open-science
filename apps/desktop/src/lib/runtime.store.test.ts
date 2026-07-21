@@ -20,6 +20,10 @@ const mocks = vi.hoisted(() => ({
   runCommand: vi.fn(),
   replyPermission: vi.fn(),
   abortSession: vi.fn(),
+  revertSpy: vi.fn(),
+  unrevertSpy: vi.fn(),
+  /** Number of revert() attempts that fail (busy session) before one succeeds. */
+  failReverts: 0,
   /** SSE events the real server streams back DURING an abort POST's await — an
    *  "aborted" error and one or more session.idle events. Empty by default. */
   abortTrailing: [] as unknown[],
@@ -176,6 +180,16 @@ vi.mock("@ai4s/sdk", () => {
       if (mocks.failMessages) throw new Error("history hung");
       return mocks.messages;
     }
+    async revert(sid: string, messageID: string, partID?: string) {
+      mocks.revertSpy(sid, messageID, partID);
+      if (mocks.failReverts > 0) {
+        mocks.failReverts--;
+        throw new Error("session is busy");
+      }
+    }
+    async unrevert(sid: string) {
+      mocks.unrevertSpy(sid);
+    }
     async listQuestions() {
       return [];
     }
@@ -204,6 +218,7 @@ beforeEach(async () => {
   mocks.abortTrailing = [];
   mocks.messages = [];
   mocks.failMessages = false;
+  mocks.failReverts = 0;
   mocks.approvalMode = "approve";
   mocks.currentModel = null;
   mocks.providers = [];
@@ -779,6 +794,90 @@ describe("stale running locks and interrupt", () => {
   it("interrupt does nothing when no turn is running", async () => {
     await useRuntimeStore.getState().interrupt();
     expect(mocks.abortSession).not.toHaveBeenCalled();
+  });
+});
+
+// Editing a past user message: the block is tagged with its server id from the
+// message.agent event, then editMessage reverts to it (dropping it + everything
+// after) and resends the corrected text.
+describe("edit a past user message", () => {
+  /** Send "hi", tag the echo with a server id, then end the turn with a reply. */
+  async function sendAndFinish(messageID: string) {
+    await useRuntimeStore.getState().sendPrompt("hi");
+    mocks.fireEvent({ type: "message.agent", sessionId: "ses_new", messageID, agent: "build" });
+    mocks.fireEvent({ type: "text.updated", sessionId: "ses_new", partId: "t1", text: "wrong answer" });
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_new" });
+  }
+
+  it("tags the live user block with its message id from message.agent", async () => {
+    await useRuntimeStore.getState().sendPrompt("hi");
+    expect(useRuntimeStore.getState().threads["ses_new"].blocks[0]).toEqual({ kind: "user", text: "hi" });
+    mocks.fireEvent({ type: "message.agent", sessionId: "ses_new", messageID: "msg_1", agent: "build" });
+    expect(useRuntimeStore.getState().threads["ses_new"].blocks[0]).toEqual({
+      kind: "user",
+      text: "hi",
+      messageID: "msg_1",
+    });
+  });
+
+  it("reverts to the message, drops it and the reply, and resends the new text", async () => {
+    await sendAndFinish("msg_1");
+    await useRuntimeStore.getState().editMessage("msg_1", "hi fixed");
+
+    expect(mocks.revertSpy).toHaveBeenCalledWith("ses_new", "msg_1", undefined);
+    expect(mocks.sendPromptSpy).toHaveBeenLastCalledWith("ses_new", "hi fixed", undefined);
+    const blocks = useRuntimeStore.getState().threads["ses_new"].blocks;
+    const users = blocks.filter((b) => b.kind === "user");
+    expect(users).toHaveLength(1);
+    expect(users[0]).toMatchObject({ text: "hi fixed" });
+    expect(blocks.some((b) => b.kind === "agent")).toBe(false);
+  });
+
+  it("stops a running turn before reverting", async () => {
+    await useRuntimeStore.getState().sendPrompt("hi");
+    mocks.fireEvent({ type: "message.agent", sessionId: "ses_new", messageID: "msg_1" });
+    expect(useRuntimeStore.getState().runningSessions["ses_new"]).toBe(true);
+
+    await useRuntimeStore.getState().editMessage("msg_1", "hi fixed");
+    expect(mocks.abortSession).toHaveBeenCalledWith("ses_new");
+    expect(mocks.revertSpy).toHaveBeenCalledWith("ses_new", "msg_1", undefined);
+  });
+
+  it("retries revert while the just-aborted session is still settling", async () => {
+    mocks.failReverts = 2; // busy twice, then succeeds
+    await sendAndFinish("msg_1");
+    await useRuntimeStore.getState().editMessage("msg_1", "hi fixed");
+    expect(mocks.revertSpy).toHaveBeenCalledTimes(3);
+    expect(mocks.sendPromptSpy).toHaveBeenLastCalledWith("ses_new", "hi fixed", undefined);
+  });
+
+  it("surfaces an error and does not resend when revert keeps failing", async () => {
+    mocks.failReverts = 99;
+    await sendAndFinish("msg_1");
+    mocks.sendPromptSpy.mockClear();
+    await useRuntimeStore.getState().editMessage("msg_1", "hi fixed");
+    expect(mocks.revertSpy).toHaveBeenCalledTimes(5);
+    expect(useRuntimeStore.getState().error).toBeTruthy();
+    expect(mocks.sendPromptSpy).not.toHaveBeenCalled();
+  });
+
+  it("revertMessage drops the message and everything after WITHOUT resending", async () => {
+    await sendAndFinish("msg_1");
+    mocks.sendPromptSpy.mockClear();
+    const ok = await useRuntimeStore.getState().revertMessage("msg_1");
+    expect(ok).toBe(true);
+    expect(mocks.revertSpy).toHaveBeenCalledWith("ses_new", "msg_1", undefined);
+    expect(mocks.sendPromptSpy).not.toHaveBeenCalled(); // caller prefills the composer instead
+    expect(useRuntimeStore.getState().threads["ses_new"].blocks).toEqual([]);
+  });
+
+  it("revertMessage returns false (and does not truncate) when revert fails", async () => {
+    mocks.failReverts = 99;
+    await sendAndFinish("msg_1");
+    const before = useRuntimeStore.getState().threads["ses_new"].blocks;
+    const ok = await useRuntimeStore.getState().revertMessage("msg_1");
+    expect(ok).toBe(false);
+    expect(useRuntimeStore.getState().threads["ses_new"].blocks).toEqual(before);
   });
 });
 
