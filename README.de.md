@@ -33,7 +33,11 @@ Formerly Open Science. Eine quelloffene Desktop-Alternative zu Claude Science un
 
 ---
 
-🎉 **Anerkennung:** Open Science Desktop belegt nach Durchschnitt der bewerteten Aufgaben Platz 1 auf [ResearchClawBench](https://internscience.github.io/ResearchClawBench-Home/), einem End-to-End-Benchmark für autonome wissenschaftliche Forschungsagenten (Pass@1-Leaderboard, 9. Juli 2026).
+## Neuigkeiten
+
+- **2026-07-21** — 🌐 **Von überall zugreifen — sogar vom Handy.** Ein token-authentifiziertes Gateway liefert die *echte* Desktop-UI an eine CLI, einen Browser in deinem LAN oder dein Handy (standardmäßig nur Loopback; LAN ist optional aktivierbar). Starte einen Lauf am Schreibtisch und lies die fertige Abbildung und den Bericht auf deinem Handy. *(v0.2.3)*
+- **2026-07-21** — 🧭 **Browser-Steuerung.** Der Agent kann deinen eigenen Chrome steuern — mit Profil und Logins intakt —, um das aktuelle Web so zu lesen wie du, oder bei Bedarf einen isolierten privaten Browser. *(v0.2.3)*
+- **2026-07-09** — 🎉 **Platz 1 auf ResearchClawBench.** Open Science Desktop belegt nach Durchschnitt der bewerteten Aufgaben Platz 1 auf [ResearchClawBench](https://internscience.github.io/ResearchClawBench-Home/), einem End-to-End-Benchmark für autonome wissenschaftliche Forschungsagenten (Pass@1-Leaderboard).
 
 ---
 
@@ -58,6 +62,8 @@ Formerly Open Science. Eine quelloffene Desktop-Alternative zu Claude Science un
 - **Local-first und deins**: Sitzungen, Daten, Provenance, Notebooks und Run Records liegen in lokalen Ordnern auf deinem Gerät. Standardmäßig verlässt nichts das Gerät.
 - **Modellunabhängige Laufzeit**: Die UI spricht über `packages/sdk` mit einem gebündelten, gepinnten OpenCode-Sidecar. Bring dein eigenes Modell mit; Provider, Skills und MCP-Server bleiben austauschbar.
 - **Reproduzierbar von Grund auf**: Lokale, SSH/Slurm-, Modal- und Notebook-Batch-Läufe werden als reproduzierbare Run Records erfasst, nicht als loser Terminal-Output.
+- **Von überall erreichbar**: Ein eingebautes, token-authentifiziertes Gateway liefert die *echte* Desktop-UI an einen Browser in deinem LAN oder auf deinem Handy (oder, mit einem Tunnel, von überall) — starte einen Lauf am Schreibtisch und schau in der Mittagspause vom Handy aus nach. Standardmäßig aus; nur Loopback, bis du es aktivierst, und API-Keys verlassen niemals das Gerät.
+- **Steuert deinen eigenen Browser**: Der Agent kann deinen echten Chrome steuern — mit deinem Profil und deinen Logins intakt —, um das aktuelle Web so zu lesen wie du — oder einen isolierten privaten Browser, wenn dir das lieber ist.
 - **Erweiterbar**: Agent-Skills, MCP-Server und Ein-Klick-Wissenschaftskonnektoren, `/`-Befehle, `!`-Shell-Modus und ein modellunabhängiges SDK.
 
 ## Screenshots
@@ -68,10 +74,25 @@ Formerly Open Science. Eine quelloffene Desktop-Alternative zu Claude Science un
 
 ![Literature survey producing a rendered PDF manuscript](./docs/assets/showcase-literature.webp)
 
+**Forschen von überall — sogar vom Handy.** Ein eingebautes, authentifiziertes Gateway liefert die *echte* Desktop-UI an einen Browser in deinem LAN (oder über einen Tunnel), sodass du einen Lauf am Schreibtisch starten und die fertige Abbildung und den Bericht auf deinem Handy lesen kannst.
+
+<table align="center">
+  <tr>
+    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-home.webp" width="300" alt="Die Workbench in einem Handy-Browser — der Neue-Sitzung-Bildschirm"><br><sub>Neue Sitzung — in einem Handy-Browser</sub></td>
+    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-run.webp" width="300" alt="Eine fertige Dosis-Wirkungs-Analyse auf einem Handy"><br><sub>Eine fertige Analyse — Abbildung &amp; Bericht</sub></td>
+  </tr>
+</table>
+
+**Steuert deinen eigenen Chrome.** Der Agent liest das aktuelle Web über dein echtes Browser-Profil — Logins inklusive — und macht daraus eine Abbildung und eine sortierbare CSV.
+
+![Der Agent steuert den eigenen Chrome des Nutzers per Browser-Steuerung, um bioRxiv-Preprints in ein Diagramm und eine CSV zu überführen](./docs/assets/showcase-browser.webp)
+
 <details>
 <summary><b>Weitere Screenshots</b></summary>
 
 <br>
+
+![Reproduktion eines scVI-Benchmarks auf einer entfernten A100 mit gepinnter Umgebung, Ausführungslog und Provenance](./docs/assets/showcase-remote.webp)
 
 ![Jupyter notebook](./docs/assets/showcase-notebook.webp)
 
@@ -105,6 +126,8 @@ Diese sind im `ai4s-skills`-Pack enthalten, neben den First-Party-Review-Skills 
 | Runtime | Gebündeltes OpenCode-Sidecar, von der App gestartet und von der OpenCode-Konfiguration des Nutzers isoliert. |
 | Sitzungen | Multi-Session-Chat, Verlauf, datierte Workspace-Ordner, globaler Verlauf, `/`-Befehle und `!`-Shell-Modus. |
 | Dateien | Globale und sitzungsbezogene Dateiansicht, Kontextmenü, extern öffnen/anzeigen, Pfad kopieren, lokaler Preview-Server. |
+| Fernzugriff | Token-authentifiziertes Gateway, das die echte UI an eine CLI, einen Web-Browser im LAN oder dein Handy liefert (standardmäßig nur Loopback, LAN optional aktivierbar); Modi für Nur-Lesen bzw. Vollzugriff; kopiere einen Link mit eingebettetem Token, um dich mit einem Tipp zu verbinden. API-Keys gehen niemals über die Leitung. |
+| Browser-Steuerung | Der Agent steuert deinen eigenen Chrome — mit erhaltenem Profil und Login-Zustand —, liest Seiten über den Accessibility-Baum, oder bei Bedarf einen isolierten/privaten Browser. |
 | Notebooks | Echte `.ipynb`-Dateien, Python/R-Notebook-Erstellung, lokaler Kernel, Jupyter-Umgebung über gebündeltes `uv`, JupyterLab öffnen. |
 | Läufe | Append-only Run Logs, globaler SQLite-Index, Suche/Facetten/Paginierung, lokale und entfernte Oberflächen, Output-Links, Logs und Reproduce-Prompts. |
 | Provenance | `.openscience/provenance.jsonl` zeichnet Dateiversionen auf und verbindet Artefakte mit dem erzeugenden Lauf oder Edit. |
@@ -186,8 +209,8 @@ Wenn Sie Open Science Desktop in Ihrer Forschung verwenden, zitieren Sie es bitt
   author  = {{The Open Science Desktop Contributors}},
   title   = {Open Science Desktop: a local-first, model-agnostic AI research workbench},
   year    = {2026},
-  version = {0.2.2},
-  doi     = {10.5281/zenodo.21465187},
+  version = {0.2.3},
+  doi     = {10.5281/zenodo.21477879},
   url     = {https://github.com/ai4s-research/open-science},
   license = {MIT}
 }

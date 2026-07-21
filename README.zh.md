@@ -37,7 +37,11 @@
 
 ---
 
-🎉 **认可：** Open Science Desktop 在面向自主科研智能体的端到端基准 [ResearchClawBench](https://internscience.github.io/ResearchClawBench-Home/) 上，按已评分任务平均分排名第 1（Pass@1 榜单，2026 年 7 月 9 日）。
+## 最新动态
+
+- **2026-07-21** — 🌐 **随时随地访问——连手机都行。** 一个基于令牌认证的网关，把*真正的*桌面 UI 提供给命令行、局域网中的浏览器或你的手机（默认仅回环地址；局域网需手动开启）。在电脑前发起一次运行，然后在手机上查看完成的图表和报告。 *(v0.2.3)*
+- **2026-07-21** — 🧭 **浏览器控制。** 智能体可以驱动你自己的 Chrome——保留配置文件和登录状态——像你一样浏览实时网页，也可以按需使用隔离的隐私浏览器。 *(v0.2.3)*
+- **2026-07-09** — 🎉 **ResearchClawBench 排名第 1。** Open Science Desktop 在面向自主科研智能体的端到端基准 [ResearchClawBench](https://internscience.github.io/ResearchClawBench-Home/) 上，按已评分任务平均分排名第 1（Pass@1 榜单）。
 
 ---
 
@@ -65,6 +69,8 @@
 - **本地优先，数据归你**：会话、数据、溯源、笔记本和运行记录都在本机的本地文件夹里,默认不外流。
 - **模型无关运行时**：UI 通过 `packages/sdk` 调用内置固定版本的 OpenCode sidecar——自带模型即可;模型提供方、技能和 MCP 服务器保持可插拔。
 - **天然可复现**：本地、SSH/Slurm、Modal 和 notebook-batch 运行都被记录为可复现的 run record,而不是散落的终端输出。
+- **随时随地访问**：内置的、基于令牌认证的网关把*真正的*桌面 UI 提供给局域网里的浏览器或手机(有隧道时更可从任何地方访问)——在电脑前发起一次运行,午饭时用手机查看进度。默认关闭;开启前仅限回环地址,且 API key 永不离开本机。
+- **驱动你自己的浏览器**：智能体可以控制你真实的 Chrome,保留你的配置文件和登录状态,像你一样浏览实时网页——你也可以选择一个隔离的隐私浏览器。
 - **可扩展**：智能体技能、MCP 服务器与一键科学连接器、`/` 命令、`!` shell 模式,以及一个模型无关的 SDK。
 
 ## 效果演示
@@ -81,10 +87,25 @@
 
 ![文献综述产出渲染后的 PDF 稿件，并附带可追溯性评审](./docs/assets/showcase-literature.webp)
 
+**随时随地做研究——连手机都行。** 内置的认证网关把*真正的*桌面 UI 提供给局域网里的浏览器(或通过隧道),这样你就能在电脑前发起一次运行,再在手机上查看完成的图表和报告。
+
+<table align="center">
+  <tr>
+    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-home.webp" width="300" alt="在手机浏览器中运行的工作台：新建会话界面"><br><sub>新建会话——在手机浏览器中</sub></td>
+    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-run.webp" width="300" alt="在手机上查看一份完成的剂量-响应分析"><br><sub>一份完成的分析——图表与报告</sub></td>
+  </tr>
+</table>
+
+**驱动你自己的 Chrome。** 智能体通过你真实的浏览器配置文件——连同登录状态——浏览实时网页,再把找到的内容变成一张图和一份可排序的 CSV。
+
+![智能体通过 browser-control 驱动用户自己的 Chrome，把 bioRxiv 预印本采集成图表和 CSV](./docs/assets/showcase-browser.webp)
+
 <details>
 <summary><b>更多截图</b></summary>
 
 <br>
+
+![在远程 A100 上以固定环境复现 scVI 基准，附带执行日志和溯源](./docs/assets/showcase-remote.webp)
 
 ![智能体驱动 Jupyter 笔记本并实时绘制 matplotlib 图](./docs/assets/showcase-notebook.webp)
 
@@ -118,6 +139,8 @@
 | 运行时 | 内置 OpenCode sidecar，由应用自动启动，并与用户自己的 OpenCode 配置/数据隔离。 |
 | 会话 | 多会话聊天与历史、按时间创建的工作区文件夹、跨工作区全局历史、`/` 命令和 `!` shell 模式。 |
 | 文件 | 全局和会话内文件浏览、右键菜单、系统打开/定位、复制路径、本地预览服务。 |
+| 远程访问 | 基于令牌认证的网关，把真正的 UI 提供给命令行、局域网 Web 浏览器或你的手机(默认仅回环地址，局域网需手动开启);支持只读与完全访问两种模式;可复制一条内嵌令牌的链接，一键连接。API key 永不经过网络传输。 |
+| 浏览器控制 | 智能体驱动你自己的 Chrome——保留配置文件和登录状态——通过无障碍树读取页面，也可按需使用隔离的隐私浏览器。 |
 | 笔记本 | 真实 `.ipynb` 文件、Python/R 笔记本创建、本地内核运行、内置 `uv` 管理 Jupyter 环境，以及打开 JupyterLab。 |
 | 运行记录 | 追加式 run log、全局 SQLite 索引、搜索/筛选/分页、本地与远程 surface、输出链接、日志和复现提示。 |
 | 溯源 | `.openscience/provenance.jsonl` 记录文件版本，并把产物连回创建它的运行或编辑。 |
@@ -251,8 +274,8 @@ pnpm lint
   author  = {{The Open Science Desktop Contributors}},
   title   = {Open Science Desktop: a local-first, model-agnostic AI research workbench},
   year    = {2026},
-  version = {0.2.2},
-  doi     = {10.5281/zenodo.21465187},
+  version = {0.2.3},
+  doi     = {10.5281/zenodo.21477879},
   url     = {https://github.com/ai4s-research/open-science},
   license = {MIT}
 }

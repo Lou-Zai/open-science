@@ -33,7 +33,11 @@ Formerly Open Science. Claude Science 및 유사한 AI-for-science 워크벤치�
 
 ---
 
-🎉 **인정:** Open Science Desktop은 자율 과학 연구 에이전트를 위한 엔드투엔드 벤치마크 [ResearchClawBench](https://internscience.github.io/ResearchClawBench-Home/)에서 채점된 작업 평균 기준 1위를 기록했습니다(Pass@1 리더보드, 2026년 7월 9일).
+## 소식
+
+- **2026-07-21** — 🌐 **어디서나 접속 — 심지어 휴대폰에서도.** 토큰 인증 게이트웨이가 *실제* 데스크톱 UI를 CLI, LAN 내 브라우저, 또는 휴대폰에 제공합니다(기본은 loopback, LAN은 선택적 활성화). 책상에서 실행을 시작하고 완성된 그림과 보고서를 휴대폰에서 확인하세요. *(v0.2.3)*
+- **2026-07-21** — 🧭 **브라우저 제어.** 에이전트가 프로필과 로그인이 유지된 당신의 Chrome을 직접 조작해 당신이 보는 방식 그대로 실시간 웹을 읽거나, 필요할 때 격리된 비공개 브라우저를 사용할 수 있습니다. *(v0.2.3)*
+- **2026-07-09** — 🎉 **ResearchClawBench 1위.** Open Science Desktop은 자율 과학 연구 에이전트를 위한 엔드투엔드 벤치마크 [ResearchClawBench](https://internscience.github.io/ResearchClawBench-Home/)에서 채점된 작업 평균 기준 1위를 기록했습니다(Pass@1 리더보드).
 
 ---
 
@@ -58,6 +62,8 @@ Formerly Open Science. Claude Science 및 유사한 AI-for-science 워크벤치�
 - **로컬 우선, 당신의 것**: 세션, 데이터, provenance, 노트북, 실행 기록이 모두 로컬 폴더에 저장되며 기본적으로 외부로 나가지 않습니다.
 - **모델 독립 런타임**: UI는 `packages/sdk`를 통해 번들·고정된 OpenCode sidecar와 통신합니다. 원하는 모델을 가져오세요; provider, skill, MCP 서버는 교체 가능합니다.
 - **설계상 재현 가능**: 로컬, SSH/Slurm, Modal, notebook-batch 실행을 흩어진 터미널 출력이 아니라 재현 가능한 run record로 기록합니다.
+- **어디서나 접속**: 내장된 토큰 인증 게이트웨이가 *실제* 데스크톱 UI를 LAN 내 브라우저나 휴대폰에 제공합니다(터널을 쓰면 어디서든) — 책상에서 실행을 시작하고 점심시간에 휴대폰으로 확인하세요. 기본은 꺼져 있고, 활성화하기 전까지는 loopback 전용이며, API 키는 기기를 벗어나지 않습니다.
+- **당신의 브라우저를 직접 조작**: 에이전트가 프로필과 로그인이 유지된 실제 Chrome을 제어해 당신이 보는 방식 그대로 실시간 웹을 읽을 수 있으며 — 원치 않으면 격리된 비공개 브라우저를 사용합니다.
 - **확장 가능**: 에이전트 스킬, MCP 서버와 원클릭 과학 커넥터, `/` 명령, `!` shell 모드, 그리고 모델 독립 SDK.
 
 ## 스크린샷
@@ -68,10 +74,25 @@ Formerly Open Science. Claude Science 및 유사한 AI-for-science 워크벤치�
 
 ![Literature survey producing a rendered PDF manuscript](./docs/assets/showcase-literature.webp)
 
+**어디서나, 심지어 휴대폰에서도 연구.** 내장된 인증 게이트웨이가 *실제* 데스크톱 UI를 LAN 내 브라우저(또는 터널)에 제공하므로, 책상에서 실행을 시작하고 완성된 그림과 보고서를 휴대폰에서 읽을 수 있습니다.
+
+<table align="center">
+  <tr>
+    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-home.webp" width="300" alt="휴대폰 브라우저에서 실행 중인 워크벤치 — 새 세션 화면"><br><sub>새 세션 — 휴대폰 브라우저에서</sub></td>
+    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-run.webp" width="300" alt="휴대폰에서 본 완성된 용량-반응 분석"><br><sub>완성된 분석 — 그림 &amp; 보고서</sub></td>
+  </tr>
+</table>
+
+**당신의 Chrome을 직접 조작.** 에이전트가 로그인을 포함한 실제 브라우저 프로필로 실시간 웹을 읽고, 찾은 내용을 그림과 정렬 가능한 CSV로 만듭니다.
+
+![browser-control로 사용자의 Chrome을 조작해 bioRxiv 프리프린트를 차트와 CSV로 수집하는 에이전트](./docs/assets/showcase-browser.webp)
+
 <details>
 <summary><b>추가 스크린샷</b></summary>
 
 <br>
+
+![고정된 환경, 실행 로그, provenance와 함께 원격 A100에서 scVI 벤치마크 재현](./docs/assets/showcase-remote.webp)
 
 ![Jupyter notebook](./docs/assets/showcase-notebook.webp)
 
@@ -105,6 +126,8 @@ Formerly Open Science. Claude Science 및 유사한 AI-for-science 워크벤치�
 | 런타임 | 앱이 자동 시작하는 번들 OpenCode sidecar. 사용자의 OpenCode 설정/데이터와 격리됩니다. |
 | 세션 | 다중 세션 채팅/히스토리, 날짜별 워크스페이스 폴더, 전역 히스토리, `/` 명령, `!` shell 모드. |
 | 파일 | 전역/세션 파일 탐색, 컨텍스트 메뉴, 외부 열기/표시, 경로 복사, 로컬 미리보기 서버. |
+| 원격 접속 | 실제 UI를 CLI, LAN 웹 브라우저, 또는 휴대폰에 제공하는 토큰 인증 게이트웨이(기본은 loopback, LAN은 선택적 활성화); 읽기 전용/전체 접근 모드; 토큰이 포함된 링크를 복사해 한 번의 탭으로 연결. API 키는 네트워크를 통해 전송되지 않습니다. |
+| 브라우저 제어 | 에이전트가 프로필과 로그인 상태가 보존된 당신의 Chrome을 조작해 접근성 트리로 페이지를 읽거나, 필요할 때 격리된/비공개 브라우저를 사용합니다. |
 | 노트북 | 실제 `.ipynb`, Python/R 노트북 생성, 로컬 커널 실행, 번들 `uv` 기반 Jupyter 환경, JupyterLab 열기. |
 | 실행 기록 | append-only run log, 전역 SQLite 인덱스, 검색/필터/페이지네이션, 로컬/원격 surface, 출력 링크, 로그, 재현 prompt. |
 | Provenance | `.openscience/provenance.jsonl`이 파일 버전을 기록하고 산출물을 생성한 실행 또는 편집과 연결합니다. |
@@ -186,8 +209,8 @@ pnpm lint
   author  = {{The Open Science Desktop Contributors}},
   title   = {Open Science Desktop: a local-first, model-agnostic AI research workbench},
   year    = {2026},
-  version = {0.2.2},
-  doi     = {10.5281/zenodo.21465187},
+  version = {0.2.3},
+  doi     = {10.5281/zenodo.21477879},
   url     = {https://github.com/ai4s-research/open-science},
   license = {MIT}
 }

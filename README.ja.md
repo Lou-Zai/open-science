@@ -33,7 +33,11 @@ Formerly Open Science. Claude Science などの AI-for-science ワークベン�
 
 ---
 
-🎉 **評価:** Open Science Desktop は、自律型科学研究エージェント向けのエンドツーエンドベンチマーク [ResearchClawBench](https://internscience.github.io/ResearchClawBench-Home/) で、採点済みタスク平均スコア第 1 位です（Pass@1 リーダーボード、2026 年 7 月 9 日）。
+## ニュース
+
+- **2026-07-21** — 🌐 **どこからでもアクセス——スマホからでも。** トークン認証ゲートウェイが*本物の*デスクトップ UI を CLI、LAN 上のブラウザ、あるいはスマホへ配信します（既定はループバック、LAN はオプトイン）。デスクで実行を開始し、完成した図とレポートをスマホで読めます。 *(v0.2.3)*
+- **2026-07-21** — 🧭 **ブラウザ制御。** エージェントがあなた自身の Chrome を——プロファイルとログインを保ったまま——操作し、あなたと同じようにライブな Web を読み取ります。必要に応じて分離されたプライベートブラウザも使えます。 *(v0.2.3)*
+- **2026-07-09** — 🎉 **ResearchClawBench 第 1 位。** Open Science Desktop は、自律型科学研究エージェント向けのエンドツーエンドベンチマーク [ResearchClawBench](https://internscience.github.io/ResearchClawBench-Home/) で、採点済みタスク平均スコア第 1 位です（Pass@1 リーダーボード）。
 
 ---
 
@@ -58,6 +62,8 @@ Formerly Open Science. Claude Science などの AI-for-science ワークベン�
 - **ローカルファースト、あなたのもの**: セッション、データ、来歴、ノートブック、実行記録はすべて手元のローカルフォルダに保存され、既定では外部に出ません。
 - **モデル非依存ランタイム**: UI は `packages/sdk` 経由でバンドル済み OpenCode sidecar と通信します——好きなモデルを持ち込めます。プロバイダ、スキル、MCP サーバーは差し替え可能です。
 - **設計から再現可能**: ローカル、SSH/Slurm、Modal、notebook-batch の実行を、散らばった端末ログではなく再現可能な run record として記録します。
+- **どこからでも届く**: 組み込みのトークン認証ゲートウェイが*本物の*デスクトップ UI を LAN 上のブラウザやスマホへ配信します（トンネルを使えばどこからでも）——デスクで実行を開始し、昼休みにスマホから様子を確認できます。既定ではオフで、オプトインするまではループバック限定。API キーがマシンから出ることはありません。
+- **あなた自身のブラウザを操作**: エージェントはあなた自身の Chrome を、プロファイルとログインを保ったまま制御し、あなたと同じようにライブな Web を読み取れます——あるいは、そうしたくないときは分離されたプライベートブラウザを使います。
 - **拡張可能**: エージェントスキル、MCP サーバーとワンクリックの科学コネクタ、`/` コマンド、`!` shell モード、そしてモデル非依存の SDK。
 
 ## スクリーンショット
@@ -68,10 +74,25 @@ Formerly Open Science. Claude Science などの AI-for-science ワークベン�
 
 ![Literature survey producing a rendered PDF manuscript](./docs/assets/showcase-literature.webp)
 
+**どこからでも研究——スマホからでも。** 組み込みの認証ゲートウェイが*本物の*デスクトップ UI を LAN 上のブラウザ（またはトンネル）へ配信するので、デスクで実行を開始し、完成した図とレポートをスマホで読めます。
+
+<table align="center">
+  <tr>
+    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-home.webp" width="300" alt="スマホのブラウザで動作するワークベンチ——新規セッション画面"><br><sub>新規セッション——スマホのブラウザで</sub></td>
+    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-run.webp" width="300" alt="スマホで表示した、完成した用量反応分析"><br><sub>完成した分析——図 &amp; レポート</sub></td>
+  </tr>
+</table>
+
+**あなた自身の Chrome を操作。** エージェントはあなた自身のブラウザプロファイル——ログインも含めて——を通じてライブな Web を読み取り、見つけた内容を図とソート可能な CSV に変換します。
+
+![browser-control でユーザー自身の Chrome を操作し、bioRxiv のプレプリントを収集してチャートと CSV にするエージェント](./docs/assets/showcase-browser.webp)
+
 <details>
 <summary><b>その他のスクリーンショット</b></summary>
 
 <br>
+
+![固定された環境、実行ログ、来歴とともにリモート A100 上で scVI ベンチマークを再現](./docs/assets/showcase-remote.webp)
 
 ![Jupyter notebook](./docs/assets/showcase-notebook.webp)
 
@@ -105,6 +126,8 @@ Formerly Open Science. Claude Science などの AI-for-science ワークベン�
 | ランタイム | アプリが自動起動するバンドル済み OpenCode sidecar。ユーザー自身の OpenCode 設定/データとは分離。 |
 | セッション | 複数セッション、履歴、日時付きワークスペース、全ワークスペース履歴、`/` コマンド、`!` shell モード。 |
 | ファイル | グローバル/セッション内のファイルブラウズ、右クリック操作、外部アプリで開く、パスコピー、ローカルプレビューサーバー。 |
+| リモートアクセス | 本物の UI を CLI、LAN 上の Web ブラウザ、またはスマホへ配信するトークン認証ゲートウェイ（既定はループバック、LAN はオプトイン）。読み取り専用/フルアクセスの各モード。トークンを埋め込んだリンクをコピーし、ワンタップで接続。API キーが通信路を渡ることはありません。 |
+| ブラウザ制御 | エージェントがあなた自身の Chrome を——プロファイルとログイン状態を保ったまま——操作し、アクセシビリティツリーを通じてページを読み取ります。必要に応じて分離された/プライベートなブラウザも使えます。 |
 | ノートブック | 実際の `.ipynb`、Python/R ノートブック作成、ローカルカーネル実行、バンドル `uv` による Jupyter 環境、JupyterLab 起動。 |
 | 実行記録 | 追記型 run log、グローバル SQLite インデックス、検索/ファセット/ページング、出力リンク、ログ、再現プロンプト。 |
 | 来歴 | `.openscience/provenance.jsonl` がファイル版を記録し、成果物を作成元の実行または編集へ結びます。 |
@@ -186,8 +209,8 @@ pnpm lint
   author  = {{The Open Science Desktop Contributors}},
   title   = {Open Science Desktop: a local-first, model-agnostic AI research workbench},
   year    = {2026},
-  version = {0.2.2},
-  doi     = {10.5281/zenodo.21465187},
+  version = {0.2.3},
+  doi     = {10.5281/zenodo.21477879},
   url     = {https://github.com/ai4s-research/open-science},
   license = {MIT}
 }
