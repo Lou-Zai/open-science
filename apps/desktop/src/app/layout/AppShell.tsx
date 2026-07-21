@@ -76,13 +76,16 @@ export function AppShell() {
     return () => document.removeEventListener("click", onClick);
   }, []);
 
-  // The live session page's own header doubles as the titlebar when the
-  // sidebar is collapsed; every other route gets this fallback strip so the
-  // macOS traffic lights don't overlap content, the window stays draggable,
-  // and the sidebar can be re-expanded.
+  // The session pages' own header doubles as the titlebar when the sidebar is
+  // collapsed; every other route gets this fallback strip so the macOS traffic
+  // lights don't overlap content, the window stays draggable, and the sidebar
+  // can be re-expanded. Live and example sessions share the same one-row header
+  // — without this the example page would stack this strip on top of its own
+  // header and read as a double-height bar.
   const isMac = navigator.userAgent.includes("Mac");
   const overlayTitlebar = useOverlayTitlebar();
-  const pageOwnsTitlebar = useLocation().pathname.startsWith("/live");
+  const pathname = useLocation().pathname;
+  const pageOwnsTitlebar = pathname.startsWith("/live") || pathname.startsWith("/example");
 
   return (
     // The window background lives on <main>, not the shell: under vibrancy
