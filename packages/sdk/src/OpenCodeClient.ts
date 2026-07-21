@@ -6,7 +6,6 @@ import type {
   McpServer,
   OAuthAuthorization,
   OpenCodeClientOptions,
-  OpenCodeEvent,
   OpenCodePart,
   OpenCodeRawEvent,
   PermissionReply,
@@ -15,16 +14,13 @@ import type {
   ProviderInfo,
   QuestionAskedEvent,
   PermissionAskedEvent,
-  RuntimeStatus,
   SessionMeta,
   SkillInfo,
   ToolCallStatus,
 } from "./types";
 import { DEFAULT_OPENCODE_URL } from "./types";
 import type { AgentRuntime } from "./runtime";
-
-type EventListener = (event: OpenCodeEvent) => void;
-type StatusListener = (status: RuntimeStatus) => void;
+import { BaseAgentRuntime } from "./base-runtime";
 
 function mapToolStatus(status: string): ToolCallStatus {
   switch (status) {
@@ -63,7 +59,7 @@ function parseModel(model?: string | null): { providerID: string; modelID: strin
  * Talks to a running `opencode serve` over its HTTP + SSE API. The UI must go
  * through this class, never the transport directly (see AGENTS.md guardrails).
  */
-export class OpenCodeClient implements AgentRuntime {
+export class OpenCodeClient extends BaseAgentRuntime implements AgentRuntime {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly authHeader: string | null;
@@ -77,7 +73,6 @@ export class OpenCodeClient implements AgentRuntime {
    *  calls (`/session/:id/…`) need no directory: the server routes them by the
    *  session's own recorded folder (verified live: `pwd` runs in it). */
   private readonly directory: string | null;
-  private status: RuntimeStatus = "offline";
   private abort: AbortController | null = null;
   private es: EventSource | null = null;
   /** Pending self-heal of a dead event stream (see reconnectSoon). */
@@ -87,8 +82,6 @@ export class OpenCodeClient implements AgentRuntime {
   private readonly customFetch: boolean;
   private readonly connectTimeoutMs: number;
   private readonly requestTimeoutMs: number;
-  private readonly eventListeners = new Set<EventListener>();
-  private readonly statusListeners = new Set<StatusListener>();
   /** messageID → role, learned from message.updated, to skip echoed user parts. */
   private readonly roles = new Map<string, string>();
   /** partID → accumulated text of a streaming text part. OpenCode publishes the
@@ -106,6 +99,7 @@ export class OpenCodeClient implements AgentRuntime {
   private readonly stepParts = new Map<string, Set<string>>();
 
   constructor(opts: OpenCodeClientOptions = {}) {
+    super();
     this.baseUrl = (opts.baseUrl ?? DEFAULT_OPENCODE_URL).replace(/\/$/, "");
     this.customFetch = !!opts.fetchImpl;
     // Bind to globalThis — an unbound `fetch` reference throws "Illegal invocation" in browsers.
@@ -115,18 +109,6 @@ export class OpenCodeClient implements AgentRuntime {
     this.directory = opts.directory ?? null;
     this.connectTimeoutMs = opts.connectTimeoutMs ?? 5000;
     this.requestTimeoutMs = opts.requestTimeoutMs ?? 15000;
-  }
-
-  getStatus(): RuntimeStatus {
-    return this.status;
-  }
-  onEvent(l: EventListener): () => void {
-    this.eventListeners.add(l);
-    return () => this.eventListeners.delete(l);
-  }
-  onStatus(l: StatusListener): () => void {
-    this.statusListeners.add(l);
-    return () => this.statusListeners.delete(l);
   }
 
   private headers(json = false): Record<string, string> {
@@ -1088,14 +1070,5 @@ export class OpenCodeClient implements AgentRuntime {
       default:
         break; // server.connected and others are ignored
     }
-  }
-
-  private emit(event: OpenCodeEvent): void {
-    this.eventListeners.forEach((l) => l(event));
-  }
-  private setStatus(status: RuntimeStatus): void {
-    if (this.status === status) return;
-    this.status = status;
-    this.statusListeners.forEach((l) => l(status));
   }
 }
