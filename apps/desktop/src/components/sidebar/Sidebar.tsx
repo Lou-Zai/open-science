@@ -136,6 +136,20 @@ export function Sidebar({ project }: { project: Project }) {
   const [collapsedProjects, setCollapsedProjects] = useState<string[]>(
     initialCollapsedProjects,
   );
+  // Web client: projects start collapsed (a phone shouldn't open with every
+  // session expanded). Applied once, and only when the user has no saved
+  // preference yet — a manual toggle then persists and wins on later visits.
+  const didWebCollapse = useRef(false);
+  useEffect(() => {
+    if (didWebCollapse.current || !isGatewayWeb) return;
+    if (typeof window !== "undefined" && window.localStorage.getItem(COLLAPSED_KEY)) {
+      didWebCollapse.current = true;
+      return;
+    }
+    if (projects.length === 0) return; // wait for the project list to load
+    didWebCollapse.current = true;
+    setCollapsedProjects(projects.map((p) => p.id));
+  }, [projects]);
   const [namingProject, setNamingProject] = useState(false);
   const [createBusy, setCreateBusy] = useState(false);
   const [importBusy, setImportBusy] = useState(false);

@@ -14,7 +14,9 @@ import {
   X,
 } from "lucide-react";
 import type { NotebookCell } from "@ai4s/shared";
-import { readArtifact, writeWorkspaceFile } from "@/lib/artifactFile";
+import { previewUrl, readArtifact, writeWorkspaceFile } from "@/lib/artifactFile";
+import { isGatewayWeb } from "@/lib/webMode";
+import { useRuntimeStore } from "@/lib/runtime";
 import { ProvenancePanel } from "@/components/inspector/ProvenancePanel";
 import { PaneTitlebarInset } from "@/components/inspector/RightPane";
 import { parseIpynb, serializeIpynb, notebookLanguage } from "@/lib/notebook-file";
@@ -73,19 +75,36 @@ export function NotebookEditor({
   const savedRef = useRef(true);
   savedRef.current = saved;
 
+  // Web client: notebooks are viewed read-only over the gateway — scope reads to
+  // the VIEWED session's folder (SessionMeta), not the host's active workspace.
+  const sessionDir = useRuntimeStore(
+    (s) => (root === "base" ? undefined : s.sessions.find((x) => x.id === s.currentId)?.directory ?? s.workspace ?? undefined),
+  );
+
+  // Read the raw .ipynb text — from the gateway in web, from Tauri on desktop.
+  const readRaw = useCallback(async (): Promise<string | null> => {
+    if (isGatewayWeb) {
+      const url = await previewUrl(path, root, sessionDir);
+      const r = url ? await fetch(url) : null;
+      return r && r.ok ? await r.text() : null;
+    }
+    const f = await readArtifact(path, root);
+    return f && f.encoding === "utf8" ? f.data : null;
+  }, [path, root, sessionDir]);
+
   const load = useCallback(async () => {
     setError(null);
     try {
-      const f = await readArtifact(path, root);
-      if (!f || f.encoding !== "utf8") throw new Error("could not read the notebook");
-      rawRef.current = f.data;
-      setLanguage(notebookLanguage(f.data));
-      setCells(parseIpynb(f.data));
+      const raw = await readRaw();
+      if (raw === null) throw new Error("could not read the notebook");
+      rawRef.current = raw;
+      setLanguage(notebookLanguage(raw));
+      setCells(parseIpynb(raw));
       setSaved(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [path, root]);
+  }, [readRaw]);
 
   useEffect(() => {
     void load();
@@ -141,11 +160,11 @@ export function NotebookEditor({
       if (!savedRef.current) return; // never clobber unsaved local edits
       void (async () => {
         try {
-          const f = await readArtifact(path, root);
-          if (f && f.encoding === "utf8" && rawRef.current !== null && f.data !== rawRef.current) {
-            rawRef.current = f.data;
-            setLanguage(notebookLanguage(f.data));
-            setCells(parseIpynb(f.data));
+          const raw = await readRaw();
+          if (raw !== null && rawRef.current !== null && raw !== rawRef.current) {
+            rawRef.current = raw;
+            setLanguage(notebookLanguage(raw));
+            setCells(parseIpynb(raw));
           }
         } catch {
           /* transient read failures are fine */
@@ -153,7 +172,7 @@ export function NotebookEditor({
       })();
     }, 2000);
     return () => clearInterval(t);
-  }, [path, root]);
+  }, [readRaw]);
 
   const save = useCallback(async () => {
     const current = cellsRef.current;
