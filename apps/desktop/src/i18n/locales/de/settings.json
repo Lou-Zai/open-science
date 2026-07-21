@@ -332,7 +332,7 @@
     "copy": "Kopieren",
     "regenerate": "Token neu erzeugen",
     "regenerated": "Neues Token erzeugt – bestehende Clients müssen sich neu verbinden.",
-    "openHint": "Öffne die obige URL in einem Browser und füge dieses Token zum Verbinden ein.",
+    "openHint": "Der kopierte Link enthält das Token — auf einem anderen Gerät öffnen und ohne Eingabe verbinden.",
     "copied": "In die Zwischenablage kopiert",
     "error": "Ändern des Fernzugriffs fehlgeschlagen",
     "connect": "Verbinden",

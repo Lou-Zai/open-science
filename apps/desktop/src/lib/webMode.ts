@@ -41,6 +41,25 @@ export function gatewayOrigin(): string {
   return typeof window !== "undefined" ? window.location.origin : "";
 }
 
+/** If the page was opened with a token in the URL (`#token=…`, or `?token=` as a
+ *  fallback), store it and scrub it from the address bar. This lets a copied
+ *  link auto-authenticate — no pasting the token. Using the hash keeps the token
+ *  out of the request the server sees. Runs once, before the app boots. */
+export function consumeUrlToken(): void {
+  if (!isGatewayWeb || typeof window === "undefined") return;
+  try {
+    const fromHash = new URLSearchParams(window.location.hash.replace(/^#/, "")).get("token");
+    const fromQuery = new URLSearchParams(window.location.search).get("token");
+    const tok = (fromHash ?? fromQuery ?? "").trim();
+    if (!tok) return;
+    setGatewayToken(tok);
+    // Drop the token from the visible URL / history so it isn't re-shared.
+    window.history.replaceState(null, "", window.location.origin + window.location.pathname);
+  } catch {
+    /* ignore malformed URLs */
+  }
+}
+
 // ---- re-auth on token invalidation -----------------------------------------
 // When the token is rotated/revoked on the desktop, every gateway request 401s.
 // A fetch guard catches those (same-origin) and drops the client back to the

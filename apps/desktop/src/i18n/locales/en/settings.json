@@ -332,7 +332,7 @@
     "copy": "Copy",
     "regenerate": "Regenerate token",
     "regenerated": "New token generated — existing clients must reconnect.",
-    "openHint": "Open the URL above in a browser, then paste this token to connect.",
+    "openHint": "The copied link includes the token — open it on another device to connect, no typing needed.",
     "copied": "Copied to clipboard",
     "error": "Remote access change failed",
     "connect": "Connect",

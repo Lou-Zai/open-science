@@ -70,6 +70,11 @@ export function RemoteAccessCard() {
     apply(() => setGatewayConfig(true, v, mode));
   };
 
+  // Copy the URL with the token in the hash, so opening the link on another
+  // device connects with no manual token entry (the SPA reads #token= on load).
+  const linkWithToken = (u: string | null) =>
+    u && status?.token ? `${u}/#token=${encodeURIComponent(status.token)}` : u;
+
   return (
     <Section title={t("remote.title")} hint={t("remote.hint")} flush>
       <div className="divide-y divide-faint">
@@ -83,7 +88,13 @@ export function RemoteAccessCard() {
           <>
             {/* Access URLs — the thing you actually open on another device. */}
             <Row title={t("remote.loopbackUrl")} hint={t("remote.loopbackUrlHint")}>
-              <UrlLine url={status?.loopbackUrl ?? null} onCopy={copy} copyLabel={t("remote.copy")} icon={<Laptop size={13} />} />
+              <UrlLine
+                url={status?.loopbackUrl ?? null}
+                copyValue={linkWithToken(status?.loopbackUrl ?? null)}
+                onCopy={copy}
+                copyLabel={t("remote.copy")}
+                icon={<Laptop size={13} />}
+              />
             </Row>
 
             <Row
@@ -103,7 +114,13 @@ export function RemoteAccessCard() {
             >
               {lan && (
                 <div className="mt-2.5">
-                  <UrlLine url={status?.lanUrl ?? null} onCopy={copy} copyLabel={t("remote.copy")} icon={<Globe size={13} />} />
+                  <UrlLine
+                    url={status?.lanUrl ?? null}
+                    copyValue={linkWithToken(status?.lanUrl ?? null)}
+                    onCopy={copy}
+                    copyLabel={t("remote.copy")}
+                    icon={<Globe size={13} />}
+                  />
                   <p className="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-amber-500 dark:text-amber-400">
                     <ShieldAlert size={13} className="mt-0.5 shrink-0" />
                     {t("remote.lanActive")}
@@ -183,11 +200,15 @@ function UrlLine({
   url,
   onCopy,
   copyLabel,
+  copyValue,
   icon,
 }: {
   url: string | null;
   onCopy: (text: string) => void;
   copyLabel: string;
+  /** What the copy button copies (defaults to the shown URL) — e.g. the URL
+   *  with the token in the hash, so the link connects with no token entry. */
+  copyValue?: string | null;
   icon: React.ReactNode;
 }) {
   if (!url) return <div className="text-xs text-muted">—</div>;
@@ -200,7 +221,7 @@ function UrlLine({
       <button
         type="button"
         className="rounded-input p-2 text-muted transition-colors hover:bg-surface-2 hover:text-text"
-        onClick={() => onCopy(url)}
+        onClick={() => onCopy(copyValue ?? url)}
         aria-label={copyLabel}
       >
         <Copy size={15} />

@@ -332,7 +332,7 @@
     "copy": "Copiar",
     "regenerate": "Regenerar token",
     "regenerated": "Nuevo token generado: los clientes existentes deben reconectarse.",
-    "openHint": "Abre la URL de arriba en un navegador y pega este token para conectar.",
+    "openHint": "El enlace copiado incluye el token: ábrelo en otro dispositivo para conectar, sin escribir nada.",
     "copied": "Copiado al portapapeles",
     "error": "Error al cambiar el acceso remoto",
     "connect": "Conectar",

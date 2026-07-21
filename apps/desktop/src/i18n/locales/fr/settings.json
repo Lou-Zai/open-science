@@ -332,7 +332,7 @@
     "copy": "Copier",
     "regenerate": "Régénérer le jeton",
     "regenerated": "Nouveau jeton généré — les clients existants doivent se reconnecter.",
-    "openHint": "Ouvre l'URL ci-dessus dans un navigateur, puis colle ce jeton pour te connecter.",
+    "openHint": "Le lien copié inclut le jeton — ouvre-le sur un autre appareil pour te connecter, sans rien saisir.",
     "copied": "Copié dans le presse-papiers",
     "error": "Échec de la modification de l'accès distant",
     "connect": "Se connecter",
