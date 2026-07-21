@@ -30,6 +30,7 @@ export interface Session {
 export type ThreadBlock =
   | UserMessageBlock
   | AgentMessageBlock
+  | ReasoningBlock
   | StepSummaryBlock
   | ToolCallBlock
   | ReviewerBlock
@@ -48,6 +49,14 @@ export interface AgentMessageBlock {
   kind: "agent";
   /** Markdown; inline `code` tokens are rendered as blue mono. */
   markdown: string;
+}
+
+/** The model's reasoning ("thinking") for a step — rendered dimmed and
+ *  collapsible, distinct from the final answer (an AgentMessageBlock). */
+export interface ReasoningBlock {
+  kind: "reasoning";
+  /** Accumulated thinking text (plain, whitespace-preserved). */
+  text: string;
 }
 
 export interface StepSummaryBlock {

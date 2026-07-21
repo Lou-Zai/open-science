@@ -46,7 +46,8 @@
     "heading": "セッション",
     "empty": "まだ会話がありません。",
     "exampleTag": "例",
-    "deleteAria": "{{title}} を削除"
+    "deleteAria": "{{title}} を削除",
+    "running": "実行中"
   },
   "confirmDelete": {
     "sessionTitle": "セッションを削除しますか？",

@@ -46,7 +46,8 @@
     "heading": "Sitzungen",
     "empty": "Noch keine Unterhaltungen.",
     "exampleTag": "Beispiel",
-    "deleteAria": "{{title}} löschen"
+    "deleteAria": "{{title}} löschen",
+    "running": "Arbeitet"
   },
   "confirmDelete": {
     "sessionTitle": "Sitzung löschen?",

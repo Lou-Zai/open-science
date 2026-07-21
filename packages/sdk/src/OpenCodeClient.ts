@@ -96,6 +96,14 @@ export class OpenCodeClient implements AgentRuntime {
    *  arrives as a message.part.delta that must be summed here — otherwise the
    *  app shows nothing until the whole passage is finished. */
   private readonly textStreams = new Map<string, { sessionId: string; text: string }>();
+  /** partID → accumulated reasoning text. Reasoning parts stream the same way as
+   *  text (field "text" deltas) but were dropped because they were never seeded
+   *  here — so the model's thinking never reached the UI. */
+  private readonly reasoningStreams = new Map<string, { sessionId: string; text: string }>();
+  /** sessionId → the step-start part ids seen this turn. Its size is the current
+   *  step number; cleared on session.idle. Deduped because a part can update more
+   *  than once. */
+  private readonly stepParts = new Map<string, Set<string>>();
 
   constructor(opts: OpenCodeClientOptions = {}) {
     this.baseUrl = (opts.baseUrl ?? DEFAULT_OPENCODE_URL).replace(/\/$/, "");
@@ -861,6 +869,22 @@ export class OpenCodeClient implements AgentRuntime {
           const t = part as { id: string; text: string };
           this.textStreams.set(t.id, { sessionId, text: t.text ?? "" });
           this.emit({ type: "text.updated", sessionId, partId: t.id, text: t.text ?? "" });
+        } else if (part.type === "reasoning") {
+          // Seed the reasoning stream so its "text" deltas accumulate (below),
+          // and surface the thinking the app used to discard.
+          const r = part as unknown as { id: string; text?: string };
+          this.reasoningStreams.set(r.id, { sessionId, text: r.text ?? "" });
+          this.emit({ type: "reasoning.updated", sessionId, partId: r.id, text: r.text ?? "" });
+        } else if (part.type === "step-start") {
+          // A new model step began — count it (deduped) so the UI can show
+          // "step N" and prove the turn is progressing rather than hung.
+          const sp = part as unknown as { id: string };
+          let seen = this.stepParts.get(sessionId);
+          if (!seen) this.stepParts.set(sessionId, (seen = new Set()));
+          if (!seen.has(sp.id)) {
+            seen.add(sp.id);
+            this.emit({ type: "step.updated", sessionId, step: seen.size });
+          }
         } else if (part.type === "tool") {
           const tp = part as {
             callID: string;
@@ -898,26 +922,34 @@ export class OpenCodeClient implements AgentRuntime {
         break;
       }
       case "message.part.delta": {
-        // One streamed token. Only text parts are accumulated (reasoning parts
-        // never get seeded by message.part.updated, so their deltas fall out).
+        // One streamed token. Both text and reasoning parts stream via the
+        // "text" field; each was seeded above, so route the delta to whichever
+        // stream owns this part.
         const d = props as { partID?: string; field?: string; delta?: string };
         if (d.field !== "text" || !d.partID || typeof d.delta !== "string") return;
-        const acc = this.textStreams.get(String(d.partID));
-        if (!acc) return;
-        acc.text += d.delta;
-        this.emit({
-          type: "text.updated",
-          sessionId: acc.sessionId,
-          partId: String(d.partID),
-          text: acc.text,
-        });
+        const partId = String(d.partID);
+        const acc = this.textStreams.get(partId);
+        if (acc) {
+          acc.text += d.delta;
+          this.emit({ type: "text.updated", sessionId: acc.sessionId, partId, text: acc.text });
+          return;
+        }
+        const racc = this.reasoningStreams.get(partId);
+        if (racc) {
+          racc.text += d.delta;
+          this.emit({ type: "reasoning.updated", sessionId: racc.sessionId, partId, text: racc.text });
+        }
         break;
       }
       case "session.idle": {
         const sessionId = String(props.sessionID ?? "");
-        // The turn is over — its text parts can no longer receive deltas.
+        // The turn is over — its text/reasoning parts can no longer receive
+        // deltas, and its step count resets for the next turn.
         for (const [partId, acc] of this.textStreams)
           if (acc.sessionId === sessionId) this.textStreams.delete(partId);
+        for (const [partId, acc] of this.reasoningStreams)
+          if (acc.sessionId === sessionId) this.reasoningStreams.delete(partId);
+        this.stepParts.delete(sessionId);
         this.emit({ type: "session.idle", sessionId });
         break;
       }

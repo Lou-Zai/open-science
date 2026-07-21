@@ -135,7 +135,8 @@
       "paused": "一時停止中 — エージェントが下で回答を待っています",
       "startingSession": "セッションをそのフォルダで開始しています…",
       "retrying": "プロバイダーエラー — 再試行中（{{attempt}} 回目）",
-      "working": "作業中…"
+      "working": "作業中…",
+      "step": "ステップ {{count}}"
     },
     "placeholder": {
       "disconnected": "チャットするには接続してください",
@@ -229,6 +230,9 @@
     "reject": "拒否",
     "alwaysAllow": "常に許可",
     "allowOnce": "今回のみ許可"
+  },
+  "reasoning": {
+    "label": "思考中"
   },
   "stepSummary": {
     "steps": "{{count}} ステップ"

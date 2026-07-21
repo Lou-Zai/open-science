@@ -135,7 +135,8 @@
       "paused": "Pausiert — der Agent benötigt Ihre Antwort unten",
       "startingSession": "Die Sitzung wird in ihrem Ordner gestartet…",
       "retrying": "Anbieterfehler — neuer Versuch (Versuch {{attempt}})",
-      "working": "Arbeitet…"
+      "working": "Arbeitet…",
+      "step": "Schritt {{count}}"
     },
     "placeholder": {
       "disconnected": "Zum Chatten verbinden",
@@ -237,6 +238,9 @@
     "reject": "Ablehnen",
     "alwaysAllow": "Immer erlauben",
     "allowOnce": "Einmal erlauben"
+  },
+  "reasoning": {
+    "label": "Denkt nach"
   },
   "stepSummary": {
     "steps": "{{count}} Schritte"

@@ -135,7 +135,8 @@
       "paused": "En pause — l'agent attend votre réponse ci-dessous",
       "startingSession": "Démarrage de la session dans son dossier…",
       "retrying": "Erreur du fournisseur — nouvelle tentative (essai {{attempt}})",
-      "working": "En cours…"
+      "working": "En cours…",
+      "step": "étape {{count}}"
     },
     "placeholder": {
       "disconnected": "Connectez-vous pour discuter",
@@ -237,6 +238,9 @@
     "reject": "Rejeter",
     "alwaysAllow": "Toujours autoriser",
     "allowOnce": "Autoriser une fois"
+  },
+  "reasoning": {
+    "label": "Réflexion"
   },
   "stepSummary": {
     "steps": "{{count}} étapes"

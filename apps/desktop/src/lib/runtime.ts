@@ -171,6 +171,10 @@ interface RuntimeState {
   /** Sessions with an active turn (send accepted, session.idle not yet seen).
    *  Drives the composer lock and the "Working…" indicator. */
   runningSessions: Record<string, true>;
+  /** Current model-step number per running session (from `step.updated`), so the
+   *  working indicator can show "step N" — proof the turn is progressing, not
+   *  hung. Reset when a turn starts and cleared on idle. */
+  stepCounts: Record<string, number>;
   /** Sessions whose current turn is a user-typed "!" shell command. Their bash
    *  output shows inline in the thread — the output IS the result the user
    *  asked for. Agent bash steps stay quiet single-line log entries. */
@@ -438,6 +442,13 @@ async function performTurn(
     const sid = id;
     interruptedSessions.delete(sid); // a fresh turn folds its events normally
     void logDebug(`turn → ${sid}`);
+    // A fresh turn restarts step counting (the SDK resets its own counter on idle).
+    if (get().stepCounts[sid])
+      set((s) => {
+        const stepCounts = { ...s.stepCounts };
+        delete stepCounts[sid];
+        return { stepCounts };
+      });
     if (syncTurn) {
       set((s) => ({
         runningSessions: { ...s.runningSessions, [sid]: true },
@@ -539,6 +550,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
   switching: false,
   sending: false,
   runningSessions: {},
+  stepCounts: {},
   shellTurns: {},
   retryNotices: {},
 
@@ -795,6 +807,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       // each one would flood debug.log with an IPC call per event.
       if (
         event.type !== "text.updated" &&
+        event.type !== "reasoning.updated" &&
         !(event.type === "tool.updated" && event.status === "running")
       )
         void logDebug(`event ← ${event.type}${"sessionId" in event ? " " + event.sessionId : ""}`);
@@ -860,15 +873,51 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
             remember(notifiedPermissions, event.requestId);
             void notifyPermissionRequest({ action: event.action, resources: event.resources });
           }
-          set((s) => ({
-            permissions: [
+          set((s) => {
+            const permissions = [
               ...s.permissions.filter((p) => p.requestId !== event.requestId),
               event,
-            ],
-          }));
+            ];
+            // Mark the tool the agent is blocked on — the newest running/pending
+            // step in this session — as waiting-approval, right in the transcript
+            // (not just the separate permission card). The permission event has
+            // no callID to match on, but the blocked tool is always the latest
+            // active one. The next tool.updated restores its real status.
+            const sid = event.sessionId;
+            const cur = sid ? s.threads[sid] : undefined;
+            if (!cur) return { permissions };
+            const blocks = [...cur.blocks];
+            for (let i = blocks.length - 1; i >= 0; i--) {
+              const b = blocks[i];
+              if (b.kind === "tool-call" && (b.status === "running" || b.status === "pending")) {
+                blocks[i] = { ...b, status: "waiting-approval" };
+                return { permissions, threads: { ...s.threads, [sid]: { ...cur, blocks } } };
+              }
+            }
+            return { permissions };
+          });
           return;
         case "permission.resolved":
-          set((s) => ({ permissions: s.permissions.filter((p) => p.requestId !== event.requestId) }));
+          set((s) => {
+            const permissions = s.permissions.filter((p) => p.requestId !== event.requestId);
+            const sid = event.sessionId;
+            const cur = sid ? s.threads[sid] : undefined;
+            if (!cur) return { permissions };
+            let changed = false;
+            const blocks = cur.blocks.map((b) => {
+              if (b.kind === "tool-call" && b.status === "waiting-approval") {
+                changed = true;
+                return { ...b, status: "running" as const };
+              }
+              return b;
+            });
+            return changed
+              ? { permissions, threads: { ...s.threads, [sid]: { ...cur, blocks } } }
+              : { permissions };
+          });
+          return;
+        case "step.updated":
+          set((s) => ({ stepCounts: { ...s.stepCounts, [event.sessionId]: event.step } }));
           return;
         case "session.retry":
           set((s) => ({
@@ -942,13 +991,16 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
           // SSE stream the bash-output event always precedes session.idle.
           const runningSessions = { ...s.runningSessions };
           const shellTurns = { ...s.shellTurns };
+          const stepCounts = { ...s.stepCounts };
           if (ev.type === "session.idle") {
             delete runningSessions[sid];
             delete shellTurns[sid];
+            delete stepCounts[sid];
           }
           return {
             runningSessions,
             shellTurns,
+            stepCounts,
             threads: { ...s.threads, [sid]: { ...cur, ...folded, loaded: true } },
           };
         });
@@ -1733,6 +1785,16 @@ export function foldEvent(
       }
       return { blocks, index };
     }
+    case "reasoning.updated": {
+      const key = `reasoning:${event.partId}`;
+      const block: ThreadBlock = { kind: "reasoning", text: event.text };
+      if (key in index) blocks[index[key]] = block;
+      else {
+        blocks.push(block);
+        index[key] = blocks.length - 1;
+      }
+      return { blocks, index };
+    }
     case "session.idle": {
       const last = blocks[blocks.length - 1];
       if (last?.kind === "status-line" && last.tone === "done") {
@@ -1841,6 +1903,9 @@ export function historyToThread(messages: HistoryMessage[], commands?: CommandIn
           const { clean, review } = splitReview(p.text);
           if (clean) blocks.push({ kind: "agent", markdown: clean });
           if (review) blocks.push(review);
+        }
+        else if (p.type === "reasoning" && p.text?.trim()) {
+          blocks.push({ kind: "reasoning", text: p.text });
         }
         else if (p.type === "tool") {
           // Interactive tools are surfaced by InteractionPrompt, not the thread;

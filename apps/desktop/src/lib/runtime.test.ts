@@ -98,6 +98,25 @@ describe("foldEvent", () => {
     expect(s.blocks[0]).toEqual({ kind: "agent", markdown: "Planning the review" });
   });
 
+  it("upserts a reasoning part by id into a reasoning block (thinking, streamed)", () => {
+    const s = foldAll([
+      { type: "reasoning.updated", sessionId: S, partId: "r1", text: "Let me" },
+      { type: "reasoning.updated", sessionId: S, partId: "r1", text: "Let me check the data" },
+    ]);
+    expect(s.blocks).toHaveLength(1);
+    expect(s.blocks[0]).toEqual({ kind: "reasoning", text: "Let me check the data" });
+  });
+
+  it("keeps reasoning separate from the final answer text", () => {
+    const s = foldAll([
+      { type: "reasoning.updated", sessionId: S, partId: "r1", text: "Thinking…" },
+      { type: "text.updated", sessionId: S, partId: "p1", text: "Here is the answer" },
+    ]);
+    expect(s.blocks).toHaveLength(2);
+    expect(s.blocks[0]).toEqual({ kind: "reasoning", text: "Thinking…" });
+    expect(s.blocks[1]).toEqual({ kind: "agent", markdown: "Here is the answer" });
+  });
+
   it("upserts a tool call by callId and reflects status transitions", () => {
     const s = foldAll([
       { type: "tool.updated", sessionId: S, callId: "c1", tool: "search", status: "running", title: "search" },
@@ -277,6 +296,22 @@ describe("historyToThread", () => {
     const t = historyToThread(msgs);
     expect(t.blocks.map((b) => b.kind)).toEqual(["user", "agent", "tool-call"]);
     expect(t.blocks[2]).toMatchObject({ kind: "tool-call", status: "success" });
+  });
+
+  it("restores reasoning parts on reload as reasoning blocks, before the answer", () => {
+    const msgs: HistoryMessage[] = [
+      { role: "user", parts: [{ type: "text", text: "hi" }] },
+      {
+        role: "assistant",
+        parts: [
+          { type: "reasoning", text: "Let me think about this" },
+          { type: "text", text: "Here it is" },
+        ],
+      },
+    ];
+    const t = historyToThread(msgs);
+    expect(t.blocks.map((b) => b.kind)).toEqual(["user", "reasoning", "agent"]);
+    expect(t.blocks[1]).toEqual({ kind: "reasoning", text: "Let me think about this" });
   });
 
   it("renders a user-run '!' shell turn like the live path: '! cmd' + inline output", () => {

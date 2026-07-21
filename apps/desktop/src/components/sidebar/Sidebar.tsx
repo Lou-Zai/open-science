@@ -11,6 +11,7 @@ import {
   FolderInput,
   FolderOpen,
   FolderTree,
+  Loader2,
   NotebookPen,
   PanelLeft,
   Plus,
@@ -19,7 +20,7 @@ import {
 } from "lucide-react";
 import type { Project } from "@ai4s/shared";
 import { cn } from "@/lib/cn";
-import { useRuntimeStore } from "@/lib/runtime";
+import { rootSessionOf, useRuntimeStore } from "@/lib/runtime";
 import { pickFolder, renameProject, type ProjectInfo } from "@/lib/tauri";
 import {
   SIDEBAR_MAX,
@@ -79,6 +80,14 @@ export function Sidebar({ project }: { project: Project }) {
   const refreshProjects = useRuntimeStore((s) => s.refreshProjects);
   const deleteSession = useRuntimeStore((s) => s.deleteSession);
   const hideExample = useRuntimeStore((s) => s.hideExample);
+  // Which sessions are working right now — so a background session (or its
+  // subagent) shows it's busy without opening it. A running subagent surfaces
+  // on the top-level session at the root of its parent chain.
+  const runningSessions = useRuntimeStore((s) => s.runningSessions);
+  const sessionParents = useRuntimeStore((s) => s.sessionParents);
+  const activeRoots = new Set(
+    Object.keys(runningSessions).map((sid) => rootSessionOf(sessionParents, sid)),
+  );
   const showUpdateBadge = useUpdateStore((s) => s.showBadge);
   const {
     sidebarCollapsed,
@@ -249,7 +258,9 @@ export function Sidebar({ project }: { project: Project }) {
 
   const width = dragWidth ?? sidebarWidth;
 
-  const sessionRow = (row: Row) => (
+  const sessionRow = (row: Row) => {
+    const running = row.kind === "session" && activeRoots.has(row.id);
+    return (
     <div key={row.to} className="group relative">
       <NavLink
         to={row.to}
@@ -260,12 +271,20 @@ export function Sidebar({ project }: { project: Project }) {
             : "text-text/90",
         )}
       >
-        <span
-          className={cn(
-            "h-1.5 w-1.5 shrink-0 rounded-full",
-            row.kind === "example" ? "bg-muted" : "bg-ok",
-          )}
-        />
+        {running ? (
+          <Loader2
+            size={12}
+            className="shrink-0 animate-spin text-accent"
+            aria-label={t("history.running")}
+          />
+        ) : (
+          <span
+            className={cn(
+              "h-1.5 w-1.5 shrink-0 rounded-full",
+              row.kind === "example" ? "bg-muted" : "bg-ok",
+            )}
+          />
+        )}
         <span className="flex-1 truncate">{row.title}</span>
         {row.kind === "example" && (
           <span className="shrink-0 rounded-full bg-surface-2 px-1.5 text-[10px] uppercase tracking-wide text-muted ring-1 ring-border">
@@ -281,7 +300,8 @@ export function Sidebar({ project }: { project: Project }) {
         <Trash2 size={13} />
       </button>
     </div>
-  );
+    );
+  };
 
   return (
     <div

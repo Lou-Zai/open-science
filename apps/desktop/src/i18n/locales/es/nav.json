@@ -46,7 +46,8 @@
     "heading": "Sesiones",
     "empty": "Aún no hay conversaciones.",
     "exampleTag": "ejemplo",
-    "deleteAria": "Eliminar {{title}}"
+    "deleteAria": "Eliminar {{title}}",
+    "running": "Trabajando"
   },
   "confirmDelete": {
     "sessionTitle": "¿Eliminar sesión?",

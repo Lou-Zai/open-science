@@ -46,7 +46,8 @@
     "heading": "세션",
     "empty": "아직 대화가 없습니다.",
     "exampleTag": "예제",
-    "deleteAria": "{{title}} 삭제"
+    "deleteAria": "{{title}} 삭제",
+    "running": "작업 중"
   },
   "confirmDelete": {
     "sessionTitle": "세션을 삭제하시겠습니까?",

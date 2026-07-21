@@ -643,6 +643,48 @@ describe("subagent permission asks and long sync turns", () => {
   });
 });
 
+// #38 — surfacing what the agent is doing: live step count and marking the tool
+// the agent is blocked on as waiting-approval, right in the transcript.
+describe("agent activity visibility (#38)", () => {
+  it("tracks the model step number per session and clears it on idle", async () => {
+    const id = (await useRuntimeStore.getState().sendPrompt("go"))!;
+    mocks.fireEvent({ type: "step.updated", sessionId: id, step: 1 });
+    mocks.fireEvent({ type: "step.updated", sessionId: id, step: 2 });
+    expect(useRuntimeStore.getState().stepCounts[id]).toBe(2);
+    mocks.fireEvent({ type: "session.idle", sessionId: id });
+    expect(useRuntimeStore.getState().stepCounts[id]).toBeUndefined();
+  });
+
+  it("marks the newest running tool waiting-approval while a permission is pending, then restores it", async () => {
+    const id = (await useRuntimeStore.getState().sendPrompt("go"))!;
+    mocks.fireEvent({
+      type: "tool.updated",
+      sessionId: id,
+      callId: "c1",
+      tool: "bash",
+      status: "running",
+      title: "npm install",
+      input: { command: "npm install" },
+    });
+    mocks.fireEvent({
+      type: "permission.asked",
+      sessionId: id,
+      requestId: "per_1",
+      action: "bash",
+      resources: ["npm install"],
+    });
+    const blocked = useRuntimeStore
+      .getState()
+      .threads[id].blocks.find((b) => b.kind === "tool-call");
+    expect(blocked).toMatchObject({ status: "waiting-approval" });
+    mocks.fireEvent({ type: "permission.resolved", sessionId: id, requestId: "per_1" });
+    const restored = useRuntimeStore
+      .getState()
+      .threads[id].blocks.find((b) => b.kind === "tool-call");
+    expect(restored).toMatchObject({ status: "running" });
+  });
+});
+
 // A missed session.idle (SSE reconnect window, directory-scoped event stream)
 // must not spin "Working…" forever: the store reconciles its running locks
 // against the server's truth, and the user can always interrupt a turn.

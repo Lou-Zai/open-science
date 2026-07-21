@@ -135,7 +135,8 @@
       "paused": "Pausado — el agente necesita tu respuesta a continuación",
       "startingSession": "Iniciando la sesión en su carpeta…",
       "retrying": "Error del proveedor — reintentando (intento {{attempt}})",
-      "working": "Trabajando…"
+      "working": "Trabajando…",
+      "step": "paso {{count}}"
     },
     "placeholder": {
       "disconnected": "Conéctate para chatear",
@@ -237,6 +238,9 @@
     "reject": "Rechazar",
     "alwaysAllow": "Permitir siempre",
     "allowOnce": "Permitir una vez"
+  },
+  "reasoning": {
+    "label": "Razonando"
   },
   "stepSummary": {
     "steps": "{{count}} pasos"

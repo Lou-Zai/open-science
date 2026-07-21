@@ -18,6 +18,23 @@ export interface TextUpdatedEvent {
   partId: string;
   text: string;
 }
+/** The model's reasoning ("thinking") for a step — streamed like text but kept
+ *  separate so the UI can show it dimmed, apart from the final answer. Without
+ *  surfacing this, "what is the agent doing?" between tool calls is invisible. */
+export interface ReasoningUpdatedEvent {
+  type: "reasoning.updated";
+  sessionId: string;
+  partId: string;
+  text: string;
+}
+/** A model "step" boundary (AI-SDK `step-start`). One turn can run several steps
+ *  — each an LLM call, often followed by tool calls — so `step` (1-based) tells
+ *  the user the turn is progressing, not frozen. */
+export interface StepUpdatedEvent {
+  type: "step.updated";
+  sessionId: string;
+  step: number;
+}
 export interface ToolUpdatedEvent {
   type: "tool.updated";
   sessionId: string;
@@ -120,6 +137,8 @@ export interface RuntimeErrorEvent {
 
 export type OpenCodeEvent =
   | TextUpdatedEvent
+  | ReasoningUpdatedEvent
+  | StepUpdatedEvent
   | ToolUpdatedEvent
   | SessionIdleEvent
   | MessageAgentEvent

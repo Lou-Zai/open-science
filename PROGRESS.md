@@ -1,5 +1,7 @@
 # Progress
 
+2026-07-21 02:44 · feat(#38): agent activity now visible — stream reasoning/"thinking" (was dropped in SDK), show model step count in the working line, mark the tool blocked on approval as waiting-approval in the transcript, and add a cross-session running spinner in the sidebar; +5 tests, typecheck/lint/557 tests green.
+
 2026-07-21 01:25 · docs: v0.2.2 released (GitHub Release published, 8 installers live) + synced Zenodo v0.2.2 DOI 10.5281/zenodo.21465187 into CITATION.cff and all READMEs (concept DOI badge unchanged).
 
 2026-07-20 03:39 · chore(release): v0.2.2 — Settings UI redesign (flat low-chrome controls), SSE render-storm fix (#34), model-switch self-heal guard + custom-provider disconnect auth (#37), privacy header fix. Tagged v0.2.2; CI (build.yml) builds the macOS/Windows/Linux installers into a draft GitHub Release. Zenodo DOI to sync after publishing.

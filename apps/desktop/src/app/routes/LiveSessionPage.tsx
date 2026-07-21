@@ -40,6 +40,7 @@ export function LiveSessionPage() {
   const switching = useRuntimeStore((s) => s.switching);
   const sending = useRuntimeStore((s) => s.sending);
   const runningSessions = useRuntimeStore((s) => s.runningSessions);
+  const stepCounts = useRuntimeStore((s) => s.stepCounts);
   const retryNotices = useRuntimeStore((s) => s.retryNotices);
   const serverUrl = useRuntimeStore((s) => s.serverUrl);
   const sessions = useRuntimeStore((s) => s.sessions);
@@ -165,6 +166,9 @@ export function LiveSessionPage() {
   // only life sign a broken provider produces. Show it, or the row below
   // reads "Working…" forever with nothing actually working.
   const retryNotice = currentId ? retryNotices[currentId] : undefined;
+  // How many model steps into the turn — shown from step 2 on, so a multi-step
+  // turn reads as progressing rather than a bare, possibly-hung "Working…".
+  const step = currentId ? (stepCounts[currentId] ?? 0) : 0;
   // What the agent is doing right now — the newest still-running tool call.
   const currentTool = working
     ? [...(thread?.blocks ?? [])]
@@ -418,6 +422,11 @@ export function LiveSessionPage() {
                         ? t("live.status.startingSession")
                         : t("live.status.working")}
                 </span>
+                {!activeRequest && !retryNotice && step >= 2 && (
+                  <span className="shrink-0 text-xs text-muted/70">
+                    {t("live.status.step", { count: step })}
+                  </span>
+                )}
                 {!activeRequest && retryNotice && (
                   <span className="truncate font-mono text-xs text-warn" title={retryNotice.message}>
                     {retryNotice.message}

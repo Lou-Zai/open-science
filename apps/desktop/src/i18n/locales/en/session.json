@@ -135,7 +135,8 @@
       "paused": "Paused — the agent needs your answer below",
       "startingSession": "Starting the session in its folder…",
       "retrying": "Provider error — retrying (attempt {{attempt}})",
-      "working": "Working…"
+      "working": "Working…",
+      "step": "step {{count}}"
     },
     "placeholder": {
       "disconnected": "Connect to chat",
@@ -237,6 +238,9 @@
     "reject": "Reject",
     "alwaysAllow": "Always allow",
     "allowOnce": "Allow once"
+  },
+  "reasoning": {
+    "label": "Thinking"
   },
   "stepSummary": {
     "steps": "{{count}} steps"

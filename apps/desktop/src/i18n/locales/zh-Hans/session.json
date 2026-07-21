@@ -135,7 +135,8 @@
       "paused": "已暂停——代理需要您在下方回答",
       "startingSession": "正在其文件夹中启动会话…",
       "retrying": "服务商报错——正在重试（第 {{attempt}} 次）",
-      "working": "正在处理…"
+      "working": "正在处理…",
+      "step": "第 {{count}} 步"
     },
     "placeholder": {
       "disconnected": "连接以开始聊天",
@@ -229,6 +230,9 @@
     "reject": "拒绝",
     "alwaysAllow": "始终允许",
     "allowOnce": "仅允许一次"
+  },
+  "reasoning": {
+    "label": "思考中"
   },
   "stepSummary": {
     "steps": "{{count}} 个步骤"

@@ -4,6 +4,7 @@ import { AgentMessage, DataTable, RunningJobsOverlay, StatusLine, UserMessage } 
 import { ToolCallRow } from "./ToolCallRow";
 import { ToolGroup, groupToolBlocks } from "./ToolGroup";
 import { ReviewerCard } from "./ReviewerCard";
+import { ReasoningRow } from "./ReasoningRow";
 import { StepSummaryRow } from "./StepSummaryRow";
 import { FigureBlock } from "./FigureBlock";
 import { ArtifactCard } from "./ArtifactCard";
@@ -21,6 +22,8 @@ export function renderBlock(block: ThreadBlock, i: number, handlers?: BlockHandl
       return <UserMessage key={i} block={block} />;
     case "agent":
       return <AgentMessage key={i} markdown={block.markdown} onOpenArtifact={handlers?.onArtifactOpen} />;
+    case "reasoning":
+      return <ReasoningRow key={i} block={block} />;
     case "step-summary":
       return <StepSummaryRow key={i} block={block} />;
     case "tool-call":
