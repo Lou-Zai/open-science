@@ -15,6 +15,7 @@ import {
   agentBrowserBin,
   detectChrome,
   getProxySetting,
+  removeConfigEntry,
 } from "./tauri";
 import { SCIENCE_CONNECTORS, connectorConfig } from "./scienceConnectors";
 import { BROWSER_MCP_ID, buildBrowserMcpConfig } from "./browser";
@@ -122,7 +123,19 @@ export const useSetupStore = create<SetupState>((set, get) => ({
         tools: opts.tools,
         allowedDomains: opts.allowedDomains,
       });
-      // addMcpServer PATCHes the same key, so this both enables and reconfigures.
+      // addMcpServer PATCHes the config, and OpenCode deep-merges the nested
+      // `environment` map — so a reconfigure that DROPS a setting can't take
+      // effect on a plain re-add: turning "Show the browser window" off (or
+      // switching to the private browser, or clearing the domain allowlist)
+      // only omits the env key, and the merge keeps the stale old value. Remove
+      // the existing entry first so the environment is rewritten from scratch.
+      // removeConfigEntry rewrites the file and restarts the sidecar, so wait
+      // for it to come back before re-adding; the first enable has no entry to
+      // remove (it rejects) — skip the wait and go straight to the add.
+      const hadEntry = await removeConfigEntry("mcp", BROWSER_MCP_ID)
+        .then(() => true)
+        .catch(() => false);
+      if (hadEntry) await useRuntimeStore.getState().connectRetry();
       await getClient()!.addMcpServer(BROWSER_MCP_ID, config);
       toast.success("Browser control enabled — the agent can now drive Chrome from chat.");
       await useRuntimeStore.getState().loadCatalog();

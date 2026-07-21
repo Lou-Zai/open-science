@@ -7,6 +7,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   addMcpServer: vi.fn(async () => {}),
   loadCatalog: vi.fn(async () => {}),
+  connectRetry: vi.fn(async () => true),
+  /** Resolves ⇒ an entry existed and was removed; rejects ⇒ nothing to remove. */
+  removeConfigEntry: vi.fn(async () => {}),
+  agentBrowserBin: vi.fn(async () => "/bin/agent-browser"),
+  detectChrome: vi.fn(async () => ({ path: "/Chrome", kind: "chrome" })),
+  getProxySetting: vi.fn(async () => ({ effective: null })),
   /** Resolver for the in-flight setupJupyter promise, so tests hold it open. */
   resolveSetup: (() => {}) as () => void,
   setupJupyter: vi.fn(),
@@ -19,7 +25,9 @@ mocks.setupJupyter.mockImplementation(
 
 vi.mock("./runtime", () => ({
   getClient: () => ({ addMcpServer: mocks.addMcpServer }),
-  useRuntimeStore: { getState: () => ({ loadCatalog: mocks.loadCatalog }) },
+  useRuntimeStore: {
+    getState: () => ({ loadCatalog: mocks.loadCatalog, connectRetry: mocks.connectRetry }),
+  },
 }));
 vi.mock("./tauri", () => ({
   setupJupyter: mocks.setupJupyter,
@@ -30,6 +38,10 @@ vi.mock("./tauri", () => ({
   }),
   setupScienceMcp: mocks.setupScienceMcp,
   watchSetupProgress: async () => () => {},
+  removeConfigEntry: mocks.removeConfigEntry,
+  agentBrowserBin: mocks.agentBrowserBin,
+  detectChrome: mocks.detectChrome,
+  getProxySetting: mocks.getProxySetting,
 }));
 vi.mock("./scienceConnectors", () => ({
   SCIENCE_CONNECTORS: [
@@ -82,5 +94,36 @@ describe("setup store", () => {
     await run;
     expect(useSetupStore.getState().connectorId).toBeNull();
     expect(mocks.addMcpServer).toHaveBeenCalledWith("papers", expect.anything());
+  });
+
+  // The config PATCH deep-merges the nested `environment`, so a re-add can only
+  // add/overwrite keys, never drop one. Turning "Show the browser window" off
+  // just omits AGENT_BROWSER_HEADED — the merge would keep the stale "true".
+  // Removing the entry first (then re-adding) rewrites the environment clean.
+  it("rewrites the browser entry from scratch on reconfigure — removes before re-adding", async () => {
+    await useSetupStore.getState().enableBrowser({ headed: false, useSystemChrome: true });
+
+    expect(mocks.removeConfigEntry).toHaveBeenCalledWith("mcp", "browser-control");
+    // An existing entry was removed, so we wait for the restarted sidecar.
+    expect(mocks.connectRetry).toHaveBeenCalled();
+    // Remove must precede the re-add, or the add merges into the stale entry.
+    expect(mocks.removeConfigEntry.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.addMcpServer.mock.invocationCallOrder[0],
+    );
+    // The freshly written config carries no headed flag → it starts headless.
+    const calls = mocks.addMcpServer.mock.calls as unknown as Array<
+      [string, { environment?: Record<string, string> }]
+    >;
+    const [, config] = calls[calls.length - 1];
+    expect(config.environment?.AGENT_BROWSER_HEADED).toBeUndefined();
+  });
+
+  it("first enable has no entry to remove — skips the sidecar wait, still adds", async () => {
+    mocks.removeConfigEntry.mockRejectedValueOnce(new Error("not in the config's mcp section"));
+
+    await useSetupStore.getState().enableBrowser({ headed: true, useSystemChrome: true });
+
+    expect(mocks.connectRetry).not.toHaveBeenCalled();
+    expect(mocks.addMcpServer).toHaveBeenCalledWith("browser-control", expect.anything());
   });
 });
