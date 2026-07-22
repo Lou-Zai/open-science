@@ -42,6 +42,11 @@ local workspace + SQLite + JSONL provenance.
 - Keep the frontend, desktop shell, and agent runtime decoupled.
 - Skills, MCP servers, and model providers must stay pluggable.
 - Keep the artifact schema and workflow templates stable and versioned.
+- Every feature must work on Windows, macOS, and Linux, AND in the gateway web
+  client — including phone-width viewports (the web client is used from
+  phones). If a feature fundamentally cannot work over the web (local kernels,
+  native dialogs, host filesystem access), hide it in web mode (`isGatewayWeb`)
+  instead of shipping a control that fails.
 
 ## Safety defaults (non-negotiable for the desktop)
 
