@@ -209,7 +209,7 @@ Wenn Sie Open Science Desktop in Ihrer Forschung verwenden, zitieren Sie es bitt
   author  = {{The Open Science Desktop Contributors}},
   title   = {Open Science Desktop: a local-first, model-agnostic AI research workbench},
   year    = {2026},
-  version = {0.2.3},
+  version = {0.2.4},
   doi     = {10.5281/zenodo.21477879},
   url     = {https://github.com/ai4s-research/open-science},
   license = {MIT}
