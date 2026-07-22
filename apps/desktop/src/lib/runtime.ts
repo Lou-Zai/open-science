@@ -249,6 +249,9 @@ let bootstrapInFlight: Promise<void> | null = null;
  *  created or deleted a session so the sidebar re-lists (no OpenCode event for
  *  session create/delete). See docs/rfc/remote-access-gateway.md. */
 let gatewayListenerBound = false;
+/** Custom-model context-limit backfill (#49) runs once per app run — every
+ *  reconnect re-enters connect(), and the check is a config round-trip. */
+let contextLimitsBackfilled = false;
 /** Unhook the current client's status listener BEFORE closing it — teardown
  *  emits "offline", and a reconnect attempt must not flash that at the user. */
 let clientStatusUnsub: (() => void) | null = null;
@@ -1189,6 +1192,19 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       // (the event stream is directory-scoped and torn down on purpose) —
       // check any session still holding a running lock against the server.
       void get().reconcileRunning();
+      // Custom-endpoint models saved without a context limit never auto-compact
+      // (#49) — backfill the default once per run. Desktop only: a gateway web
+      // client may hold a read-only token, and the host app does this anyway.
+      if (!isGatewayWeb && !contextLimitsBackfilled) {
+        contextLimitsBackfilled = true;
+        // Best-effort: deferred into a promise chain so no failure — even a
+        // synchronous throw — can flip an otherwise successful connect.
+        void Promise.resolve()
+          .then(() => c.ensureCustomModelContextLimits())
+          .catch((err) =>
+            logDebug(`context-limit backfill skipped: ${err instanceof Error ? err.message : String(err)}`),
+          );
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       void logDebug(`connect FAILED: ${msg}`);

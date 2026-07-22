@@ -22,6 +22,21 @@ import { DEFAULT_OPENCODE_URL } from "./types";
 import type { AgentRuntime } from "./runtime";
 import { BaseAgentRuntime } from "./base-runtime";
 
+/** Assumed context window for custom-endpoint models whose real limit is
+ *  unknown. Conservative enough for modern local/self-hosted models; if the
+ *  real window is smaller the model may still truncate before compaction. */
+const DEFAULT_CUSTOM_MODEL_CONTEXT = 128_000;
+
+/** The slice of OpenCode's global config we read and write for custom
+ *  providers. Extra keys in an entry are preserved via spread on write. */
+type CustomProviderConfig = Record<
+  string,
+  {
+    models?: Record<string, { name?: string; limit?: { context: number; output: number } }>;
+    [key: string]: unknown;
+  }
+>;
+
 function mapToolStatus(status: string): ToolCallStatus {
   switch (status) {
     case "running":
@@ -455,9 +470,33 @@ export class OpenCodeClient extends BaseAgentRuntime implements AgentRuntime {
    */
   async addCustomProvider(
     id: string,
-    opts: { name: string; npm: string; baseURL: string; apiKey?: string; models: string[] },
+    opts: {
+      name: string;
+      npm: string;
+      baseURL: string;
+      apiKey?: string;
+      models: string[];
+      /** Context window per model id (e.g. probed from the endpoint). */
+      contexts?: Record<string, number>;
+    },
   ): Promise<void> {
-    const models = Object.fromEntries(opts.models.map((m) => [m, { name: m }]));
+    // Custom models are unknown to models.dev, so OpenCode sees limit.context=0
+    // and never auto-compacts — long chats silently overflow the model's real
+    // window (#49). Every model gets a context limit: a caller-provided one
+    // (probed or typed — the user saw it in the form) wins, then a limit
+    // already in the config, then a 128k default. output=0 keeps OpenCode's
+    // default output cap (min(0, MAX) || MAX falls through).
+    const existing = await this.customProviderModelLimits(id);
+    const models = Object.fromEntries(
+      opts.models.map((m) => {
+        const context = opts.contexts?.[m];
+        const limit =
+          context && context > 0
+            ? { context, output: existing[m]?.output ?? 0 }
+            : (existing[m] ?? { context: DEFAULT_CUSTOM_MODEL_CONTEXT, output: 0 });
+        return [m, { name: m, limit }];
+      }),
+    );
     const provider = {
       [id]: {
         name: opts.name,
@@ -472,6 +511,61 @@ export class OpenCodeClient extends BaseAgentRuntime implements AgentRuntime {
       body: JSON.stringify({ provider }),
     });
     if (!res.ok) throw await this.apiError(res, "Failed to add the provider");
+  }
+
+  /** Context limits already configured for a custom provider's models, keyed by
+   *  model id. Best-effort: an unreadable config just means "no limits set". */
+  private async customProviderModelLimits(
+    id: string,
+  ): Promise<Record<string, { context: number; output: number }>> {
+    const cfg = await this.customProviderConfig();
+    const out: Record<string, { context: number; output: number }> = {};
+    for (const [model, m] of Object.entries(cfg[id]?.models ?? {})) {
+      if (m.limit && m.limit.context > 0) out[model] = m.limit;
+    }
+    return out;
+  }
+
+  private async customProviderConfig(): Promise<CustomProviderConfig> {
+    const res = await this.fetchImpl(`${this.baseUrl}/global/config`, { headers: this.headers() });
+    if (!res.ok) return {};
+    const cfg = (await res.json()) as { provider?: CustomProviderConfig };
+    return cfg.provider ?? {};
+  }
+
+  /**
+   * Backfill the default context limit for custom-provider models that predate
+   * the default in addCustomProvider (#49) — without one OpenCode never
+   * auto-compacts them. Only models with no configured limit are touched; each
+   * patched provider entry is sent back whole so nothing else is lost.
+   * Idempotent and best-effort: call it after connecting.
+   */
+  async ensureCustomModelContextLimits(): Promise<void> {
+    const cfg = await this.customProviderConfig();
+    const patch: CustomProviderConfig = {};
+    for (const [pid, entry] of Object.entries(cfg)) {
+      const models = entry.models ?? {};
+      const missing = Object.values(models).some((m) => !m.limit || !(m.limit.context > 0));
+      if (!missing) continue;
+      patch[pid] = {
+        ...entry,
+        models: Object.fromEntries(
+          Object.entries(models).map(([mid, m]) => [
+            mid,
+            m.limit && m.limit.context > 0
+              ? m
+              : { ...m, limit: { context: DEFAULT_CUSTOM_MODEL_CONTEXT, output: m.limit?.output ?? 0 } },
+          ]),
+        ),
+      };
+    }
+    if (Object.keys(patch).length === 0) return;
+    const res = await this.fetchImpl(`${this.baseUrl}/global/config`, {
+      method: "PATCH",
+      headers: this.headers(true),
+      body: JSON.stringify({ provider: patch }),
+    });
+    if (!res.ok) throw await this.apiError(res, "Failed to backfill model context limits");
   }
 
   /** Ids of custom providers defined in the global config (removable via the app). */
