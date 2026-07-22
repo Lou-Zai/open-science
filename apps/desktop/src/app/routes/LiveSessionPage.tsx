@@ -38,6 +38,7 @@ export function LiveSessionPage() {
   // triggers a render.
   const status = useRuntimeStore((s) => s.status);
   const switching = useRuntimeStore((s) => s.switching);
+  const webReadOnly = useRuntimeStore((s) => s.webReadOnly);
   const sending = useRuntimeStore((s) => s.sending);
   const runningSessions = useRuntimeStore((s) => s.runningSessions);
   const stepCounts = useRuntimeStore((s) => s.stepCounts);
@@ -420,7 +421,8 @@ export function LiveSessionPage() {
                 {error}
               </div>
             )}
-            {connected && isEmpty && !sessionId && (
+            {/* Starters send a prompt — pointless with a read-only web token. */}
+            {connected && isEmpty && !sessionId && !webReadOnly && (
               <WorkflowStarters onPick={(p) => void onSend(p)} />
             )}
             {historyLoading && <ThreadSkeleton />}
@@ -490,17 +492,19 @@ export function LiveSessionPage() {
               onRunShell={(c) => void onRunShell(c)}
               onRunCommand={(n, a) => void onRunCommand(n, a)}
               commands={composerCommands}
-              disabled={!connected || working}
+              disabled={!connected || working || webReadOnly}
               working={running}
               onStop={() => void interrupt()}
               placeholder={
-                working
-                  ? t("live.placeholder.waiting")
-                  : !connected
-                    ? t("live.placeholder.disconnected")
-                    : planAvailable && agentMode === "plan"
-                      ? t("composer.placeholder.plan")
-                      : t("composer.placeholder.default")
+                webReadOnly
+                  ? t("live.placeholder.readOnly")
+                  : working
+                    ? t("live.placeholder.waiting")
+                    : !connected
+                      ? t("live.placeholder.disconnected")
+                      : planAvailable && agentMode === "plan"
+                        ? t("composer.placeholder.plan")
+                        : t("composer.placeholder.default")
               }
               approvalMode={approvalMode}
               onApprovalModeChange={(mode) => void setApprovalMode(mode)}

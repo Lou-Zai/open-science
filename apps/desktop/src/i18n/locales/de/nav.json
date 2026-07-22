@@ -4,8 +4,8 @@
     "collapseTitle": "Seitenleiste einklappen ({{shortcut}})",
     "expand": "Seitenleiste ausklappen",
     "expandTitle": "Seitenleiste ausklappen ({{shortcut}})",
-    "betaBadge": "Beta",
-    "settings": "Einstellungen"
+    "settings": "Einstellungen",
+    "home": "Startseite"
   },
   "items": {
     "new": "Neu",

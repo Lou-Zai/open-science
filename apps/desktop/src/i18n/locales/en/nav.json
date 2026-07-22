@@ -4,8 +4,8 @@
     "collapseTitle": "Collapse sidebar ({{shortcut}})",
     "expand": "Expand sidebar",
     "expandTitle": "Expand sidebar ({{shortcut}})",
-    "betaBadge": "Beta",
-    "settings": "Settings"
+    "settings": "Settings",
+    "home": "Home"
   },
   "items": {
     "new": "New",

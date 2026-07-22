@@ -140,7 +140,8 @@
     },
     "placeholder": {
       "disconnected": "チャットするには接続してください",
-      "waiting": "返信を待っています…"
+      "waiting": "返信を待っています…",
+      "readOnly": "読み取り専用アクセス — 閲覧のみ"
     }
   },
   "tool": {

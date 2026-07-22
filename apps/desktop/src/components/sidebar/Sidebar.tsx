@@ -87,6 +87,7 @@ export function Sidebar({ project }: { project: Project }) {
   // on the top-level session at the root of its parent chain.
   const runningSessions = useRuntimeStore((s) => s.runningSessions);
   const sessionParents = useRuntimeStore((s) => s.sessionParents);
+  const webReadOnly = useRuntimeStore((s) => s.webReadOnly);
   const activeRoots = new Set(
     Object.keys(runningSessions).map((sid) => rootSessionOf(sessionParents, sid)),
   );
@@ -396,15 +397,20 @@ export function Sidebar({ project }: { project: Project }) {
         {!inSettings && (
         <>
         <div className={cn("px-4 pb-3", overlayTitlebar ? "pt-1" : "pt-4")}>
-          <div className="flex items-baseline gap-1.5">
-            <img src={logo} alt="" className="h-[18px] w-auto self-center" />
-            {/* eslint-disable-next-line i18next/no-literal-string -- product brand name, not translated across locales (see AGENTS.md) */}
-            <div className="font-serif text-[17px] font-semibold leading-none tracking-tight text-text">
-              Open Science
-            </div>
-            <span className="text-[10px] uppercase tracking-widest text-muted">
-              {t("sidebar.betaBadge")}
-            </span>
+          <div className="flex min-w-0 items-baseline gap-1.5">
+            {/* Brand = home: clicking the logo/name returns to the main page. */}
+            <button
+              onClick={() => navigate("/live")}
+              aria-label={t("sidebar.home")}
+              title={t("sidebar.home")}
+              className="flex min-w-0 items-baseline gap-1.5 outline-none"
+            >
+              <img src={logo} alt="" className="h-[18px] w-auto shrink-0 self-center" />
+              {/* eslint-disable-next-line i18next/no-literal-string -- product brand name, not translated across locales (see AGENTS.md) */}
+              <div className="truncate font-serif text-[17px] font-semibold leading-none tracking-tight text-text">
+                Open Science
+              </div>
+            </button>
             {!overlayTitlebar && (
               <button
                 onClick={toggleSidebar}
@@ -421,11 +427,14 @@ export function Sidebar({ project }: { project: Project }) {
         </div>
 
         <nav className="flex flex-col px-3">
-          <NavRow
-            icon={<Plus size={16} />}
-            label={t("items.new")}
-            onClick={startNew}
-          />
+          {/* A read-only web token can't create sessions — hide the entry. */}
+          {!webReadOnly && (
+            <NavRow
+              icon={<Plus size={16} />}
+              label={t("items.new")}
+              onClick={startNew}
+            />
+          )}
           {/* Notebook execution needs a local kernel — hidden in the web client. */}
           {!isGatewayWeb && (
             <NavRow
@@ -596,16 +605,18 @@ export function Sidebar({ project }: { project: Project }) {
                           {rows.length}
                         </span>
                       )}
-                      <button
-                        onClick={() => void newSessionIn(p)}
-                        aria-label={t("projects.newSessionAria", {
-                          name: p.name,
-                        })}
-                        title={t("projects.newSessionAria", { name: p.name })}
-                        className="hidden rounded p-1 text-muted hover:bg-border hover:text-text group-hover/project:block"
-                      >
-                        <Plus size={13} />
-                      </button>
+                      {!webReadOnly && (
+                        <button
+                          onClick={() => void newSessionIn(p)}
+                          aria-label={t("projects.newSessionAria", {
+                            name: p.name,
+                          })}
+                          title={t("projects.newSessionAria", { name: p.name })}
+                          className="hidden rounded p-1 text-muted hover:bg-border hover:text-text group-hover/project:block"
+                        >
+                          <Plus size={13} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}

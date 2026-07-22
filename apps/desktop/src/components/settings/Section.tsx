@@ -40,7 +40,10 @@ export function Section({
   );
 }
 
-/** One settings row: title + description on the left, the control on the right. */
+/** One settings row: title + description on the left, the control on the right.
+ *  On phone-width viewports the control drops BELOW the text instead of beside
+ *  it — a wide control would otherwise squeeze the title to zero width and CJK
+ *  text renders one character per line. */
 export function Row({
   title,
   hint,
@@ -54,8 +57,8 @@ export function Row({
 }) {
   return (
     <div className="px-4 py-3">
-      <div className="flex items-center gap-4">
-        <div className="min-w-0 flex-1">
+      <div className="flex flex-col items-start gap-2.5 sm:flex-row sm:items-center sm:gap-4">
+        <div className="min-w-0 sm:flex-1">
           <div className="text-[13px] font-medium text-text">{title}</div>
           {hint && <div className="mt-0.5 text-xs leading-relaxed text-muted">{hint}</div>}
         </div>

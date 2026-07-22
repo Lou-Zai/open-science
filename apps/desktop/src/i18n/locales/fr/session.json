@@ -140,7 +140,8 @@
     },
     "placeholder": {
       "disconnected": "Connectez-vous pour discuter",
-      "waiting": "En attente de la réponse…"
+      "waiting": "En attente de la réponse…",
+      "readOnly": "Accès en lecture seule — consultation uniquement"
     }
   },
   "tool": {

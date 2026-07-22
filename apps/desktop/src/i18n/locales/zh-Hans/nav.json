@@ -4,8 +4,8 @@
     "collapseTitle": "收起侧边栏（{{shortcut}}）",
     "expand": "展开侧边栏",
     "expandTitle": "展开侧边栏（{{shortcut}}）",
-    "betaBadge": "测试版",
-    "settings": "设置"
+    "settings": "设置",
+    "home": "回到首页"
   },
   "items": {
     "new": "新建",

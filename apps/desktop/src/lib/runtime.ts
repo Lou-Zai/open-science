@@ -159,6 +159,9 @@ interface RuntimeState {
   startDraftInWorkspace: (path: string) => Promise<void>;
   /** Active workspace folder (absolute path); null in the browser. */
   workspace: string | null;
+  /** Web client only: the gateway token is read-only (GET-only) — every write
+   *  (new session, prompt, approval) would 403, so the UI hides/disables them. */
+  webReadOnly: boolean;
   /** True when the user explicitly picked the active folder for the next new
    *  session; false means a new session gets its own fresh dated folder. */
   workspacePinned: boolean;
@@ -596,6 +599,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     set((s) => ({ sessionAgents: { ...s.sessionAgents, [s.currentId ?? DRAFT_KEY]: mode } })),
   projects: [],
   workspace: null,
+  webReadOnly: false,
   workspacePinned: false,
   switching: false,
   sending: false,
@@ -832,15 +836,22 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       baseUrl = gatewayOrigin();
       password = gatewayToken();
       directory = null;
+      let readOnly = false;
       try {
         const r = await fetch(`${baseUrl}/v1/whoami`, {
           headers: password ? { Authorization: `Bearer ${password}` } : {},
         });
-        if (r.ok) directory = ((await r.json()) as { directory?: string }).directory ?? null;
+        if (r.ok) {
+          const who = (await r.json()) as { directory?: string; mode?: string };
+          directory = who.directory ?? null;
+          // A read-only token 403s every write — surface that in the UI
+          // instead of letting "New session" / the composer fail opaquely.
+          readOnly = who.mode === "read-only";
+        }
       } catch {
         /* whoami is best-effort; the client still connects */
       }
-      set({ serverUrl: baseUrl, workspace: directory });
+      set({ serverUrl: baseUrl, workspace: directory, webReadOnly: readOnly });
     } else {
       // Scope skill discovery to the sidecar's workspace (null in browser dev).
       directory = await workspacePath();

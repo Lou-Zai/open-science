@@ -4,8 +4,8 @@
     "collapseTitle": "サイドバーを折りたたむ ({{shortcut}})",
     "expand": "サイドバーを展開する",
     "expandTitle": "サイドバーを展開する ({{shortcut}})",
-    "betaBadge": "ベータ",
-    "settings": "設定"
+    "settings": "設定",
+    "home": "ホームへ戻る"
   },
   "items": {
     "new": "新規",

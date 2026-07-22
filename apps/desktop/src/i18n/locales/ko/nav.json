@@ -4,8 +4,8 @@
     "collapseTitle": "사이드바 접기 ({{shortcut}})",
     "expand": "사이드바 펼치기",
     "expandTitle": "사이드바 펼치기 ({{shortcut}})",
-    "betaBadge": "베타",
-    "settings": "설정"
+    "settings": "설정",
+    "home": "홈으로"
   },
   "items": {
     "new": "새로 만들기",

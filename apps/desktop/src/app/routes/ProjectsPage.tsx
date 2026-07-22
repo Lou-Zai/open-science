@@ -113,7 +113,7 @@ export function ProjectsPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-4xl px-8 py-8">
+      <div className="mx-auto max-w-4xl px-4 py-8 sm:px-8">
         <h1 className="font-serif text-2xl leading-tight text-text">{t("projects.heading")}</h1>
 
         <div className="relative mt-5">
@@ -126,11 +126,12 @@ export function ProjectsPage() {
           />
         </div>
 
-        {/* Column headers */}
-        <div className="mt-6 grid grid-cols-[minmax(0,1fr)_minmax(0,14rem)_5rem_5rem] items-center gap-3 border-b border-border px-2 pb-2 text-xs font-medium text-muted">
-          <span>{t("projects.colName")}</span>
-          <span>{t("projects.colSources")}</span>
-          <span>{t("projects.colUpdated")}</span>
+        {/* Column headers. The fixed 14rem Sources column would leave the name
+            no width at all on a phone — below md it is dropped entirely. */}
+        <div className="mt-6 grid grid-cols-[minmax(0,1fr)_4rem_auto] items-center gap-3 border-b border-border px-2 pb-2 text-xs font-medium text-muted md:grid-cols-[minmax(0,1fr)_minmax(0,14rem)_5rem_5rem]">
+          <span className="whitespace-nowrap">{t("projects.colName")}</span>
+          <span className="hidden whitespace-nowrap md:block">{t("projects.colSources")}</span>
+          <span className="whitespace-nowrap">{t("projects.colUpdated")}</span>
           <span />
         </div>
 
@@ -142,7 +143,7 @@ export function ProjectsPage() {
               const open = expanded.has(p.id);
               return (
                 <div key={p.id}>
-                  <div className="group grid grid-cols-[minmax(0,1fr)_minmax(0,14rem)_5rem_5rem] items-center gap-3 px-2 py-3">
+                  <div className="group grid grid-cols-[minmax(0,1fr)_4rem_auto] items-center gap-3 px-2 py-3 md:grid-cols-[minmax(0,1fr)_minmax(0,14rem)_5rem_5rem]">
                     {/* Name (+ expand) */}
                     <div className="flex min-w-0 items-center gap-2">
                       <button
@@ -182,7 +183,7 @@ export function ProjectsPage() {
                     </div>
 
                     {/* Sources — click to open the folder in the OS file manager. */}
-                    <div className="min-w-0">
+                    <div className="hidden min-w-0 md:block">
                       <button
                         onClick={() => void openProjectFolder(p.id)}
                         disabled={isGatewayWeb}
@@ -205,7 +206,7 @@ export function ProjectsPage() {
                           <button
                             aria-label={t("projects.more")}
                             title={t("projects.more")}
-                            className="rounded p-1 text-muted opacity-0 outline-none hover:bg-surface-2 hover:text-text group-hover:opacity-100 data-[state=open]:opacity-100"
+                            className="rounded p-1 text-muted opacity-0 outline-none hover:bg-surface-2 hover:text-text group-hover:opacity-100 data-[state=open]:opacity-100 max-md:opacity-100"
                           >
                             <MoreHorizontal size={15} />
                           </button>
@@ -233,7 +234,7 @@ export function ProjectsPage() {
                           "rounded p-1 outline-none hover:bg-surface-2",
                           p.pinned
                             ? "text-accent opacity-100"
-                            : "text-muted opacity-0 hover:text-text group-hover:opacity-100",
+                            : "text-muted opacity-0 hover:text-text group-hover:opacity-100 max-md:opacity-100",
                         )}
                       >
                         <Pin size={14} className={cn(p.pinned && "fill-current")} />
@@ -242,7 +243,7 @@ export function ProjectsPage() {
                         onClick={() => setRenamingId(p.id)}
                         aria-label={t("projects.rename")}
                         title={t("projects.rename")}
-                        className="rounded p-1 text-muted opacity-0 outline-none hover:bg-surface-2 hover:text-text group-hover:opacity-100"
+                        className="rounded p-1 text-muted opacity-0 outline-none hover:bg-surface-2 hover:text-text group-hover:opacity-100 max-md:opacity-100"
                       >
                         <Pencil size={14} />
                       </button>

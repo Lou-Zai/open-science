@@ -140,7 +140,8 @@
     },
     "placeholder": {
       "disconnected": "连接以开始聊天",
-      "waiting": "等待回复…"
+      "waiting": "等待回复…",
+      "readOnly": "只读访问——仅可查看"
     }
   },
   "tool": {

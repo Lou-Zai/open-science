@@ -721,7 +721,7 @@ export function SettingsPage() {
   return (
     <div className="h-full overflow-y-auto">
       {/* Modest top padding: the AppShell titlebar strip already clears 48px. */}
-      <div className="mx-auto max-w-2xl px-8 pb-16 pt-4">
+      <div className="mx-auto max-w-2xl px-4 pb-16 pt-4 sm:px-8">
         <h1 className="font-serif text-2xl text-text">{t(`nav.${section}`)}</h1>
 
         {/* ---- Agent runtime (server + proxy + mirrors, one grouped card) ---- */}

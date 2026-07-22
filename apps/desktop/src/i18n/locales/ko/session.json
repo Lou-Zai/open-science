@@ -140,7 +140,8 @@
     },
     "placeholder": {
       "disconnected": "채팅하려면 연결하세요",
-      "waiting": "응답을 기다리는 중…"
+      "waiting": "응답을 기다리는 중…",
+      "readOnly": "읽기 전용 액세스 — 보기만 가능"
     }
   },
   "tool": {

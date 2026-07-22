@@ -18,6 +18,7 @@ import { extOf, extToKind, previewKindForName, type PreviewKind } from "@/lib/ar
 import { listDir, type DirEntry } from "@/lib/artifactFile";
 import { isTauri, workspaceBase } from "@/lib/tauri";
 import { isGatewayWeb } from "@/lib/webMode";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { useRuntimeStore } from "@/lib/runtime";
 import { baseName } from "@/components/thread/WorkspaceChip";
 import { NotebookEditor } from "@/components/notebook/NotebookEditor";
@@ -59,6 +60,7 @@ function humanSize(n: number): string {
  */
 export function FilesPage() {
   const { t } = useTranslation(["pages", "common"]);
+  const isMobile = useIsMobile();
   const [dir, setDir] = useState(""); // base-relative; "" = the base folder
   const [entries, setEntries] = useState<DirEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,9 +97,17 @@ export function FilesPage() {
 
   const crumbs = dir ? dir.split("/") : [];
 
+  // Phone-width: the fixed 288px list + preview can't share the screen, so the
+  // page becomes single-pane — the list fills the width, opening a file swaps
+  // to a full-width preview, and its Close button returns to the list.
   return (
     <div className="flex h-full min-h-0">
-      <div className="flex w-72 shrink-0 flex-col border-r border-border">
+      <div
+        className={cn(
+          "flex flex-col border-r border-border",
+          isMobile ? cn("w-full", selected && "hidden") : "w-72 shrink-0",
+        )}
+      >
         <div className="flex flex-wrap items-center gap-0.5 border-b border-border px-3 py-2.5 text-[13px]">
           <button
             className={cn("rounded px-1 hover:bg-surface-2", dir ? "text-link" : "font-medium text-text")}
@@ -154,7 +164,7 @@ export function FilesPage() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1">
+      <div className={cn("min-h-0 flex-1", isMobile && !selected && "hidden")}>
         {selected ? (
           <FilePreview key={selected.path} entry={selected} root="base" onClose={() => setSelected(null)} />
         ) : (

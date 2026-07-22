@@ -62,11 +62,13 @@ export function AppShell() {
   }, []);
 
   // Mobile: the sidebar is an overlay drawer — keep it closed by default and
-  // close it after navigating (tapping a session or nav item).
-  const drawerPathname = useLocation().pathname;
+  // close it after navigating (tapping a session or nav item). Keyed on
+  // location.key, not pathname: tapping "New" while already on /live pushes
+  // the same path, and the drawer must still close.
+  const locationKey = useLocation().key;
   useEffect(() => {
     if (isMobile) setSidebarCollapsed(true);
-  }, [isMobile, drawerPathname, setSidebarCollapsed]);
+  }, [isMobile, locationKey, setSidebarCollapsed]);
 
   // Track native fullscreen: macOS hides the traffic lights there, so headers
   // must drop their traffic-light inset (see useOverlayTitlebar).

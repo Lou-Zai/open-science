@@ -140,7 +140,8 @@
     },
     "placeholder": {
       "disconnected": "Connect to chat",
-      "waiting": "Waiting for the reply…"
+      "waiting": "Waiting for the reply…",
+      "readOnly": "Read-only access — viewing only"
     }
   },
   "tool": {
