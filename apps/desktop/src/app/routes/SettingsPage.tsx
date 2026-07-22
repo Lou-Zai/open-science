@@ -53,6 +53,8 @@ import {
   getMirrorSetting,
   setMirrorSetting,
   type MirrorSetting,
+  probeEndpointModels,
+  type ProbedModel,
 } from "@/lib/tauri";
 import { useSetupStore } from "@/lib/setup";
 import { RemoteComputeCard } from "@/components/settings/RemoteComputeCard";
@@ -185,6 +187,12 @@ export function SettingsPage() {
   const [cUrl, setCUrl] = useState("");
   const [cKey, setCKey] = useState("");
   const [cModels, setCModels] = useState("");
+  // Optional context window for hand-typed model ids; probed models carry
+  // their own (cContexts). Empty → the SDK's 128k default.
+  const [cCtx, setCCtx] = useState("");
+  const [cDetected, setCDetected] = useState<ProbedModel[] | null>(null);
+  const [cDetecting, setCDetecting] = useState(false);
+  const [cContexts, setCContexts] = useState<Record<string, number>>({});
 
   // Connect-a-provider flow state.
   const [providerManagerOpen, setProviderManagerOpen] = useState(false);
@@ -603,13 +611,56 @@ export function SettingsPage() {
       toast.success(t("toast.providerRemoved", { providerID }));
     });
 
+  // Ask the endpoint itself which models it serves (and their context windows
+  // where reported — Ollama native, vLLM, OpenRouter). Results render as
+  // toggleable chips; contexts ride along into saveCustom.
+  const fetchCustomModels = async () => {
+    if (!cUrl.trim()) {
+      toast.error(t("toast.endpointFieldsRequired"));
+      return;
+    }
+    setCDetecting(true);
+    try {
+      const found = await probeEndpointModels(
+        cUrl.trim(),
+        cKey.trim() || undefined,
+        cNpm === "@ai-sdk/anthropic" ? "anthropic" : "openai",
+      );
+      setCDetected(found);
+      setCContexts((prev) => {
+        const next = { ...prev };
+        for (const m of found) if (m.context) next[m.id] = m.context;
+        return next;
+      });
+    } catch (err) {
+      toast.error(`${t("toast.couldNotFetchModels")}: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setCDetecting(false);
+    }
+  };
+
+  const modelList = (s: string) => s.split(",").map((v) => v.trim()).filter(Boolean);
+
+  const toggleDetectedModel = (id: string) => {
+    const models = modelList(cModels);
+    const next = models.includes(id) ? models.filter((m) => m !== id) : [...models, id];
+    setCModels(next.join(", "));
+  };
+
   const saveCustom = () =>
     run(t("toast.couldNotAddEndpoint"), async () => {
       const id = cName.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      const models = cModels.split(",").map((s) => s.trim()).filter(Boolean);
+      const models = modelList(cModels);
       if (!id || !cUrl.trim() || models.length === 0) {
         toast.error(t("toast.endpointFieldsRequired"));
         return;
+      }
+      // Per-model context: probed value first, else the optional typed one.
+      const typedCtx = Number.parseInt(cCtx.trim(), 10);
+      const contexts: Record<string, number> = {};
+      for (const m of models) {
+        const ctx = cContexts[m] ?? (Number.isFinite(typedCtx) && typedCtx > 0 ? typedCtx : 0);
+        if (ctx > 0) contexts[m] = ctx;
       }
       await getClient()!.addCustomProvider(id, {
         name: cName.trim(),
@@ -617,6 +668,7 @@ export function SettingsPage() {
         baseURL: cUrl.trim(),
         apiKey: cKey.trim() || undefined,
         models,
+        contexts,
       });
       toast.success(t("toast.endpointAdded", { name: cName.trim() }));
       setShowCustom(false);
@@ -624,6 +676,9 @@ export function SettingsPage() {
       setCUrl("");
       setCKey("");
       setCModels("");
+      setCCtx("");
+      setCDetected(null);
+      setCContexts({});
     });
 
   const addMcp = () =>
@@ -1106,6 +1161,52 @@ export function SettingsPage() {
                           className={inputCls("flex-1 font-mono")}
                         />
                       </div>
+                      <div className="flex gap-2">
+                        <input
+                          inputMode="numeric"
+                          value={cCtx}
+                          onChange={(e) => setCCtx(e.target.value.replace(/[^0-9]/g, ""))}
+                          placeholder={t("providers.customContextPlaceholder")}
+                          className={inputCls("flex-1 font-mono")}
+                        />
+                        {isTauri && (
+                          <button
+                            className={btnGhost()}
+                            onClick={() => void fetchCustomModels()}
+                            disabled={cDetecting || !cUrl.trim()}
+                          >
+                            {cDetecting ? t("providers.fetchingModels") : t("providers.fetchModels")}
+                          </button>
+                        )}
+                      </div>
+                      {cDetected !== null && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {cDetected.length === 0 && (
+                            <span className="text-xs text-muted">{t("providers.noModelsFound")}</span>
+                          )}
+                          {cDetected.map((m) => {
+                            const selected = modelList(cModels).includes(m.id);
+                            return (
+                              <button
+                                key={m.id}
+                                onClick={() => toggleDetectedModel(m.id)}
+                                aria-pressed={selected}
+                                className={cn(
+                                  "rounded-full border px-2.5 py-1 font-mono text-xs transition-colors",
+                                  selected
+                                    ? "border-accent bg-accent/10 text-text"
+                                    : "border-faint text-muted hover:text-text",
+                                )}
+                              >
+                                {m.id}
+                                {m.context ? (
+                                  <span className="text-muted"> · {Math.round(m.context / 1000)}k</span>
+                                ) : null}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                       <button className={btnAccent()} onClick={() => void saveCustom()} disabled={busy}>
                         {t("providers.addEndpoint")}
                       </button>

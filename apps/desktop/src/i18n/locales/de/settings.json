@@ -130,6 +130,10 @@
     "customUrlPlaceholder": "Basis-URL — Ollama: http://127.0.0.1:11434/v1",
     "customKeyPlaceholder": "API-Schlüssel — optional, für Ollama nicht erforderlich",
     "customModelsPlaceholder": "Modell-IDs, durch Kommas getrennt",
+    "customContextPlaceholder": "Kontextfenster — optional, Standard 128k",
+    "fetchModels": "Modelle abrufen",
+    "fetchingModels": "Wird abgerufen…",
+    "noModelsFound": "Der Endpunkt hat keine Modelle gemeldet.",
     "addEndpoint": "Endpunkt hinzufügen",
     "importLogin": "Nutzen Sie bereits die OpenCode-CLI? Deren Anmeldung importieren"
   },
@@ -221,6 +225,7 @@
     "couldNotRemove": "Entfernen nicht möglich",
     "providerRemoved": "{{providerID}} entfernt",
     "couldNotAddEndpoint": "Der Endpunkt konnte nicht hinzugefügt werden",
+    "couldNotFetchModels": "Modelle konnten nicht vom Endpunkt abgerufen werden",
     "endpointFieldsRequired": "Name, Basis-URL und mindestens eine Modell-ID sind erforderlich.",
     "endpointAdded": "{{name}} hinzugefügt — dessen Modelle sind oben jetzt auswählbar.",
     "couldNotAddMcp": "Der MCP-Server konnte nicht hinzugefügt werden",

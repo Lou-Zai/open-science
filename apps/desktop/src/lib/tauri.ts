@@ -36,6 +36,28 @@ export async function runtimePassword(): Promise<string | null> {
   return invoke<string>("runtime_password");
 }
 
+export interface ProbedModel {
+  id: string;
+  /** Context window in tokens, when the endpoint reports one. */
+  context?: number | null;
+}
+
+/**
+ * Ask a custom endpoint which models it serves, with context windows where
+ * the server reports them (desktop only — the probe runs in Rust because
+ * local model servers rarely send CORS headers). `kind` is "openai" or
+ * "anthropic", matching the form's compatibility select.
+ */
+export async function probeEndpointModels(
+  baseUrl: string,
+  apiKey: string | undefined,
+  kind: "openai" | "anthropic",
+): Promise<ProbedModel[]> {
+  if (!isTauri) return [];
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<ProbedModel[]>("probe_endpoint_models", { baseUrl, apiKey, kind });
+}
+
 /**
  * Pick local files via the native dialog and copy them into the agent
  * workspace (desktop only). Returns the workspace file names; [] on cancel.

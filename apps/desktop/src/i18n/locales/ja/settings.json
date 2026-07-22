@@ -129,6 +129,10 @@
     "customUrlPlaceholder": "ベース URL — Ollama: http://127.0.0.1:11434/v1",
     "customKeyPlaceholder": "API キー — 任意、Ollama では不要です",
     "customModelsPlaceholder": "モデル ID（カンマ区切り）",
+    "customContextPlaceholder": "コンテキストウィンドウ — 任意、既定 128k",
+    "fetchModels": "モデルを取得",
+    "fetchingModels": "取得中…",
+    "noModelsFound": "エンドポイントからモデルが返されませんでした。",
     "addEndpoint": "エンドポイントを追加",
     "importLogin": "すでに OpenCode CLI を使っていますか？ そのログインをインポート"
   },
@@ -220,6 +224,7 @@
     "couldNotRemove": "削除できませんでした",
     "providerRemoved": "{{providerID}} を削除しました",
     "couldNotAddEndpoint": "エンドポイントを追加できませんでした",
+    "couldNotFetchModels": "エンドポイントからモデルを取得できませんでした",
     "endpointFieldsRequired": "名前、ベース URL、少なくとも 1 つのモデル ID が必要です。",
     "endpointAdded": "{{name}} を追加しました — 上部でそのモデルを選択できるようになりました。",
     "couldNotAddMcp": "MCP サーバーを追加できませんでした",

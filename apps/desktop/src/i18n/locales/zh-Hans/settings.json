@@ -129,6 +129,10 @@
     "customUrlPlaceholder": "基础 URL — Ollama：http://127.0.0.1:11434/v1",
     "customKeyPlaceholder": "API 密钥 — 可选，Ollama 不需要",
     "customModelsPlaceholder": "模型 ID，以逗号分隔",
+    "customContextPlaceholder": "上下文窗口 — 可选，默认 128k",
+    "fetchModels": "获取模型",
+    "fetchingModels": "获取中…",
+    "noModelsFound": "端点未返回任何模型。",
     "addEndpoint": "添加端点",
     "importLogin": "已经在使用 OpenCode CLI？导入其登录信息"
   },
@@ -220,6 +224,7 @@
     "couldNotRemove": "无法移除",
     "providerRemoved": "{{providerID}} 已移除",
     "couldNotAddEndpoint": "无法添加端点",
+    "couldNotFetchModels": "无法从端点获取模型",
     "endpointFieldsRequired": "名称、基础 URL 和至少一个模型 ID 为必填项。",
     "endpointAdded": "{{name}} 已添加——其模型现在可在上方选择。",
     "couldNotAddMcp": "无法添加 MCP 服务器",

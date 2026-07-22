@@ -13,6 +13,7 @@ mod jupyter;
 mod kernel;
 mod large_file;
 mod modal;
+mod model_probe;
 mod opencode_config;
 mod preview_server;
 mod project;
@@ -107,6 +108,7 @@ pub fn run() {
             project::open_project_folder,
             runtime::pick_folder,
             runtime::import_opencode_login,
+            model_probe::probe_endpoint_models,
             runtime::provider_auth_exists,
             runtime::remove_config_entry,
             jupyter::jupyter_status,
