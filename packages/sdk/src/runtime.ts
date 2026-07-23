@@ -44,8 +44,16 @@ export interface AgentRuntime {
   /** `agent` pins a specific agent for the turn (e.g. the read-only "plan"
    *  agent); omit for the runtime default. `model` ("provider/model") pins the
    *  turn to the current default, overriding a session's stale creation-time
-   *  binding; omit to use the session/runtime default. See lib/runtime.ts. */
-  sendPrompt(sessionId: string, text: string, agent?: string, model?: string | null): Promise<void>;
+   *  binding; omit to use the session/runtime default. `variant` picks a
+   *  per-turn reasoning-effort level (a name from the model's `variants`); omit
+   *  for the model's default effort. See lib/runtime.ts. */
+  sendPrompt(
+    sessionId: string,
+    text: string,
+    agent?: string,
+    model?: string | null,
+    variant?: string | null,
+  ): Promise<void>;
   abortSession(sessionId: string): Promise<void>;
   /** Revert the session to (and including) `messageID`, dropping it and every
    *  message after it (and rolling back any files they changed). Used to edit a

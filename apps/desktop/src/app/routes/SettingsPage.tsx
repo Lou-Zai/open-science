@@ -1200,7 +1200,7 @@ export function SettingsPage() {
                               >
                                 {m.id}
                                 {m.context ? (
-                                  <span className="text-muted"> · {Math.round(m.context / 1000)}k</span>
+                                  <span className="text-muted"> · {`${Math.round(m.context / 1000)}k`}</span>
                                 ) : null}
                               </button>
                             );

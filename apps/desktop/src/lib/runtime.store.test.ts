@@ -17,6 +17,9 @@ const mocks = vi.hoisted(() => ({
   fireStatus: (_s: string) => {},
   runShell: vi.fn(),
   sendPromptSpy: vi.fn(),
+  /** Captures the FULL sendPrompt arg list (incl. model + variant) — the plain
+   *  spy above deliberately ignores those, so existing 3-arg assertions hold. */
+  sendPromptFullSpy: vi.fn(),
   runCommand: vi.fn(),
   replyPermission: vi.fn(),
   abortSession: vi.fn(),
@@ -34,7 +37,11 @@ const mocks = vi.hoisted(() => ({
   /** Providers listProviders returns. [] (default) makes loadCatalog's dangling-
    *  model self-heal (#18) a no-op — the model is only "dangling" against a known
    *  provider list, so an empty list yields no fallback. Set to exercise the heal. */
-  providers: [] as { id: string; name: string; models: { id: string; name: string }[] }[],
+  providers: [] as {
+    id: string;
+    name: string;
+    models: { id: string; name: string; variants?: string[] }[];
+  }[],
   /** Next setDefaultModel PATCH throws (server unreachable). */
   failSetModel: false,
   /** History the mock server returns for any session. */
@@ -133,8 +140,15 @@ vi.mock("@ai4s/sdk", () => {
       }
       return "ses_new";
     }
-    async sendPrompt(sid: string, text: string, agent?: string) {
+    async sendPrompt(
+      sid: string,
+      text: string,
+      agent?: string,
+      model?: string | null,
+      variant?: string | null,
+    ) {
       mocks.sendPromptSpy(sid, text, agent);
+      mocks.sendPromptFullSpy(sid, text, agent, model, variant);
     }
     async listCommands() {
       return [{ name: "init", description: "guided AGENTS.md setup", source: "command" }];
@@ -1155,6 +1169,55 @@ describe("approval mode", () => {
 
     expect(mocks.setDefaultModelSpy).not.toHaveBeenCalled();
     expect(useRuntimeStore.getState().defaultModel).toBe("step/step-2");
+  });
+});
+
+describe("reasoning-effort variant", () => {
+  const withReasoning = [
+    {
+      id: "openai",
+      name: "OpenAI",
+      models: [{ id: "gpt-5", name: "GPT-5", variants: ["low", "medium", "high"] }],
+    },
+  ];
+  const primeModel = async (variant: string | null) => {
+    mocks.providers = withReasoning;
+    mocks.currentModel = "openai/gpt-5";
+    await useRuntimeStore.getState().loadCatalog();
+    useRuntimeStore.setState({ reasoningVariant: variant });
+  };
+
+  it("forwards the selected variant when the current model exposes it", async () => {
+    await primeModel("high");
+    await useRuntimeStore.getState().sendPrompt("hi");
+    expect(mocks.sendPromptFullSpy).toHaveBeenLastCalledWith(
+      "ses_new",
+      "hi",
+      undefined,
+      "openai/gpt-5",
+      "high",
+    );
+  });
+
+  it("drops a variant the current model does not expose (would error server-side)", async () => {
+    await primeModel("max"); // gpt-5 has only low/medium/high
+    await useRuntimeStore.getState().sendPrompt("hi");
+    const calls = mocks.sendPromptFullSpy.mock.calls;
+    expect(calls[calls.length - 1]?.[4]).toBeUndefined();
+  });
+
+  it("sends no variant when none is selected", async () => {
+    await primeModel(null);
+    await useRuntimeStore.getState().sendPrompt("hi");
+    const calls = mocks.sendPromptFullSpy.mock.calls;
+    expect(calls[calls.length - 1]?.[4]).toBeUndefined();
+  });
+
+  it("persists the chosen variant across restarts", () => {
+    useRuntimeStore.getState().setReasoningVariant("high");
+    expect(window.localStorage.getItem("ai4s.models.variant.v1")).toBe("high");
+    useRuntimeStore.getState().setReasoningVariant(null);
+    expect(window.localStorage.getItem("ai4s.models.variant.v1")).toBeNull();
   });
 });
 

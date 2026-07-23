@@ -71,6 +71,38 @@ describe("OpenCodeClient ↔ OpenCode server", () => {
     expect(commands[1].source).toBe("skill");
   });
 
+  it("listProviders surfaces per-model reasoning variants, ordered low→high", async () => {
+    // /config/providers carries a per-model `variants` map (variant name →
+    // provider options). We keep just the names, ordered by effort, and a model
+    // with no reasoning levels comes back with an empty list.
+    const body = {
+      providers: [
+        {
+          id: "openai",
+          name: "OpenAI",
+          models: {
+            // Deliberately scrambled to prove we sort, not echo insertion order.
+            "gpt-5": { name: "GPT-5", variants: { high: {}, minimal: {}, low: {}, medium: {} } },
+            "gpt-4": { name: "GPT-4" }, // no reasoning levels
+          },
+        },
+      ],
+    };
+    const fetchImpl: typeof fetch = async () =>
+      new Response(JSON.stringify(body), { status: 200 });
+    const client = new OpenCodeClient({ baseUrl: "http://127.0.0.1:1", fetchImpl });
+
+    const providers = await client.listProviders();
+    const models = providers[0].models;
+    expect(models.find((m) => m.id === "gpt-5")?.variants).toEqual([
+      "minimal",
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(models.find((m) => m.id === "gpt-4")?.variants).toEqual([]);
+  });
+
   it("runs a shell command: bash tool part + session.idle stream back", async () => {
     const events: OpenCodeEvent[] = [];
     const client = new OpenCodeClient({ baseUrl: `http://127.0.0.1:${server.port}` });

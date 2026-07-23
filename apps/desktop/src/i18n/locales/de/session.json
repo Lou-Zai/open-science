@@ -68,6 +68,25 @@
     "error": {
       "paste": "Einfügen konnte nicht gespeichert werden: {{message}}",
       "addFiles": "Dateien konnten nicht hinzugefügt werden: {{message}}"
+    },
+    "model": {
+      "aria": "Modell wechseln",
+      "title": "Modell & Denkaufwand",
+      "search": "Modelle suchen…",
+      "none": "Modell wählen",
+      "empty": "Noch keine Modelle. Verbinde einen Anbieter.",
+      "noResults": "Keine passenden Modelle",
+      "favorite": "Favorit",
+      "manage": "Anbieter verwalten…",
+      "close": "Schließen",
+      "filter": {
+        "all": "Alle",
+        "favorites": "Favoriten",
+        "recent": "Zuletzt"
+      },
+      "reasoning": "Denkaufwand",
+      "reasoningDefault": "Modellstandard",
+      "reasoningHint": "Tippe die aktive Stufe erneut an, um den Modellstandard zu verwenden."
     }
   },
   "localCommand": {

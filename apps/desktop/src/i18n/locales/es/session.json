@@ -68,6 +68,25 @@
     "error": {
       "paste": "No se pudo guardar el contenido pegado: {{message}}",
       "addFiles": "No se pudieron añadir los archivos: {{message}}"
+    },
+    "model": {
+      "aria": "Cambiar de modelo",
+      "title": "Modelo y esfuerzo de razonamiento",
+      "search": "Buscar modelos…",
+      "none": "Elegir modelo",
+      "empty": "Aún no hay modelos. Conecta un proveedor.",
+      "noResults": "No hay modelos coincidentes",
+      "favorite": "Favorito",
+      "manage": "Gestionar proveedores…",
+      "close": "Cerrar",
+      "filter": {
+        "all": "Todos",
+        "favorites": "Favoritos",
+        "recent": "Recientes"
+      },
+      "reasoning": "Esfuerzo de razonamiento",
+      "reasoningDefault": "Predeterminado del modelo",
+      "reasoningHint": "Toca de nuevo el nivel activo para usar el predeterminado del modelo."
     }
   },
   "localCommand": {

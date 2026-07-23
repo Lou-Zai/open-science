@@ -263,6 +263,13 @@ export interface OpenCodeClientOptions {
 export interface ProviderModelInfo {
   id: string;
   name: string;
+  /** Reasoning-effort variant names this model exposes, ordered low→high as
+   *  OpenCode reports them (e.g. ["minimal","low","medium","high"]). Empty when
+   *  the model has no selectable reasoning levels. Pass one as `sendPrompt`'s
+   *  `variant` to pick a per-turn effort; OpenCode maps it to the provider's
+   *  native param (OpenAI reasoningEffort, Anthropic thinking, …). `listProviders`
+   *  always sets it (possibly []); optional so terse fixtures can omit it. */
+  variants?: string[];
 }
 
 /** A provider OpenCode can use right now (auth present or public). */

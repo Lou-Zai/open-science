@@ -68,6 +68,25 @@
     "error": {
       "paste": "붙여넣기를 저장할 수 없습니다: {{message}}",
       "addFiles": "파일을 추가할 수 없습니다: {{message}}"
+    },
+    "model": {
+      "aria": "모델 전환",
+      "title": "모델 및 추론 강도",
+      "search": "모델 검색…",
+      "none": "모델 선택",
+      "empty": "아직 모델이 없습니다. 공급자를 연결하세요.",
+      "noResults": "일치하는 모델이 없습니다",
+      "favorite": "즐겨찾기",
+      "manage": "공급자 관리…",
+      "close": "닫기",
+      "filter": {
+        "all": "전체",
+        "favorites": "즐겨찾기",
+        "recent": "최근"
+      },
+      "reasoning": "추론 강도",
+      "reasoningDefault": "모델 기본값",
+      "reasoningHint": "선택된 단계를 다시 누르면 모델 기본값을 사용합니다."
     }
   },
   "localCommand": {

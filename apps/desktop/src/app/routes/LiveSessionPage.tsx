@@ -510,6 +510,7 @@ export function LiveSessionPage() {
               onApprovalModeChange={(mode) => void setApprovalMode(mode)}
               agentMode={planAvailable ? agentMode : undefined}
               onAgentModeChange={planAvailable ? setAgentMode : undefined}
+              showModelPicker={connected && !webReadOnly}
             />
           </div>
         </div>

@@ -69,6 +69,19 @@ function parseModel(model?: string | null): { providerID: string; modelID: strin
   return { providerID: model.slice(0, i), modelID: model.slice(i + 1) };
 }
 
+/** Canonical low→high ordering of reasoning-effort variants across providers
+ *  (OpenAI none/minimal/…/xhigh, Anthropic low/…/max, etc.). Known names sort by
+ *  this rank; anything unrecognized keeps its original order after the known set,
+ *  so a compact effort control can lay the levels out in a sensible progression. */
+const VARIANT_ORDER = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+function orderVariants(names: string[]): string[] {
+  const rank = (n: string) => {
+    const i = VARIANT_ORDER.indexOf(n);
+    return i === -1 ? VARIANT_ORDER.length : i;
+  };
+  return [...names].sort((a, b) => rank(a) - rank(b) || names.indexOf(a) - names.indexOf(b));
+}
+
 /**
  * The single boundary between the app and the OpenCode agent runtime.
  * Talks to a running `opencode serve` over its HTTP + SSE API. The UI must go
@@ -455,12 +468,23 @@ export class OpenCodeClient extends BaseAgentRuntime implements AgentRuntime {
     });
     if (!res.ok) throw await this.apiError(res, "Failed to list providers");
     const body = (await res.json()) as {
-      providers?: Array<{ id: string; name?: string; models?: Record<string, { name?: string }> }>;
+      providers?: Array<{
+        id: string;
+        name?: string;
+        // OpenCode carries a per-model `variants` map (variant name → provider
+        // options) built from models.dev + config; a model with no reasoning
+        // levels has none. We surface just the ordered names.
+        models?: Record<string, { name?: string; variants?: Record<string, unknown> }>;
+      }>;
     };
     return (body.providers ?? []).map((p) => ({
       id: p.id,
       name: p.name ?? p.id,
-      models: Object.entries(p.models ?? {}).map(([id, m]) => ({ id, name: m.name ?? id })),
+      models: Object.entries(p.models ?? {}).map(([id, m]) => ({
+        id,
+        name: m.name ?? id,
+        variants: orderVariants(Object.keys(m.variants ?? {})),
+      })),
     }));
   }
 
@@ -793,7 +817,13 @@ export class OpenCodeClient extends BaseAgentRuntime implements AgentRuntime {
    *  default on every turn overrides that stale binding without mutating the
    *  server's stored rows. Omitted/unparseable, the key is left out and the
    *  server falls back to the session/global default. */
-  async sendPrompt(sessionId: string, text: string, agent?: string, model?: string | null): Promise<void> {
+  async sendPrompt(
+    sessionId: string,
+    text: string,
+    agent?: string,
+    model?: string | null,
+    variant?: string | null,
+  ): Promise<void> {
     const m = parseModel(model);
     const res = await this.fetchWithTimeout(
       `${this.baseUrl}/session/${encodeURIComponent(sessionId)}/prompt_async`,
@@ -804,6 +834,9 @@ export class OpenCodeClient extends BaseAgentRuntime implements AgentRuntime {
           parts: [{ type: "text", text }],
           ...(agent ? { agent } : {}),
           ...(m ? { model: m } : {}),
+          // Per-turn reasoning effort; OpenCode maps the variant name to the
+          // provider's native param. Omitted → the model's default effort.
+          ...(variant ? { variant } : {}),
         }),
       },
     );

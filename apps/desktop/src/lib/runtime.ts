@@ -9,6 +9,7 @@ import {
   type OpenCodeEvent,
   type PermissionAskedEvent,
   type PermissionReply,
+  type ProviderInfo,
   type QuestionAskedEvent,
   type SessionMeta,
   type SkillInfo,
@@ -54,6 +55,10 @@ import i18n from "@/i18n";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const URL_KEY = "ai4s.opencodeUrl";
 const HIDDEN_KEY = "ai4s.hiddenExamples";
+// The composer's chosen reasoning-effort variant, kept across restarts (favorites
+// / recent models persist too, so the effort should as well). Sibling of the
+// model-preferences keys in components/settings/modelPreferences.
+const REASONING_KEY = "ai4s.models.variant.v1";
 
 function initialUrl(): string {
   if (typeof window === "undefined") return DEFAULT_OPENCODE_URL;
@@ -66,6 +71,10 @@ function initialHidden(): string[] {
   } catch {
     return [];
   }
+}
+function initialReasoningVariant(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(REASONING_KEY) || null;
 }
 
 export interface Thread {
@@ -97,6 +106,15 @@ interface RuntimeState {
   defaultModel: string | null;
   /** Apply a new default model and transparently reconnect (see impl). */
   setDefaultModel: (model: string) => Promise<void>;
+  /** Connected providers and their models (from GET /config/providers, fetched
+   *  in loadCatalog). Drives the composer's inline model picker; empty until the
+   *  first catalog load. Kept here so the picker and Settings share one source. */
+  providers: ProviderInfo[];
+  /** Selected per-turn reasoning-effort variant name (e.g. "high"), or null for
+   *  the model's default. Sent with the next prompt only if the current model
+   *  actually exposes it — variant vocabularies differ across models. */
+  reasoningVariant: string | null;
+  setReasoningVariant: (variant: string | null) => void;
   /** The last failed model switch's error, or null. While set, the Settings
    *  page keeps the model browser on screen (instead of the connect prompt)
    *  so the user can retry. Cleared by any successful reconnect, a successful
@@ -578,6 +596,22 @@ export function getClient(): OpenCodeClient | null {
   return opencodeClient;
 }
 
+/** The reasoning variant to send with a turn: the user's pick, but only when the
+ *  current default model actually exposes it. Variant vocabularies differ per
+ *  model (OpenAI has "minimal", Anthropic has "max", many models have none), so
+ *  switching to a model without the chosen level cleanly sends nothing and lets
+ *  OpenCode apply that model's default effort. */
+function activeVariant(state: RuntimeState): string | undefined {
+  const { reasoningVariant, defaultModel, providers } = state;
+  if (!reasoningVariant || !defaultModel) return undefined;
+  const i = defaultModel.indexOf("/");
+  if (i <= 0) return undefined;
+  const model = providers
+    .find((p) => p.id === defaultModel.slice(0, i))
+    ?.models.find((m) => m.id === defaultModel.slice(i + 1));
+  return model?.variants?.includes(reasoningVariant) ? reasoningVariant : undefined;
+}
+
 export const useRuntimeStore = create<RuntimeState>((set, get) => ({
   status: "offline",
   serverUrl: initialUrl(),
@@ -588,6 +622,15 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
   agents: [],
   commands: [],
   defaultModel: null,
+  providers: [],
+  reasoningVariant: initialReasoningVariant(),
+  setReasoningVariant: (variant) => {
+    if (typeof window !== "undefined") {
+      if (variant) window.localStorage.setItem(REASONING_KEY, variant);
+      else window.localStorage.removeItem(REASONING_KEY);
+    }
+    set({ reasoningVariant: variant });
+  },
   modelSwitchError: null,
   approvalMode: "approve",
   tools: [],
@@ -704,7 +747,11 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       // A model switch in flight owns `defaultModel`: this read may predate
       // the switch's config write, and applying it would visibly revert the
       // just-selected model.
-      set(get().switching ? { agents, commands } : { agents, defaultModel, commands });
+      set(
+        get().switching
+          ? { agents, commands, providers }
+          : { agents, defaultModel, commands, providers },
+      );
       // Self-heal a dangling default model. It can go stale out-of-band — its
       // provider removed, its id renamed, or the config edited outside the app
       // — and then every send fails with "model not found". Settings only
@@ -1554,7 +1601,10 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       text,
       // Pass the current default model so an old session (which OpenCode bound
       // to its creation-time model) follows a later model switch, per #8.
-      (sid) => withRetry(() => client!.sendPrompt(sid, text, agent, get().defaultModel)),
+      (sid) =>
+        withRetry(() =>
+          client!.sendPrompt(sid, text, agent, get().defaultModel, activeVariant(get())),
+        ),
       false,
     );
   },

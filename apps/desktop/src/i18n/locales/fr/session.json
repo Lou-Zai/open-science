@@ -68,6 +68,25 @@
     "error": {
       "paste": "Impossible d'enregistrer le collage : {{message}}",
       "addFiles": "Impossible d'ajouter les fichiers : {{message}}"
+    },
+    "model": {
+      "aria": "Changer de modèle",
+      "title": "Modèle et effort de raisonnement",
+      "search": "Rechercher des modèles…",
+      "none": "Choisir un modèle",
+      "empty": "Aucun modèle. Connectez un fournisseur.",
+      "noResults": "Aucun modèle correspondant",
+      "favorite": "Favori",
+      "manage": "Gérer les fournisseurs…",
+      "close": "Fermer",
+      "filter": {
+        "all": "Tous",
+        "favorites": "Favoris",
+        "recent": "Récents"
+      },
+      "reasoning": "Effort de raisonnement",
+      "reasoningDefault": "Défaut du modèle",
+      "reasoningHint": "Touchez à nouveau le niveau actif pour utiliser le défaut du modèle."
     }
   },
   "localCommand": {

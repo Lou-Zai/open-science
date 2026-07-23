@@ -23,6 +23,7 @@ import {
   type ApprovalMode,
 } from "@/lib/tauri";
 import { useRuntimeStore, type AgentMode } from "@/lib/runtime";
+import { ModelPicker } from "@/components/thread/ModelPicker";
 import { WorkspaceChip } from "@/components/thread/WorkspaceChip";
 import { useUiStore } from "@/lib/store";
 import { toast } from "@/lib/toast";
@@ -123,6 +124,7 @@ export function Composer({
   onApprovalModeChange,
   agentMode,
   onAgentModeChange,
+  showModelPicker,
 }: {
   onSend?: (text: string) => void;
   onRunShell?: (command: string) => void;
@@ -142,6 +144,9 @@ export function Composer({
    *  session withholds it when the runtime has no "plan" agent. */
   agentMode?: AgentMode;
   onAgentModeChange?: (mode: AgentMode) => void;
+  /** Show the inline model + reasoning-effort switcher (left of send). The live
+   *  session opts in; static mock sessions have no runtime to switch. */
+  showModelPicker?: boolean;
 }) {
   const { t } = useTranslation(["session", "common"]);
   const resolvedPlaceholder = placeholder ?? t("composer.placeholder.default");
@@ -750,6 +755,7 @@ export function Composer({
           </div>
         )}
         <span className="flex-1" />
+        {showModelPicker && <ModelPicker />}
         {working && onStop ? (
           // Same spot, same shape, one action: the send button becomes Stop
           // while the agent works — always live, even though the input is not.

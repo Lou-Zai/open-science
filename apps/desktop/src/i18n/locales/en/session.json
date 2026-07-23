@@ -68,6 +68,25 @@
     "error": {
       "paste": "Could not save paste: {{message}}",
       "addFiles": "Could not add files: {{message}}"
+    },
+    "model": {
+      "aria": "Switch model",
+      "title": "Model & reasoning effort",
+      "search": "Search models…",
+      "none": "Select model",
+      "empty": "No models yet. Connect a provider.",
+      "noResults": "No matching models",
+      "favorite": "Favorite",
+      "manage": "Manage providers…",
+      "close": "Close",
+      "filter": {
+        "all": "All",
+        "favorites": "Favorites",
+        "recent": "Recent"
+      },
+      "reasoning": "Reasoning effort",
+      "reasoningDefault": "Model default",
+      "reasoningHint": "Tap the active level again to use the model's default."
     }
   },
   "localCommand": {

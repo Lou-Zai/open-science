@@ -68,6 +68,25 @@
     "error": {
       "paste": "无法保存粘贴内容：{{message}}",
       "addFiles": "无法添加文件：{{message}}"
+    },
+    "model": {
+      "aria": "切换模型",
+      "title": "模型与推理强度",
+      "search": "搜索模型…",
+      "none": "选择模型",
+      "empty": "暂无模型,请先连接供应商。",
+      "noResults": "没有匹配的模型",
+      "favorite": "收藏",
+      "manage": "管理供应商…",
+      "close": "关闭",
+      "filter": {
+        "all": "全部",
+        "favorites": "收藏",
+        "recent": "最近"
+      },
+      "reasoning": "推理强度",
+      "reasoningDefault": "模型默认",
+      "reasoningHint": "再次点击当前档位可恢复模型默认。"
     }
   },
   "localCommand": {
