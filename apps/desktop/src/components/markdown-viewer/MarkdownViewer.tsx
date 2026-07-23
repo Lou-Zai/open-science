@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -60,6 +61,22 @@ const STYLES: Record<Variant, Record<string, string>> = {
   },
 };
 
+// remark-math only recognizes dollar delimiters ($…$ / $$…$$), but models
+// often emit the LaTeX bracket forms \(…\) / \[…\] instead, which then show
+// as raw source (#51). Normalize brackets to dollars before parsing, leaving
+// fenced code and inline code untouched. An unterminated fence runs to the
+// end of input, mirroring how markdown itself treats one mid-stream. The
+// lookbehinds keep `\\[2pt]`-style LaTeX row breaks from opening a block.
+const CODE_OR_BRACKET_MATH =
+  /(```|~~~)[\s\S]*?(?:\1|$)|`[^`\n]*`|(?<!\\)\\\[([\s\S]*?)(?<!\\)\\\]|(?<!\\)\\\(([\s\S]*?)(?<!\\)\\\)/g;
+
+function normalizeMathDelimiters(markdown: string): string {
+  if (!markdown.includes("\\[") && !markdown.includes("\\(")) return markdown;
+  return markdown.replace(CODE_OR_BRACKET_MATH, (match, _fence, display, inline) =>
+    display !== undefined ? `$$${display}$$` : inline !== undefined ? `$${inline}$` : match,
+  );
+}
+
 export function MarkdownViewer({
   children,
   className,
@@ -70,13 +87,15 @@ export function MarkdownViewer({
   variant?: Variant;
 }) {
   const s = STYLES[variant];
+  const normalized = useMemo(() => normalizeMathDelimiters(children), [children]);
   return (
     <div className={cn(s.root, className)}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        // Render `$…$` / `$$…$$` math (KaTeX). `throwOnError: false` keeps a
-        // malformed expression from blanking the whole message — it shows the
-        // source in red instead.
+        // Render math (KaTeX) — $…$/$$…$$ natively, \(…\)/\[…\] via the
+        // normalization above. `throwOnError: false` keeps a malformed
+        // expression from blanking the whole message — it shows the source
+        // in red instead.
         rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}
         components={{
           p: ({ children }) => <p className={s.p}>{children}</p>,
@@ -108,7 +127,7 @@ export function MarkdownViewer({
           td: ({ children }) => <td className={s.td}>{children}</td>,
         }}
       >
-        {children}
+        {normalized}
       </ReactMarkdown>
     </div>
   );
