@@ -76,6 +76,7 @@ export function ModelPicker() {
   // store's `activeVariant`, so the chip never claims an effort that won't send).
   const activeVariant =
     reasoningVariant && currentVariants.includes(reasoningVariant) ? reasoningVariant : null;
+  const activeIdx = activeVariant ? currentVariants.indexOf(activeVariant) : -1;
 
   const visible = filterModelOptions(options, filter, query, prefs.favorites, prefs.recent);
 
@@ -119,8 +120,11 @@ export function ModelPicker() {
   };
 
   const selectModel = async (key: string) => {
-    setOpen(false);
     persistPrefs(recordRecent(prefs, key));
+    // Reasoning-capable models keep the picker open so the user can dial in the
+    // effort right after the switch; models with nothing more to adjust close it.
+    if ((variantsByKey.get(key) ?? []).length > 0) setAdvancedOpen(true);
+    else setOpen(false);
     if (key !== defaultModel) {
       try {
         await setDefaultModel(key);
@@ -155,7 +159,7 @@ export function ModelPicker() {
   const body = (
     <div className="flex min-h-0 flex-col">
       {/* Search */}
-      <div className="flex items-center gap-2 border-b border-faint px-2.5 py-2">
+      <div className="flex shrink-0 items-center gap-2 border-b border-faint px-2.5 py-2">
         <Search size={13} className="shrink-0 text-muted" />
         <input
           ref={searchRef}
@@ -177,7 +181,7 @@ export function ModelPicker() {
 
       {/* Filter chips */}
       {options.length > 0 && (
-        <div className="no-scrollbar flex gap-1 overflow-x-auto border-b border-faint px-2 py-1.5">
+        <div className="no-scrollbar flex shrink-0 gap-1 overflow-x-auto border-b border-faint px-2 py-1.5">
           {filterChips.map((chip) => (
             <button
               key={chip.key}
@@ -258,7 +262,7 @@ export function ModelPicker() {
 
       {/* Advanced: reasoning effort — only for models that expose levels (#40) */}
       {currentVariants.length > 0 && (
-        <div className="border-t border-faint px-2 py-1.5">
+        <div className="shrink-0 border-t border-faint px-2 py-1.5">
           <button
             className="flex w-full items-center gap-1.5 rounded-input px-1.5 py-1 text-xs text-muted hover:bg-surface-2 hover:text-text"
             aria-expanded={advancedOpen}
@@ -272,28 +276,46 @@ export function ModelPicker() {
             </span>
           </button>
           {advancedOpen && (
-            <div className="px-1.5 pb-1 pt-2">
-              <div className="flex gap-1">
-                {currentVariants.map((v) => {
-                  const active = v === activeVariant;
-                  return (
+            <div className="px-2 pb-2.5 pt-3">
+              {/* Segmented slider over the model's own levels. Each level is a hit
+                  target with a dot; the fill + knob mark the current effort. No
+                  fill/knob means "model default" (nothing sent). */}
+              <div className="relative h-5 select-none">
+                <div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-surface-2" />
+                {activeIdx >= 0 && (
+                  <div
+                    className="absolute left-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-accent"
+                    style={{ width: `${((activeIdx + 0.5) / currentVariants.length) * 100}%` }}
+                  />
+                )}
+                <div className="absolute inset-0 flex">
+                  {currentVariants.map((v, i) => (
                     <button
                       key={v}
+                      type="button"
+                      aria-label={labelVariant(v)}
+                      aria-pressed={i === activeIdx}
                       // Re-tapping the active level clears it → the model's default.
-                      onClick={() => setReasoningVariant(active ? null : v)}
-                      className={cn(
-                        "flex-1 rounded-input px-1 py-1 text-[11px]",
-                        active
-                          ? "bg-accent text-accent-fg"
-                          : "bg-surface-2 text-muted hover:text-text",
-                      )}
+                      onClick={() => setReasoningVariant(v === activeVariant ? null : v)}
+                      className="flex flex-1 items-center justify-center"
                     >
-                      {labelVariant(v)}
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 rounded-full",
+                          activeIdx >= 0 && i <= activeIdx ? "bg-accent-fg/80" : "bg-muted/40",
+                        )}
+                      />
                     </button>
-                  );
-                })}
+                  ))}
+                </div>
+                {activeIdx >= 0 && (
+                  <div
+                    className="pointer-events-none absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/10 bg-white shadow-pop"
+                    style={{ left: `${((activeIdx + 0.5) / currentVariants.length) * 100}%` }}
+                  />
+                )}
               </div>
-              <p className="px-0.5 pt-1.5 text-[11px] text-muted">
+              <p className="px-0.5 pt-2.5 text-[11px] text-muted">
                 {t("composer.model.reasoningHint")}
               </p>
             </div>
@@ -303,7 +325,7 @@ export function ModelPicker() {
 
       {/* Manage providers */}
       <button
-        className="border-t border-faint px-3 py-2 text-left text-xs text-accent hover:underline"
+        className="shrink-0 border-t border-faint px-3 py-2 text-left text-xs text-accent hover:underline"
         onClick={() => {
           setOpen(false);
           navigate("/settings/models");
