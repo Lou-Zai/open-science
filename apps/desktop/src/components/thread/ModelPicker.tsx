@@ -147,7 +147,9 @@ function ReasoningSlider({
           {liveFrac !== null && (
             <div
               className={cn(
-                "absolute inset-y-0 left-0 rounded-full bg-accent",
+                // Codex-style bright blue fill (not the app accent, which reads
+                // too dark/heavy here).
+                "absolute inset-y-0 left-0 rounded-full bg-[#4c9dff]",
                 dragFrac === null && "transition-[width] duration-100",
               )}
               style={{ width: posOf(liveFrac) }}
@@ -158,7 +160,7 @@ function ReasoningSlider({
               key={v}
               className={cn(
                 "absolute top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform duration-100 hover:scale-[1.9]",
-                litIdx >= 0 && i <= litIdx ? "bg-accent-fg/80" : "bg-muted/60",
+                litIdx >= 0 && i <= litIdx ? "bg-white/90" : "bg-muted/80",
               )}
               style={{ left: posOf(fracOf(i)) }}
             />
