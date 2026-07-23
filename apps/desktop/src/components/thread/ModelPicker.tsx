@@ -168,7 +168,9 @@ function ReasoningSlider({
           {liveFrac !== null && (
             <div
               className={cn(
-                "pointer-events-none absolute top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/5 bg-white shadow-md",
+                // A defined gray ring + soft shadow so the white knob stays
+                // clearly visible on the near-white track (Codex-style).
+                "pointer-events-none absolute top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/15 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.28)]",
                 dragFrac === null && "transition-[left] duration-100",
               )}
               style={{ left: posOf(liveFrac) }}
