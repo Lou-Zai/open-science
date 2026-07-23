@@ -68,37 +68,36 @@ Formerly Open Science. Claude Science 및 유사한 AI-for-science 워크벤치�
 
 ## 스크린샷
 
-![End-to-end dose-response analysis](./docs/assets/showcase-workflow.webp)
+**하나의 프롬프트 -> 출판 수준의 그림, 그리고 모든 데이터 포인트는 그것을 만든 정확한 코드와 입력으로 추적됩니다.** 블랙박스가 없습니다: 아무 산출물이나 열어 그것을 생성한 스크립트, 데이터 파일, 그리고 그것을 만들어낸 대화를 확인하세요.
 
-![Artifact inspector showing provenance](./docs/assets/showcase-provenance.webp)
+![산출물 검사기에서 생성 스크립트 및 입력 파일과 나란히 표시된 렌더링된 교차종 아틀라스 그림](./docs/assets/showcase-provenance.webp)
 
-![Literature survey producing a rendered PDF manuscript](./docs/assets/showcase-literature.webp)
+**문헌 -> 검증 가능한 보고서.** 여러 출처에 걸쳐 검색을 확장하고, PDF로 렌더링되는 원고를 작성한 뒤, 무엇이든 배포되기 전에 인용 검토를 통과하도록 강제합니다 — DOI가 해석되고, 출처 없는 수치와 그림/코드 불일치가 표시됩니다.
+
+![단백질 언어 모델 문헌 조사를 PDF 원고로 컴파일하고, 인용 검토기가 모든 DOI가 해석됨을 확인하는 화면](./docs/assets/showcase-literature.webp)
+
+**당신의 Chrome을 직접 조작.** 에이전트가 로그인을 포함한 실제 브라우저 프로필로 실시간 웹을 읽고, 찾은 내용을 그림과 정렬 가능한 CSV로 만듭니다.
+
+![browser-control로 사용자의 Chrome을 조작해 bioRxiv 프리프린트를 차트와 CSV로 수집하는 에이전트](./docs/assets/showcase-browser.webp)
 
 **어디서나, 심지어 휴대폰에서도 연구.** 내장된 인증 게이트웨이가 *실제* 데스크톱 UI를 LAN 내 브라우저(또는 터널)에 제공하므로, 책상에서 실행을 시작하고 완성된 그림과 보고서를 휴대폰에서 읽을 수 있습니다.
 
 <table align="center">
   <tr>
-    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-home.webp" width="300" alt="휴대폰 브라우저에서 실행 중인 워크벤치 — 새 세션 화면"><br><sub>새 세션 — 휴대폰 브라우저에서</sub></td>
-    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-run.webp" width="300" alt="휴대폰에서 본 완성된 용량-반응 분석"><br><sub>완성된 분석 — 그림 &amp; 보고서</sub></td>
+    <td align="center" width="33%"><img src="./docs/assets/showcase-mobile-home.webp" width="240" alt="휴대폰 브라우저에서 본 워크벤치: 시작 분석이 있는 새 세션 화면"><br><sub>새 세션</sub></td>
+    <td align="center" width="33%"><img src="./docs/assets/showcase-mobile-run.webp" width="240" alt="휴대폰에서 본 완성된 용량-반응 분석 — 스크립트, 결과, 그림, 보고서"><br><sub>완성된 분석</sub></td>
+    <td align="center" width="33%"><img src="./docs/assets/showcase-mobile-reproduce.webp" width="240" alt="휴대폰에서 본 scVI 벤치마크 재현과 그 ARI-대-epoch 그림"><br><sub>재현된 벤치마크</sub></td>
   </tr>
 </table>
-
-**당신의 Chrome을 직접 조작.** 에이전트가 로그인을 포함한 실제 브라우저 프로필로 실시간 웹을 읽고, 찾은 내용을 그림과 정렬 가능한 CSV로 만듭니다.
-
-![browser-control로 사용자의 Chrome을 조작해 bioRxiv 프리프린트를 차트와 CSV로 수집하는 에이전트](./docs/assets/showcase-browser.webp)
 
 <details>
 <summary><b>추가 스크린샷</b></summary>
 
 <br>
 
-![고정된 환경, 실행 로그, provenance와 함께 원격 A100에서 scVI 벤치마크 재현](./docs/assets/showcase-remote.webp)
+![고정된 환경, 실행 로그, provenance와 함께 원격 A100에서 scVI 통합 벤치마크 재현](./docs/assets/showcase-remote.webp)
 
-![Jupyter notebook](./docs/assets/showcase-notebook.webp)
-
-![Experiment sweep](./docs/assets/showcase-experiment.webp)
-
-![Skills library](./docs/assets/showcase-skills.webp)
+![에이전트의 커널을 공유하는 라이브 분석 노트북과 나란히 표시된 8-arm scVI 하이퍼파라미터 스윕 표](./docs/assets/showcase-experiment.webp)
 
 </details>
 

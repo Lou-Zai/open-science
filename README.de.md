@@ -68,37 +68,36 @@ Formerly Open Science. Eine quelloffene Desktop-Alternative zu Claude Science un
 
 ## Screenshots
 
-![End-to-end dose-response analysis](./docs/assets/showcase-workflow.webp)
+**Ein Prompt -> eine publikationsreife Abbildung, und jeder Punkt lässt sich auf genau den Code und die Eingaben zurückführen, die ihn erzeugt haben.** Keine Black Boxes: Öffne ein beliebiges Artefakt, um sein erzeugendes Skript, seine Datendateien und die Konversation zu sehen, die es hervorgebracht hat.
 
-![Artifact inspector showing provenance](./docs/assets/showcase-provenance.webp)
+![Eine gerenderte artenübergreifende Atlas-Abbildung neben ihrem erzeugenden Skript und den Eingabedateien im Artefakt-Inspektor](./docs/assets/showcase-provenance.webp)
 
-![Literature survey producing a rendered PDF manuscript](./docs/assets/showcase-literature.webp)
+**Literatur -> ein überprüfbarer Bericht.** Fächere die Suche über mehrere Quellen auf, verfasse ein als PDF gerendertes Manuskript und stelle es unter einen Zitations-Review — DOIs aufgelöst, unbelegte Zahlen und Inkonsistenzen zwischen Abbildungen und Code markiert —, bevor irgendetwas ausgeliefert wird.
+
+![Eine Literaturrecherche zu Protein-Sprachmodellen, zusammengestellt zu einem PDF-Manuskript, mit einem Zitations-Reviewer, der bestätigt, dass jede DOI auflöst](./docs/assets/showcase-literature.webp)
+
+**Steuert deinen eigenen Chrome.** Der Agent liest das aktuelle Web über dein echtes Browser-Profil — Logins inklusive — und macht daraus eine Abbildung und eine sortierbare CSV.
+
+![Der Agent steuert den eigenen Chrome des Nutzers per Browser-Steuerung, um bioRxiv-Preprints in ein Diagramm und eine CSV zu überführen](./docs/assets/showcase-browser.webp)
 
 **Forschen von überall — sogar vom Handy.** Ein eingebautes, authentifiziertes Gateway liefert die *echte* Desktop-UI an einen Browser in deinem LAN (oder über einen Tunnel), sodass du einen Lauf am Schreibtisch starten und die fertige Abbildung und den Bericht auf deinem Handy lesen kannst.
 
 <table align="center">
   <tr>
-    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-home.webp" width="300" alt="Die Workbench in einem Handy-Browser — der Neue-Sitzung-Bildschirm"><br><sub>Neue Sitzung — in einem Handy-Browser</sub></td>
-    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-run.webp" width="300" alt="Eine fertige Dosis-Wirkungs-Analyse auf einem Handy"><br><sub>Eine fertige Analyse — Abbildung &amp; Bericht</sub></td>
+    <td align="center" width="33%"><img src="./docs/assets/showcase-mobile-home.webp" width="240" alt="Die Workbench in einem Handy-Browser: der Neue-Sitzung-Bildschirm mit Starter-Analysen"><br><sub>Neue Sitzung</sub></td>
+    <td align="center" width="33%"><img src="./docs/assets/showcase-mobile-run.webp" width="240" alt="Eine fertige Dosis-Wirkungs-Analyse — Skript, Ergebnisse, Abbildung und Bericht — auf einem Handy"><br><sub>Eine fertige Analyse</sub></td>
+    <td align="center" width="33%"><img src="./docs/assets/showcase-mobile-reproduce.webp" width="240" alt="Reproduktion eines scVI-Benchmarks mit seiner ARI-über-Epochen-Abbildung, betrachtet auf einem Handy"><br><sub>Ein reproduzierter Benchmark</sub></td>
   </tr>
 </table>
-
-**Steuert deinen eigenen Chrome.** Der Agent liest das aktuelle Web über dein echtes Browser-Profil — Logins inklusive — und macht daraus eine Abbildung und eine sortierbare CSV.
-
-![Der Agent steuert den eigenen Chrome des Nutzers per Browser-Steuerung, um bioRxiv-Preprints in ein Diagramm und eine CSV zu überführen](./docs/assets/showcase-browser.webp)
 
 <details>
 <summary><b>Weitere Screenshots</b></summary>
 
 <br>
 
-![Reproduktion eines scVI-Benchmarks auf einer entfernten A100 mit gepinnter Umgebung, Ausführungslog und Provenance](./docs/assets/showcase-remote.webp)
+![Reproduktion eines scVI-Integrations-Benchmarks auf einer entfernten A100 mit gepinnter Umgebung, Ausführungslog und Provenance](./docs/assets/showcase-remote.webp)
 
-![Jupyter notebook](./docs/assets/showcase-notebook.webp)
-
-![Experiment sweep](./docs/assets/showcase-experiment.webp)
-
-![Skills library](./docs/assets/showcase-skills.webp)
+![Eine Tabelle mit einem 8-armigen scVI-Hyperparameter-Sweep neben einem live Analyse-Notebook, das sich den Kernel des Agents teilt](./docs/assets/showcase-experiment.webp)
 
 </details>
 

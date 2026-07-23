@@ -75,43 +75,36 @@
 
 ## 效果演示
 
-**一句提示 -> 一份完整、可追溯的分析。**
+**一句提示 -> 一张可发表级别的图，图上每个点都能回溯到生成它的确切代码和输入。** 没有黑盒：打开任意工件，就能看到生成它的脚本、它的数据文件，以及产出它的对话。
 
-![端到端剂量-响应分析：智能体运行代码，产出拟合图与报告](./docs/assets/showcase-workflow.webp)
+![工件检查器中，一张跨物种图谱图与其生成脚本和输入文件并列展示](./docs/assets/showcase-provenance.webp)
 
-**每个工件都能回到它的代码、输入和对话。**
+**文献 -> 可验证报告。** 把检索扇出到多个来源，起草一篇渲染成 PDF 的稿件，并在发布前用引用评审把关——DOI 逐一解析，无出处的数值以及图表/代码不一致都会被标记出来。
 
-![工件检查器展示某张图的生成代码、输入与溯源信息](./docs/assets/showcase-provenance.webp)
+![一篇蛋白质语言模型的文献综述被汇编成 PDF 稿件，引用评审确认每个 DOI 都可解析](./docs/assets/showcase-literature.webp)
 
-**文献 -> 可验证报告。**
+**驱动你自己的 Chrome。** 智能体通过你真实的浏览器配置文件——连同登录状态——读取实时网页，再把找到的内容变成一张图和一份可排序的 CSV。
 
-![文献综述产出渲染后的 PDF 稿件，并附带可追溯性评审](./docs/assets/showcase-literature.webp)
+![智能体通过 browser-control 驱动用户自己的 Chrome，把 bioRxiv 预印本采集成图表和 CSV](./docs/assets/showcase-browser.webp)
 
 **随时随地做研究——连手机都行。** 内置的认证网关把*真正的*桌面 UI 提供给局域网里的浏览器(或通过隧道),这样你就能在电脑前发起一次运行,再在手机上查看完成的图表和报告。
 
 <table align="center">
   <tr>
-    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-home.webp" width="300" alt="在手机浏览器中运行的工作台：新建会话界面"><br><sub>新建会话——在手机浏览器中</sub></td>
-    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-run.webp" width="300" alt="在手机上查看一份完成的剂量-响应分析"><br><sub>一份完成的分析——图表与报告</sub></td>
+    <td align="center" width="33%"><img src="./docs/assets/showcase-mobile-home.webp" width="240" alt="在手机浏览器中运行的工作台：带有起步分析的新建会话界面"><br><sub>新建会话</sub></td>
+    <td align="center" width="33%"><img src="./docs/assets/showcase-mobile-run.webp" width="240" alt="在手机上查看一份完成的剂量-响应分析——脚本、结果、图表与报告"><br><sub>一份完成的分析</sub></td>
+    <td align="center" width="33%"><img src="./docs/assets/showcase-mobile-reproduce.webp" width="240" alt="在手机上查看正在复现的 scVI 基准，以及它的 ARI-vs-epoch 图"><br><sub>一份复现的基准</sub></td>
   </tr>
 </table>
-
-**驱动你自己的 Chrome。** 智能体通过你真实的浏览器配置文件——连同登录状态——浏览实时网页,再把找到的内容变成一张图和一份可排序的 CSV。
-
-![智能体通过 browser-control 驱动用户自己的 Chrome，把 bioRxiv 预印本采集成图表和 CSV](./docs/assets/showcase-browser.webp)
 
 <details>
 <summary><b>更多截图</b></summary>
 
 <br>
 
-![在远程 A100 上以固定环境复现 scVI 基准，附带执行日志和溯源](./docs/assets/showcase-remote.webp)
+![在远程 A100 上以固定环境复现 scVI 整合基准，附带执行日志和溯源](./docs/assets/showcase-remote.webp)
 
-![智能体驱动 Jupyter 笔记本并实时绘制 matplotlib 图](./docs/assets/showcase-notebook.webp)
-
-![实验扫描表格与实时分析笔记本并列](./docs/assets/showcase-experiment.webp)
-
-![技能库列出内置的科学技能](./docs/assets/showcase-skills.webp)
+![一张 8 组的 scVI 超参数扫描表格，与共享智能体内核的实时分析笔记本并列](./docs/assets/showcase-experiment.webp)
 
 </details>
 

@@ -68,37 +68,36 @@ Formerly Open Science. Une alternative desktop open source à Claude Science et 
 
 ## Captures
 
-![End-to-end dose-response analysis](./docs/assets/showcase-workflow.webp)
+**Un prompt → une figure de qualité publication, et chaque point renvoie au code et aux entrées exacts qui l'ont produit.** Pas de boîtes noires : ouvrez n'importe quel artefact pour voir le script qui l'a généré, ses fichiers de données et la conversation qui l'a produit.
 
-![Artifact inspector showing provenance](./docs/assets/showcase-provenance.webp)
+![Une figure d'atlas inter-espèces rendue, à côté de son script générateur et de ses fichiers d'entrée dans l'inspecteur d'artefacts](./docs/assets/showcase-provenance.webp)
 
-![Literature survey producing a rendered PDF manuscript](./docs/assets/showcase-literature.webp)
+**La littérature → un rapport vérifiable.** Déployez la recherche sur plusieurs sources, rédigez un manuscrit rendu en PDF, et soumettez-le à une revue des citations — DOIs résolus, chiffres sans source et incohérences figure/code signalés — avant toute publication.
+
+![Une revue de littérature sur les modèles de langage des protéines compilée en un manuscrit PDF, avec un vérificateur de citations confirmant que chaque DOI se résout](./docs/assets/showcase-literature.webp)
+
+**Pilote votre propre Chrome.** L'agent lit le web en direct via votre profil de navigateur réel — sessions comprises — puis transforme ce qu'il trouve en une figure et un CSV triable.
+
+![L'agent pilotant le propre Chrome de l'utilisateur via le contrôle du navigateur pour collecter des préprints bioRxiv dans un graphique et un CSV](./docs/assets/showcase-browser.webp)
 
 **Faire de la recherche depuis n'importe où — même votre téléphone.** Une passerelle intégrée et authentifiée sert l'*vraie* UI desktop à un navigateur sur votre réseau local (ou via un tunnel), pour que vous puissiez lancer une exécution à votre bureau et lire la figure et le rapport terminés sur votre téléphone.
 
 <table align="center">
   <tr>
-    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-home.webp" width="300" alt="L'atelier dans un navigateur mobile — écran de nouvelle session"><br><sub>Nouvelle session — dans un navigateur mobile</sub></td>
-    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-run.webp" width="300" alt="Une analyse dose-réponse terminée sur un téléphone"><br><sub>Une analyse terminée — figure &amp; rapport</sub></td>
+    <td align="center" width="33%"><img src="./docs/assets/showcase-mobile-home.webp" width="240" alt="L'atelier dans un navigateur mobile : l'écran de nouvelle session avec des analyses de démarrage"><br><sub>Nouvelle session</sub></td>
+    <td align="center" width="33%"><img src="./docs/assets/showcase-mobile-run.webp" width="240" alt="Une analyse dose-réponse terminée — script, résultats, figure et rapport — sur un téléphone"><br><sub>Une analyse terminée</sub></td>
+    <td align="center" width="33%"><img src="./docs/assets/showcase-mobile-reproduce.webp" width="240" alt="Reproduction d'un benchmark scVI, avec sa figure ARI-vs-époque, vue sur un téléphone"><br><sub>Un benchmark reproduit</sub></td>
   </tr>
 </table>
-
-**Pilote votre propre Chrome.** L'agent lit le web en direct via votre profil de navigateur réel — sessions comprises — puis transforme ce qu'il trouve en une figure et un CSV triable.
-
-![L'agent pilotant le propre Chrome de l'utilisateur via le contrôle du navigateur pour collecter des préprints bioRxiv dans un graphique et un CSV](./docs/assets/showcase-browser.webp)
 
 <details>
 <summary><b>Autres captures</b></summary>
 
 <br>
 
-![Reproduction d'un benchmark scVI sur un A100 distant avec un environnement épinglé, un journal d'exécution et la provenance](./docs/assets/showcase-remote.webp)
+![Reproduction d'un benchmark d'intégration scVI sur un A100 distant avec un environnement épinglé, un journal d'exécution et la provenance](./docs/assets/showcase-remote.webp)
 
-![Jupyter notebook](./docs/assets/showcase-notebook.webp)
-
-![Experiment sweep](./docs/assets/showcase-experiment.webp)
-
-![Skills library](./docs/assets/showcase-skills.webp)
+![Un tableau de balayage d'hyperparamètres scVI à 8 branches à côté d'un notebook d'analyse en direct partageant le kernel de l'agent](./docs/assets/showcase-experiment.webp)
 
 </details>
 

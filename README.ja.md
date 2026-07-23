@@ -68,37 +68,36 @@ Formerly Open Science. Claude Science などの AI-for-science ワークベン�
 
 ## スクリーンショット
 
-![End-to-end dose-response analysis](./docs/assets/showcase-workflow.webp)
+**1 つのプロンプトから公開品質の図へ。そしてすべての点が、それを生み出した正確なコードと入力へ辿れます。** ブラックボックスはありません:任意の成果物を開けば、その生成スクリプト、データファイル、そしてそれを生み出した会話が見られます。
 
-![Artifact inspector showing provenance](./docs/assets/showcase-provenance.webp)
+![成果物インスペクタで、生成スクリプトと入力ファイルの隣に描画された種間アトラス図](./docs/assets/showcase-provenance.webp)
 
-![Literature survey producing a rendered PDF manuscript](./docs/assets/showcase-literature.webp)
+**文献から検証可能なレポートへ。** 複数のソースへ検索を広げ、PDF として描画される原稿を起草し、公開前に引用レビューでゲートします——DOI を解決し、出典のない数値や図/コードの不整合を指摘します。
+
+![タンパク質言語モデルの文献調査を PDF 原稿にまとめ、引用レビューアがすべての DOI の解決を確認](./docs/assets/showcase-literature.webp)
+
+**あなた自身の Chrome を操作。** エージェントはあなた自身のブラウザプロファイル——ログインも含めて——を通じてライブな Web を読み取り、見つけた内容を図とソート可能な CSV に変換します。
+
+![browser-control でユーザー自身の Chrome を操作し、bioRxiv のプレプリントを収集してチャートと CSV にするエージェント](./docs/assets/showcase-browser.webp)
 
 **どこからでも研究——スマホからでも。** 組み込みの認証ゲートウェイが*本物の*デスクトップ UI を LAN 上のブラウザ（またはトンネル）へ配信するので、デスクで実行を開始し、完成した図とレポートをスマホで読めます。
 
 <table align="center">
   <tr>
-    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-home.webp" width="300" alt="スマホのブラウザで動作するワークベンチ——新規セッション画面"><br><sub>新規セッション——スマホのブラウザで</sub></td>
-    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-run.webp" width="300" alt="スマホで表示した、完成した用量反応分析"><br><sub>完成した分析——図 &amp; レポート</sub></td>
+    <td align="center" width="33%"><img src="./docs/assets/showcase-mobile-home.webp" width="240" alt="スマホのブラウザで動作するワークベンチ:スターター分析付きの新規セッション画面"><br><sub>新規セッション</sub></td>
+    <td align="center" width="33%"><img src="./docs/assets/showcase-mobile-run.webp" width="240" alt="スマホで表示した、完成した用量反応分析——スクリプト、結果、図、レポート"><br><sub>完成した分析</sub></td>
+    <td align="center" width="33%"><img src="./docs/assets/showcase-mobile-reproduce.webp" width="240" alt="スマホで表示した、ARI 対エポック図を伴う scVI ベンチマークの再現"><br><sub>再現したベンチマーク</sub></td>
   </tr>
 </table>
-
-**あなた自身の Chrome を操作。** エージェントはあなた自身のブラウザプロファイル——ログインも含めて——を通じてライブな Web を読み取り、見つけた内容を図とソート可能な CSV に変換します。
-
-![browser-control でユーザー自身の Chrome を操作し、bioRxiv のプレプリントを収集してチャートと CSV にするエージェント](./docs/assets/showcase-browser.webp)
 
 <details>
 <summary><b>その他のスクリーンショット</b></summary>
 
 <br>
 
-![固定された環境、実行ログ、来歴とともにリモート A100 上で scVI ベンチマークを再現](./docs/assets/showcase-remote.webp)
+![固定された環境、実行ログ、来歴とともにリモート A100 上で scVI 統合ベンチマークを再現](./docs/assets/showcase-remote.webp)
 
-![Jupyter notebook](./docs/assets/showcase-notebook.webp)
-
-![Experiment sweep](./docs/assets/showcase-experiment.webp)
-
-![Skills library](./docs/assets/showcase-skills.webp)
+![エージェントのカーネルを共有するライブ分析ノートブックの隣にある、8 アームの scVI ハイパーパラメータスイープ表](./docs/assets/showcase-experiment.webp)
 
 </details>
 
