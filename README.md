@@ -92,48 +92,43 @@ write-up, in one continuous, auditable session.
 
 ## See it in action
 
-**One prompt -> a complete, traceable analysis.** Simulate data, fit a model, save a
-publication-grade figure, and write a report where every number traces to the code.
+**One prompt -> a publication-grade figure, and every point traces to the exact code
+and inputs that made it.** No black boxes: open any artifact to see its generating
+script, its data files, and the conversation that produced it.
 
-![End-to-end dose-response analysis: the agent runs code and produces a fitted figure and a report](./docs/assets/showcase-workflow.webp)
+![A rendered cross-species atlas figure beside its generating script and input files in the artifact inspector](./docs/assets/showcase-provenance.webp)
 
-**Every artifact traces back to its code, inputs, and conversation.**
+**Literature -> a verifiable report.** Fan the search out across sources, draft a
+manuscript rendered as a PDF, and gate it on a citation review — DOIs resolved,
+unsourced numbers and figure/code inconsistencies flagged — before anything ships.
 
-![Artifact inspector showing a figure's generating code, inputs, and provenance](./docs/assets/showcase-provenance.webp)
-
-**Literature -> verifiable report.** Search papers, draft a manuscript rendered as a
-PDF, and audit citations, unsourced numbers, and figure/code consistency.
-
-![Literature survey producing a rendered PDF manuscript with a traceability review](./docs/assets/showcase-literature.webp)
-
-**Research from anywhere — even your phone.** A built-in authenticated gateway serves
-the *real* desktop UI to a browser on your LAN (or a tunnel), so you can start a run at
-your desk and read the finished figure and report on your phone.
-
-<table align="center">
-  <tr>
-    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-home.webp" width="300" alt="The workbench running in a phone browser: the new-session screen"><br><sub>New session — in a phone browser</sub></td>
-    <td align="center" width="50%"><img src="./docs/assets/showcase-mobile-run.webp" width="300" alt="A completed dose-response analysis — figure and report — viewed on a phone"><br><sub>A finished analysis — figure &amp; report</sub></td>
-  </tr>
-</table>
+![A protein-language-model literature survey compiled into a PDF manuscript, with a citation reviewer confirming every DOI resolves](./docs/assets/showcase-literature.webp)
 
 **Drives your own Chrome.** The agent reads the live web through your real browser
 profile — logins and all — then turns what it finds into a figure and a sortable CSV.
 
 ![The agent driving the user's own Chrome via browser-control to harvest bioRxiv preprints into a chart and CSV](./docs/assets/showcase-browser.webp)
 
+**Research from anywhere — even your phone.** A built-in authenticated gateway serves
+the *real* desktop UI to a browser on your LAN (or a tunnel), so you can kick off a run
+at your desk and read the finished figure and report on your phone.
+
+<table align="center">
+  <tr>
+    <td align="center" width="33%"><img src="./docs/assets/showcase-mobile-home.webp" width="240" alt="The workbench in a phone browser: the new-session screen with starter analyses"><br><sub>New session</sub></td>
+    <td align="center" width="33%"><img src="./docs/assets/showcase-mobile-run.webp" width="240" alt="A completed dose-response analysis — script, results, figure, and report — on a phone"><br><sub>A finished analysis</sub></td>
+    <td align="center" width="33%"><img src="./docs/assets/showcase-mobile-reproduce.webp" width="240" alt="Reproducing an scVI benchmark, with its ARI-vs-epoch figure, viewed on a phone"><br><sub>A reproduced benchmark</sub></td>
+  </tr>
+</table>
+
 <details>
 <summary><b>More screenshots</b></summary>
 
 <br>
 
-![Reproducing an scVI benchmark on a remote A100 with a pinned environment, execution log, and provenance](./docs/assets/showcase-remote.webp)
+![Reproducing an scVI integration benchmark on a remote A100 with a pinned environment, execution log, and provenance](./docs/assets/showcase-remote.webp)
 
-![The agent driving a Jupyter notebook with a live matplotlib figure](./docs/assets/showcase-notebook.webp)
-
-![An experiment sweep table alongside a live analysis notebook](./docs/assets/showcase-experiment.webp)
-
-![The skills library listing bundled scientific skills](./docs/assets/showcase-skills.webp)
+![An 8-arm scVI hyperparameter sweep table beside a live analysis notebook sharing the agent's kernel](./docs/assets/showcase-experiment.webp)
 
 </details>
 
