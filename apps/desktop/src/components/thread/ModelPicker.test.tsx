@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -59,19 +59,31 @@ describe("ModelPicker", () => {
     expect(within(dialog).getByText("GPT-mini")).toBeInTheDocument();
   });
 
-  it("builds the reasoning control from the current model's variants and pins the choice", async () => {
+  it("builds a reasoning slider from the current model's variants and pins the choice", async () => {
     const user = userEvent.setup();
     renderPicker();
     await user.click(chip());
     const dialog = screen.getByRole("dialog");
     await user.click(within(dialog).getByText(/reasoning effort/i)); // expand Advanced
-    // Exactly the model's own levels — ordered — are offered.
-    for (const level of ["Low", "Medium", "High"])
-      expect(within(dialog).getByRole("button", { name: level })).toBeInTheDocument();
+    const slider = within(dialog).getByRole("slider");
+    expect(slider).toHaveAttribute("aria-valuemax", "2"); // low / medium / high → 0..2
 
-    await user.click(within(dialog).getByRole("button", { name: "High" }));
+    fireEvent.keyDown(slider, { key: "End" }); // jump to the highest level
     expect(useRuntimeStore.getState().reasoningVariant).toBe("high");
     expect(chip()).toHaveTextContent("High"); // effort surfaces on the chip
+  });
+
+  it("steps the reasoning slider and clears to model default past the first level", async () => {
+    const user = userEvent.setup();
+    renderPicker();
+    await user.click(chip());
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByText(/reasoning effort/i));
+    const slider = within(dialog).getByRole("slider");
+    fireEvent.keyDown(slider, { key: "Home" }); // lowest = low
+    expect(useRuntimeStore.getState().reasoningVariant).toBe("low");
+    fireEvent.keyDown(slider, { key: "ArrowLeft" }); // past the first stop → default
+    expect(useRuntimeStore.getState().reasoningVariant).toBeNull();
   });
 
   it("hides the reasoning control for a model with no levels", async () => {

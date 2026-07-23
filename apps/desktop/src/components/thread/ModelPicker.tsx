@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { Check, ChevronDown, ChevronRight, Cpu, Loader2, Search, Star, X, Zap } from "lucide-react";
@@ -24,6 +31,125 @@ import {
 function labelVariant(name: string): string {
   if (name === "xhigh") return "X-High";
   return name.charAt(0).toLocaleUpperCase() + name.slice(1);
+}
+
+/**
+ * Codex-style effort slider over a model's reasoning variants. Stops are laid
+ * edge-to-edge (variant[0] hard left → variant[n-1] hard right), the knob tracks
+ * the pointer continuously and the value snaps to the nearest stop, and it's
+ * fully keyboard-operable (←/→, Home/End; ← past the first stop clears back to
+ * the model default). `value` null = no override (empty track, nothing sent).
+ */
+function ReasoningSlider({
+  variants,
+  value,
+  onChange,
+  label,
+}: {
+  variants: string[];
+  value: string | null;
+  onChange: (v: string | null) => void;
+  label: string;
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  // Live drag fraction (0..1) so the knob follows the finger between stops; null
+  // when not dragging (knob rests on the committed stop).
+  const [dragFrac, setDragFrac] = useState<number | null>(null);
+  const n = variants.length;
+  const idx = value ? variants.indexOf(value) : -1;
+  const pctOf = (i: number) => (n > 1 ? (i / (n - 1)) * 100 : 50);
+
+  const commitFromClientX = (clientX: number) => {
+    const rect = trackRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return;
+    const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    setDragFrac(frac);
+    onChange(variants[Math.round(frac * (n - 1))]);
+  };
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    commitFromClientX(e.clientX);
+  };
+  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (dragFrac === null) return; // only while dragging (pointer captured)
+    commitFromClientX(e.clientX);
+  };
+  const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    setDragFrac(null);
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+  };
+
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+      e.preventDefault();
+      onChange(variants[Math.min((idx < 0 ? -1 : idx) + 1, n - 1)]);
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+      e.preventDefault();
+      onChange(idx <= 0 ? null : variants[idx - 1]);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      onChange(variants[0]);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      onChange(variants[n - 1]);
+    }
+  };
+
+  // Continuous knob/fill position: the live drag fraction while dragging, else
+  // the committed stop. The lit-dot count follows whichever is active.
+  const livePct = dragFrac !== null ? dragFrac * 100 : idx >= 0 ? pctOf(idx) : null;
+  const litIdx = dragFrac !== null ? Math.round(dragFrac * (n - 1)) : idx;
+
+  return (
+    <div
+      role="slider"
+      tabIndex={0}
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={n - 1}
+      aria-valuenow={idx < 0 ? undefined : idx}
+      aria-valuetext={value ? labelVariant(value) : undefined}
+      onKeyDown={onKeyDown}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      className="relative flex h-7 cursor-pointer touch-none items-center px-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+    >
+      <div ref={trackRef} className="relative h-1.5 w-full rounded-full bg-surface-2">
+        {livePct !== null && (
+          <div
+            className={cn(
+              "absolute left-0 top-0 h-full rounded-full bg-accent",
+              dragFrac === null && "transition-[width] duration-100",
+            )}
+            style={{ width: `${livePct}%` }}
+          />
+        )}
+        {variants.map((v, i) => (
+          <span
+            key={v}
+            className={cn(
+              "absolute top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full",
+              litIdx >= 0 && i <= litIdx ? "bg-accent-fg/80" : "bg-muted/50",
+            )}
+            style={{ left: `${pctOf(i)}%` }}
+          />
+        ))}
+        {livePct !== null && (
+          <div
+            className={cn(
+              "pointer-events-none absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/10 bg-white shadow-pop",
+              dragFrac === null && "transition-[left] duration-100",
+            )}
+            style={{ left: `${livePct}%` }}
+          />
+        )}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -76,7 +202,6 @@ export function ModelPicker() {
   // store's `activeVariant`, so the chip never claims an effort that won't send).
   const activeVariant =
     reasoningVariant && currentVariants.includes(reasoningVariant) ? reasoningVariant : null;
-  const activeIdx = activeVariant ? currentVariants.indexOf(activeVariant) : -1;
 
   const visible = filterModelOptions(options, filter, query, prefs.favorites, prefs.recent);
 
@@ -276,48 +401,13 @@ export function ModelPicker() {
             </span>
           </button>
           {advancedOpen && (
-            <div className="px-2 pb-2.5 pt-3">
-              {/* Segmented slider over the model's own levels. Each level is a hit
-                  target with a dot; the fill + knob mark the current effort. No
-                  fill/knob means "model default" (nothing sent). */}
-              <div className="relative h-5 select-none">
-                <div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-surface-2" />
-                {activeIdx >= 0 && (
-                  <div
-                    className="absolute left-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-accent"
-                    style={{ width: `${((activeIdx + 0.5) / currentVariants.length) * 100}%` }}
-                  />
-                )}
-                <div className="absolute inset-0 flex">
-                  {currentVariants.map((v, i) => (
-                    <button
-                      key={v}
-                      type="button"
-                      aria-label={labelVariant(v)}
-                      aria-pressed={i === activeIdx}
-                      // Re-tapping the active level clears it → the model's default.
-                      onClick={() => setReasoningVariant(v === activeVariant ? null : v)}
-                      className="flex flex-1 items-center justify-center"
-                    >
-                      <span
-                        className={cn(
-                          "h-1.5 w-1.5 rounded-full",
-                          activeIdx >= 0 && i <= activeIdx ? "bg-accent-fg/80" : "bg-muted/40",
-                        )}
-                      />
-                    </button>
-                  ))}
-                </div>
-                {activeIdx >= 0 && (
-                  <div
-                    className="pointer-events-none absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/10 bg-white shadow-pop"
-                    style={{ left: `${((activeIdx + 0.5) / currentVariants.length) * 100}%` }}
-                  />
-                )}
-              </div>
-              <p className="px-0.5 pt-2.5 text-[11px] text-muted">
-                {t("composer.model.reasoningHint")}
-              </p>
+            <div className="px-1 pb-1.5 pt-1">
+              <ReasoningSlider
+                variants={currentVariants}
+                value={activeVariant}
+                onChange={setReasoningVariant}
+                label={t("composer.model.reasoning")}
+              />
             </div>
           )}
         </div>
