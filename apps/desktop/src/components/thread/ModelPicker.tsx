@@ -160,7 +160,10 @@ function ReasoningSlider({
               key={v}
               className={cn(
                 "absolute top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform duration-100 hover:scale-[1.9]",
-                litIdx >= 0 && i <= litIdx ? "bg-white/90" : "bg-muted/80",
+                // Solid muted gray so the stops are clearly visible on the light
+                // (near-white) track by default; white only where the blue fill
+                // is behind them.
+                litIdx >= 0 && i <= litIdx ? "bg-white/90" : "bg-muted",
               )}
               style={{ left: posOf(fracOf(i)) }}
             />
