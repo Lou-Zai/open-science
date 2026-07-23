@@ -32,7 +32,11 @@ describe("ModelPicker", () => {
 
   beforeEach(() => {
     window.localStorage.clear();
-    setDefaultModel = vi.fn().mockResolvedValue(undefined);
+    // Mirror the real store action: switching the default updates the state the
+    // picker reads (so a switch to a reasoning model then exposes its slider).
+    setDefaultModel = vi.fn(async (model: string) => {
+      useRuntimeStore.setState({ defaultModel: model });
+    });
     useRuntimeStore.setState({
       providers,
       defaultModel: "openai/gpt-5",
@@ -110,6 +114,9 @@ describe("ModelPicker", () => {
     await user.click(chip());
     await user.click(within(screen.getByRole("dialog")).getByText("GPT-5"));
     expect(setDefaultModel).toHaveBeenCalledWith("openai/gpt-5");
-    expect(screen.queryByRole("dialog")).not.toBeNull();
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).not.toBeNull();
+    // Advanced auto-expands so the effort slider is right there to adjust.
+    expect(within(dialog).getByRole("slider")).toBeInTheDocument();
   });
 });

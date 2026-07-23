@@ -86,7 +86,8 @@
       },
       "reasoning": "Effort de raisonnement",
       "reasoningDefault": "Défaut du modèle",
-      "reasoningHint": "Touchez à nouveau le niveau actif pour utiliser le défaut du modèle."
+      "faster": "Plus rapide",
+      "smarter": "Plus intelligent"
     }
   },
   "localCommand": {

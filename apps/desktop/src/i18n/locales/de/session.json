@@ -86,7 +86,8 @@
       },
       "reasoning": "Denkaufwand",
       "reasoningDefault": "Modellstandard",
-      "reasoningHint": "Tippe die aktive Stufe erneut an, um den Modellstandard zu verwenden."
+      "faster": "Schneller",
+      "smarter": "Klüger"
     }
   },
   "localCommand": {

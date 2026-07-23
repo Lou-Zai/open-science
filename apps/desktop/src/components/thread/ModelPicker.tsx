@@ -35,21 +35,29 @@ function labelVariant(name: string): string {
 
 /**
  * Codex-style effort slider over a model's reasoning variants. Stops are laid
- * edge-to-edge (variant[0] hard left → variant[n-1] hard right), the knob tracks
- * the pointer continuously and the value snaps to the nearest stop, and it's
- * fully keyboard-operable (←/→, Home/End; ← past the first stop clears back to
- * the model default). `value` null = no override (empty track, nothing sent).
+ * edge-to-edge (variant[0] hard left → variant[n-1] hard right) with the knob
+ * inset by its radius so the end stops line up; the knob tracks the pointer
+ * continuously and snaps to the nearest stop on release; dots grow on hover and
+ * a click jumps to that stop; it's fully keyboard-operable (←/→, Home/End; ←
+ * past the first stop clears to the model default). `value` null = no override
+ * (empty track, nothing sent). `flash` bumps to pulse the track for attention.
  */
 function ReasoningSlider({
   variants,
   value,
   onChange,
   label,
+  minLabel,
+  maxLabel,
+  flash,
 }: {
   variants: string[];
   value: string | null;
   onChange: (v: string | null) => void;
   label: string;
+  minLabel: string;
+  maxLabel: string;
+  flash: number;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
   // Live drag fraction (0..1) so the knob follows the finger between stops; null
@@ -57,12 +65,16 @@ function ReasoningSlider({
   const [dragFrac, setDragFrac] = useState<number | null>(null);
   const n = variants.length;
   const idx = value ? variants.indexOf(value) : -1;
-  const pctOf = (i: number) => (n > 1 ? (i / (n - 1)) * 100 : 50);
+  // The knob radius (h-7 → 14px) each stop is inset by, so index 0 sits flush at
+  // the left and index n-1 flush at the right without the knob clipping.
+  const fracOf = (i: number) => (n > 1 ? i / (n - 1) : 0.5);
+  const posOf = (f: number) => `calc(0.875rem + (100% - 1.75rem) * ${f})`;
 
   const commitFromClientX = (clientX: number) => {
     const rect = trackRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0) return;
-    const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const usable = Math.max(1, rect.width - 28); // minus the two knob radii
+    const frac = Math.min(1, Math.max(0, (clientX - rect.left - 14) / usable));
     setDragFrac(frac);
     onChange(variants[Math.round(frac * (n - 1))]);
   };
@@ -97,56 +109,70 @@ function ReasoningSlider({
     }
   };
 
-  // Continuous knob/fill position: the live drag fraction while dragging, else
-  // the committed stop. The lit-dot count follows whichever is active.
-  const livePct = dragFrac !== null ? dragFrac * 100 : idx >= 0 ? pctOf(idx) : null;
+  // Continuous knob/fill fraction: the live drag while dragging, else the
+  // committed stop. The lit-dot count follows whichever is active.
+  const liveFrac = dragFrac !== null ? dragFrac : idx >= 0 ? fracOf(idx) : null;
   const litIdx = dragFrac !== null ? Math.round(dragFrac * (n - 1)) : idx;
 
   return (
-    <div
-      role="slider"
-      tabIndex={0}
-      aria-label={label}
-      aria-valuemin={0}
-      aria-valuemax={n - 1}
-      aria-valuenow={idx < 0 ? undefined : idx}
-      aria-valuetext={value ? labelVariant(value) : undefined}
-      onKeyDown={onKeyDown}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endDrag}
-      onPointerCancel={endDrag}
-      className="relative flex h-7 cursor-pointer touch-none items-center px-2.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-    >
-      <div ref={trackRef} className="relative h-1.5 w-full rounded-full bg-surface-2">
-        {livePct !== null && (
-          <div
-            className={cn(
-              "absolute left-0 top-0 h-full rounded-full bg-accent",
-              dragFrac === null && "transition-[width] duration-100",
-            )}
-            style={{ width: `${livePct}%` }}
-          />
-        )}
-        {variants.map((v, i) => (
-          <span
-            key={v}
-            className={cn(
-              "absolute top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full",
-              litIdx >= 0 && i <= litIdx ? "bg-accent-fg/80" : "bg-muted/50",
-            )}
-            style={{ left: `${pctOf(i)}%` }}
-          />
-        ))}
-        {livePct !== null && (
-          <div
-            className={cn(
-              "pointer-events-none absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/10 bg-white shadow-pop",
-              dragFrac === null && "transition-[left] duration-100",
-            )}
-            style={{ left: `${livePct}%` }}
-          />
-        )}
+    <div>
+      <div className="mb-1.5 flex justify-between px-1 text-[11px] text-muted">
+        <span>{minLabel}</span>
+        <span>{maxLabel}</span>
+      </div>
+      <div
+        role="slider"
+        tabIndex={0}
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={n - 1}
+        aria-valuenow={idx < 0 ? undefined : idx}
+        aria-valuetext={value ? labelVariant(value) : undefined}
+        onKeyDown={onKeyDown}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        className="relative flex h-8 cursor-pointer touch-none items-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+      >
+        {/* key={flash} replays the attention pulse each time a reasoning model is picked */}
+        <div
+          ref={trackRef}
+          key={flash}
+          className={cn(
+            "relative h-6 w-full rounded-full bg-surface-2",
+            flash > 0 && "animate-effort-flash",
+          )}
+        >
+          {liveFrac !== null && (
+            <div
+              className={cn(
+                "absolute inset-y-0 left-0 rounded-full bg-accent",
+                dragFrac === null && "transition-[width] duration-100",
+              )}
+              style={{ width: posOf(liveFrac) }}
+            />
+          )}
+          {variants.map((v, i) => (
+            <span
+              key={v}
+              className={cn(
+                "absolute top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-transform duration-100 hover:scale-[1.9]",
+                litIdx >= 0 && i <= litIdx ? "bg-accent-fg/80" : "bg-muted/60",
+              )}
+              style={{ left: posOf(fracOf(i)) }}
+            />
+          ))}
+          {liveFrac !== null && (
+            <div
+              className={cn(
+                "pointer-events-none absolute top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 rounded-full border border-black/5 bg-white shadow-md",
+                dragFrac === null && "transition-[left] duration-100",
+              )}
+              style={{ left: posOf(liveFrac) }}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
@@ -183,6 +209,9 @@ export function ModelPicker() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<ModelFilter>({ kind: "all" });
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  // Bumped when a reasoning-capable model is picked → pulses the effort slider
+  // so it's clear an effort can be set (and where).
+  const [flash, setFlash] = useState(0);
   const [prefs, setPrefs] = useState<ModelPreferences>(() => loadModelPreferences());
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -247,9 +276,14 @@ export function ModelPicker() {
   const selectModel = async (key: string) => {
     persistPrefs(recordRecent(prefs, key));
     // Reasoning-capable models keep the picker open so the user can dial in the
-    // effort right after the switch; models with nothing more to adjust close it.
-    if ((variantsByKey.get(key) ?? []).length > 0) setAdvancedOpen(true);
-    else setOpen(false);
+    // effort right after the switch (and the slider pulses to point it out);
+    // models with nothing more to adjust close it.
+    if ((variantsByKey.get(key) ?? []).length > 0) {
+      setAdvancedOpen(true);
+      setFlash((f) => f + 1);
+    } else {
+      setOpen(false);
+    }
     if (key !== defaultModel) {
       try {
         await setDefaultModel(key);
@@ -401,12 +435,15 @@ export function ModelPicker() {
             </span>
           </button>
           {advancedOpen && (
-            <div className="px-1 pb-1.5 pt-1">
+            <div className="px-1.5 pb-1 pt-1">
               <ReasoningSlider
                 variants={currentVariants}
                 value={activeVariant}
                 onChange={setReasoningVariant}
                 label={t("composer.model.reasoning")}
+                minLabel={t("composer.model.faster")}
+                maxLabel={t("composer.model.smarter")}
+                flash={flash}
               />
             </div>
           )}

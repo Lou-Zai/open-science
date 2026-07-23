@@ -86,7 +86,8 @@
       },
       "reasoning": "推理强度",
       "reasoningDefault": "模型默认",
-      "reasoningHint": "再次点击当前档位可恢复模型默认。"
+      "faster": "更快",
+      "smarter": "更强"
     }
   },
   "localCommand": {

@@ -86,7 +86,8 @@
       },
       "reasoning": "Esfuerzo de razonamiento",
       "reasoningDefault": "Predeterminado del modelo",
-      "reasoningHint": "Toca de nuevo el nivel activo para usar el predeterminado del modelo."
+      "faster": "Más rápido",
+      "smarter": "Más inteligente"
     }
   },
   "localCommand": {

@@ -86,7 +86,8 @@
       },
       "reasoning": "추론 강도",
       "reasoningDefault": "모델 기본값",
-      "reasoningHint": "선택된 단계를 다시 누르면 모델 기본값을 사용합니다."
+      "faster": "더 빠르게",
+      "smarter": "더 똑똑하게"
     }
   },
   "localCommand": {

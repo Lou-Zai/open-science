@@ -217,6 +217,22 @@ body {
   display: none;
 }
 
+/* One-shot attention pulse for the reasoning-effort slider when a model that
+   supports it is picked — so it's clear where the effort control is. */
+@keyframes effort-flash {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+  }
+  35%,
+  65% {
+    box-shadow: 0 0 0 3px var(--accent);
+  }
+}
+.animate-effort-flash {
+  animation: effort-flash 0.6s ease-in-out 2;
+}
+
 /* highlight.js token colors on the per-theme --hl-* variables (CodeViewer).
    Grouping mirrors highlight.js's github/github-dark themes so every language
    grammar maps the same way; a bundled stylesheet would hardcode one theme. */

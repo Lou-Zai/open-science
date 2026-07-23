@@ -86,7 +86,8 @@
       },
       "reasoning": "Reasoning effort",
       "reasoningDefault": "Model default",
-      "reasoningHint": "Tap the active level again to use the model's default."
+      "faster": "Faster",
+      "smarter": "Smarter"
     }
   },
   "localCommand": {
