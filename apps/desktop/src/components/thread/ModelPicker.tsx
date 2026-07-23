@@ -177,12 +177,12 @@ export function ModelPicker() {
 
       {/* Filter chips */}
       {options.length > 0 && (
-        <div className="flex gap-1 overflow-x-auto border-b border-faint px-2 py-1.5">
+        <div className="no-scrollbar flex gap-1 overflow-x-auto border-b border-faint px-2 py-1.5">
           {filterChips.map((chip) => (
             <button
               key={chip.key}
               className={cn(
-                "flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px]",
+                "flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[11px]",
                 isActiveFilter(chip.value)
                   ? "bg-accent/15 text-accent"
                   : "text-muted hover:bg-surface-2 hover:text-text",

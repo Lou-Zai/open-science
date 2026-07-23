@@ -208,6 +208,15 @@ body {
   background-clip: content-box;
 }
 
+/* Horizontal scroll rows (e.g. the model picker's filter chips) where a visible
+   scrollbar would eat row height and clip the content. Still scrolls by drag/wheel. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* highlight.js token colors on the per-theme --hl-* variables (CodeViewer).
    Grouping mirrors highlight.js's github/github-dark themes so every language
    grammar maps the same way; a bundled stylesheet would hardcode one theme. */
