@@ -32,6 +32,8 @@ import { useUpdateStore } from "@/lib/update";
 import { overlayTitlebarStyle } from "@/lib/titlebar";
 import { visibleSections, resolveSection } from "@/components/settings/sections";
 import { useIsMobile } from "@/lib/useIsMobile";
+import { useDragDivider } from "@/lib/useDragDivider";
+import { useLayoutStore } from "@/lib/layout";
 import { isGatewayWeb } from "@/lib/webMode";
 import { StatusPills } from "./StatusPills";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -99,34 +101,23 @@ export function Sidebar({ project }: { project: Project }) {
     setSidebarWidth,
     toggleSidebar,
   } = useUiStore();
-  // While dragging, the live width lives here; the store (and localStorage)
-  // are only written on pointer-up.
-  const [dragWidth, setDragWidth] = useState<number | null>(null);
-  const dragging = dragWidth !== null;
-
-  const onDividerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setDragWidth(sidebarWidth);
-  };
-
-  const onDividerPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragging) return;
-    // The sidebar starts at the window's left edge, so clientX is the width.
-    const x = e.clientX;
-    if (x < COLLAPSE_BELOW && !inSettings) {
+  // The sidebar starts at the window's left edge, so clientX is the width;
+  // dragging left of COLLAPSE_BELOW snaps it collapsed but keeps the drag alive
+  // (unless in Settings, which never collapses) so dragging back out re-opens it.
+  const { dragging, dragValue: dragWidth, handleProps } = useDragDivider({
+    value: sidebarWidth,
+    compute: ({ x }) => {
+      if (x < COLLAPSE_BELOW && !inSettings) return null;
+      return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, x));
+    },
+    onCommit: setSidebarWidth,
+    onCollapse: () => {
       if (!sidebarCollapsed) setSidebarCollapsed(true);
-      return;
-    }
-    if (sidebarCollapsed) setSidebarCollapsed(false);
-    setDragWidth(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, x)));
-  };
-
-  const onDividerPointerUp = () => {
-    if (!dragging) return;
-    setSidebarWidth(dragWidth);
-    setDragWidth(null);
-  };
+    },
+    onExpand: () => {
+      if (sidebarCollapsed) setSidebarCollapsed(false);
+    },
+  });
 
   const startNew = () => {
     startDraft();
@@ -288,6 +279,21 @@ export function Sidebar({ project }: { project: Project }) {
     <div key={row.to} className="group relative">
       <NavLink
         to={row.to}
+        onClick={(e) => {
+          // Modifier-click opens an existing session in a NEW split pane instead
+          // of navigating the focused one (desktop only — tiling is disabled on
+          // phone width and the web gateway).
+          if (
+            row.kind === "session" &&
+            !isMobile &&
+            !isGatewayWeb &&
+            (e.metaKey || e.ctrlKey || e.altKey)
+          ) {
+            e.preventDefault();
+            // eslint-disable-next-line i18next/no-literal-string -- SplitDir enum, not UI copy
+            useLayoutStore.getState().split("row", row.id);
+          }
+        }}
         className={cn(
           "flex items-center gap-2 rounded-input py-1 pl-2 pr-8 text-[13px] hover:bg-surface-2",
           location.pathname === row.to
@@ -708,10 +714,7 @@ export function Sidebar({ project }: { project: Project }) {
           left snaps the sidebar closed. Kept mounted while collapsed so an
           in-flight drag (pointer capture) can re-open it. */}
       <div
-        onPointerDown={onDividerPointerDown}
-        onPointerMove={onDividerPointerMove}
-        onPointerUp={onDividerPointerUp}
-        onPointerCancel={onDividerPointerUp}
+        {...handleProps}
         className={cn(
           "group absolute inset-y-0 right-0 z-10 w-[5px] cursor-col-resize",
           sidebarCollapsed && !dragging && "pointer-events-none",

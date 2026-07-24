@@ -125,6 +125,7 @@ export function Composer({
   agentMode,
   onAgentModeChange,
   showModelPicker,
+  showWorkspaceChip = true,
 }: {
   onSend?: (text: string) => void;
   onRunShell?: (command: string) => void;
@@ -147,6 +148,9 @@ export function Composer({
   /** Show the inline model + reasoning-effort switcher (left of send). The live
    *  session opts in; static mock sessions have no runtime to switch. */
   showModelPicker?: boolean;
+  /** Show the draft workspace-folder chip. Only the draft pane opts in — in a
+   *  split layout the other panes already have a bound session/folder. */
+  showWorkspaceChip?: boolean;
 }) {
   const { t } = useTranslation(["session", "common"]);
   const resolvedPlaceholder = placeholder ?? t("composer.placeholder.default");
@@ -648,7 +652,7 @@ export function Composer({
         )}
         {/* Folder picker for a fresh draft — renders nothing once the session
             exists (its folder then shows in the header's Files toggle). */}
-        <WorkspaceChip />
+        {showWorkspaceChip && <WorkspaceChip />}
         {agentMode && onAgentModeChange && (
           <div className="relative shrink-0" ref={agentRef}>
             {agentOpen && (

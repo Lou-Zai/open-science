@@ -244,6 +244,7 @@ beforeEach(async () => {
     threads: {},
     error: null,
     sending: false,
+    sendingSessions: {},
     runningSessions: {},
     permissions: [],
     sessionParents: {},

@@ -1,592 +1,135 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { useTranslation } from "react-i18next";
-import { FlaskConical, FolderOpen, Loader2, NotebookPen, PanelLeft, PlugZap } from "lucide-react";
-import type { RuntimeStatus } from "@ai4s/shared";
-import { DRAFT_KEY, rootSessionOf, useRuntimeStore } from "@/lib/runtime";
-import { queryRuns } from "@/lib/runs";
-import { useOverlayTitlebar, useUiStore } from "@/lib/store";
-import { overlayTitlebarStyle } from "@/lib/titlebar";
-import { fileInspectorFromBlock } from "@/lib/artifacts";
-import { useScrollMemory } from "@/lib/scrollMemory";
-import { BlockList, type BlockHandlers } from "@/components/thread/BlockList";
-import { Elapsed } from "@/components/thread/ToolGroup";
-import { Composer } from "@/components/thread/Composer";
-import { GOAL_RESUME_NUDGE, GoalPill } from "@/components/thread/GoalPill";
-import { baseName } from "@/components/thread/WorkspaceChip";
-import { WorkflowStarters } from "@/components/thread/WorkflowStarters";
-import { InteractionPrompt } from "@/components/thread/InteractionPrompt";
-import { InspectorShell } from "@/components/inspector/InspectorShell";
-import { MaximizePaneButton, RightPane } from "@/components/inspector/RightPane";
-import { SessionFilesPane } from "./FilesPage";
-import { RunsPane } from "./RunsPage";
-import { cn } from "@/lib/cn";
+import { useEffect, useMemo } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useRuntimeStore } from "@/lib/runtime";
+import { findLeaf, leaves, useLayoutStore } from "@/lib/layout";
+import { useIsMobile } from "@/lib/useIsMobile";
+import { isGatewayWeb } from "@/lib/webMode";
+import { SessionView } from "@/components/session/SessionView";
+import { PaneTree } from "@/components/session/PaneTree";
 
-/** Live agent session backed by the OpenCode runtime. `/live` (no id) is a blank draft;
- *  the session is created lazily on the first message, then the URL updates to /live/:id. */
+/**
+ * Live agent surface. Owns the split-layout ↔ runtime plumbing: it keeps the
+ * URL and the single directory-scoped stream (`openSession`) in step with the
+ * FOCUSED pane, and renders either a single session (one pane, or the web /
+ * phone fallback where tiling can't work) or the ghostty-style pane tree.
+ *
+ * Per-session concerns (thread, composer, right pane) live in SessionView; this
+ * wrapper never reads them, so a background pane's SSE folds don't repaint it.
+ */
 export function LiveSessionPage() {
-  const { t } = useTranslation(["session", "common"]);
-  const { sessionId } = useParams();
+  const params = useParams();
   const navigate = useNavigate();
-  // Select each field individually rather than a bare `useRuntimeStore()`. A
-  // whole-store subscription re-renders this page — the conversation on screen —
-  // on EVERY mutation, including the SSE fold of every tool/text event for any
-  // session (background subagents included). Under a tool-heavy session that is
-  // a per-event repaint storm that freezes the WebView (#34). The active thread
-  // is selected on its own below, so a background subagent's folds never touch
-  // this page. Actions are stable store references — selecting them never
-  // triggers a render.
+  const location = useLocation();
+
+  const tree = useLayoutStore((s) => s.tree);
+  const focusedLeafId = useLayoutStore((s) => s.focusedLeafId);
+  const pruneSessions = useLayoutStore((s) => s.pruneSessions);
+  const focusedLeaf = findLeaf(tree, focusedLeafId);
+  const focusedSid = focusedLeaf?.sessionId ?? null;
+
   const status = useRuntimeStore((s) => s.status);
   const switching = useRuntimeStore((s) => s.switching);
-  const webReadOnly = useRuntimeStore((s) => s.webReadOnly);
-  const sending = useRuntimeStore((s) => s.sending);
-  const runningSessions = useRuntimeStore((s) => s.runningSessions);
-  const stepCounts = useRuntimeStore((s) => s.stepCounts);
-  const retryNotices = useRuntimeStore((s) => s.retryNotices);
-  const serverUrl = useRuntimeStore((s) => s.serverUrl);
   const sessions = useRuntimeStore((s) => s.sessions);
-  const currentId = useRuntimeStore((s) => s.currentId);
-  const error = useRuntimeStore((s) => s.error);
-  const questions = useRuntimeStore((s) => s.questions);
-  const permissions = useRuntimeStore((s) => s.permissions);
-  const sessionParents = useRuntimeStore((s) => s.sessionParents);
   const workspace = useRuntimeStore((s) => s.workspace);
-  const panes = useRuntimeStore((s) => s.panes);
-  const commands = useRuntimeStore((s) => s.commands);
-  const connect = useRuntimeStore((s) => s.connect);
+  const runningCount = useRuntimeStore((s) => Object.keys(s.runningSessions).length);
   const openSession = useRuntimeStore((s) => s.openSession);
   const startDraft = useRuntimeStore((s) => s.startDraft);
-  const sendPrompt = useRuntimeStore((s) => s.sendPrompt);
-  const runShell = useRuntimeStore((s) => s.runShell);
-  const runCommand = useRuntimeStore((s) => s.runCommand);
-  const openArtifact = useRuntimeStore((s) => s.openArtifact);
-  const closeArtifact = useRuntimeStore((s) => s.closeArtifact);
-  const setShowFiles = useRuntimeStore((s) => s.setShowFiles);
-  const setShowRuns = useRuntimeStore((s) => s.setShowRuns);
-  const answerQuestion = useRuntimeStore((s) => s.answerQuestion);
-  const rejectQuestion = useRuntimeStore((s) => s.rejectQuestion);
-  const replyPermission = useRuntimeStore((s) => s.replyPermission);
-  const interrupt = useRuntimeStore((s) => s.interrupt);
-  const editMessage = useRuntimeStore((s) => s.editMessage);
-  const revertMessage = useRuntimeStore((s) => s.revertMessage);
-  const setComposerDraft = useUiStore((s) => s.setComposerDraft);
   const reconcileRunning = useRuntimeStore((s) => s.reconcileRunning);
-  const approvalMode = useRuntimeStore((s) => s.approvalMode);
-  const setApprovalMode = useRuntimeStore((s) => s.setApprovalMode);
-  const agents = useRuntimeStore((s) => s.agents);
-  const sessionAgents = useRuntimeStore((s) => s.sessionAgents);
-  const setAgentMode = useRuntimeStore((s) => s.setAgentMode);
-  const clearingLocalCommand = useRef(false);
+  const syncPaneStreams = useRuntimeStore((s) => s.syncPaneStreams);
 
-  // A deliberate workspace move restarts the sidecar — expected and brief, so
-  // the UI stays "connected" (no badge flip, no Connect button, no help card).
-  // Only a real failure (retry window exhausted, switching cleared) surfaces.
   const connected = status === "ready" || switching;
-  const connecting = status === "connecting" && !switching;
-  const displayStatus = switching ? "ready" : status;
+  const sessionDir = sessions.find((s) => s.id === focusedSid)?.directory;
 
-  // The session's folder, once the list has loaded — openSession needs it to
-  // follow the session into its workspace.
-  const sessionDir = sessions.find((s) => s.id === sessionId)?.directory;
-  useEffect(() => {
-    if (sessionId) {
-      if (!clearingLocalCommand.current) void openSession(sessionId);
-    } else {
-      clearingLocalCommand.current = false;
-      // Read currentId from the store, NOT as an effect dependency: openSession
-      // sets currentId, so depending on it here re-fires this effect and opens
-      // the session a SECOND time — two concurrent connectRetry loops then leak
-      // EventSockets until the connection pool is exhausted and sessions hang.
-      if (useRuntimeStore.getState().currentId) startDraft(); // blank draft (#3)
+  const isMobile = useIsMobile();
+  // Tiling can't work on a phone or the narrow web client — show the focused
+  // pane alone (the tree is kept, so it returns when there's room again).
+  const single = leaves(tree).length === 1 || isMobile || isGatewayWeb;
+
+  // Every DISTINCT folder shown across the panes — background streams keep the
+  // non-foreground ones live so different projects stream concurrently. In the
+  // single-pane fallback only the focused pane renders, so no background streams
+  // are wanted (the foreground stream covers it).
+  const paneDirs = useMemo(() => {
+    if (single) return [];
+    const dirs = new Set<string>();
+    for (const l of leaves(tree)) {
+      if (!l.sessionId) continue;
+      const d = sessions.find((s) => s.id === l.sessionId)?.directory;
+      if (d) dirs.add(d);
     }
-    // `connected` and `sessionDir` re-fire this on purpose: a hard reload (or a
-    // context-menu Reload) lands here before bootstrap has a client, and that
-    // first openSession bails — without the re-fire the history never loads
-    // (permanent skeleton). sessionDir arrives with the session list and lets
-    // the re-run follow the session into its own workspace folder. openSession
-    // is sequenced + loaded-guarded, so extra runs are cheap no-ops.
-  }, [sessionId, connected, sessionDir, openSession, startDraft]);
-
-  // All three composer paths reflect a freshly-created session in the URL.
-  const afterTurn = (id: string | null) => {
-    if (id && !sessionId) navigate(`/live/${id}`);
-  };
-  const onSend = async (text: string) => afterTurn(await sendPrompt(text));
-  const onRunShell = async (command: string) => afterTurn(await runShell(command));
-  const onRunCommand = async (name: string, args: string) => {
-    const localClear = name === "new" || name === "clear";
-    // Only arm the guard when a real session is open. From a draft, the URL is
-    // already /live and no route/currentId change follows — arming here would
-    // strand the flag at true (the reset lives in the effect's else branch,
-    // which never re-runs) and silently block the next openSession.
-    if (localClear && sessionId) clearingLocalCommand.current = true;
-    const id = await runCommand(name, args);
-    if (localClear) navigate("/live", { replace: true });
-    else afterTurn(id);
-  };
-  const composerCommands = useMemo(() => {
-    const local = [
-      { name: "new", description: t("localCommand.newDescription"), source: "local" },
-      { name: "clear", description: t("localCommand.clearDescription"), source: "local" },
-    ];
-    const localNames = new Set(local.map((c) => c.name));
-    return [...local, ...commands.filter((c) => !localNames.has(c.name))];
-  }, [commands, t]);
-
-  // Interactions from the thread/inspector fold back into the conversation as
-  // follow-up prompts. Memoized to a stable reference: BlockList is memoized, so
-  // an unstable handlers object would defeat it and re-render the whole list on
-  // every parent render. `openArtifact`/`sendPrompt` are stable store actions.
-  // Subagent activity is no longer threaded through here — each running task row
-  // self-subscribes to its child thread (see SubagentActivity), so a subagent's
-  // folds never re-render this page (#34).
-  const handlers: BlockHandlers = useMemo(
-    () => ({
-      onArtifactOpen: openArtifact,
-      onFigureComment: (a, title) =>
-        void sendPrompt(`On the figure ${title}, at (${a.x.toFixed(0)}%, ${a.y.toFixed(0)}%): ${a.note}`),
-      onEditMessage: editMessage,
-      // Revert to the message, then drop its text into the composer so the user
-      // can tweak and resend by hand (never auto-sent).
-      onRevertMessage: async (_messageID, text) => {
-        if (await revertMessage(_messageID)) setComposerDraft(text);
-      },
-    }),
-    [openArtifact, sendPrompt, editMessage, revertMessage, setComposerDraft],
-  );
-  const onEvaluate = (expr: string) => void sendPrompt(`Evaluate in the notebook kernel:\n\`\`\`python\n${expr}\n\`\`\``);
-
-  // A draft shows its local thread (the first message echoes there instantly,
-  // before any session exists) — it is grafted onto the session id on create.
-  // Selected on its own so ONLY this thread's folds re-render the page — a
-  // background subagent folding into threads[child] leaves this untouched (#34).
-  const thread = useRuntimeStore((s) => (s.currentId ? s.threads[s.currentId] : s.threads[DRAFT_KEY]));
-  // Opening a session fetches its history (cross-folder opens also restart the
-  // sidecar) — show skeleton shapes meanwhile, never a blank page.
-  const historyLoading = connected && !!sessionId && !thread?.loaded;
-  const title = sessions.find((s) => s.id === currentId)?.title;
-  const isEmpty = !thread || thread.blocks.length === 0;
-  // The turn lifecycle: `sending` covers click → POST accepted (incl. the
-  // dated-folder setup on a first message); `running` covers the agent
-  // working until session.idle. Together they lock the composer and show the
-  // working indicator, so a sent message is never silently "nowhere".
-  const running = !!(currentId && runningSessions[currentId]);
-  const working = sending || running;
-  // The turn's model call is failing and the server keeps retrying it — the
-  // only life sign a broken provider produces. Show it, or the row below
-  // reads "Working…" forever with nothing actually working.
-  const retryNotice = currentId ? retryNotices[currentId] : undefined;
-  // How many model steps into the turn — shown from step 2 on, so a multi-step
-  // turn reads as progressing rather than a bare, possibly-hung "Working…".
-  const step = currentId ? (stepCounts[currentId] ?? 0) : 0;
-  // What the agent is doing right now — the newest still-running tool call.
-  const currentTool = working
-    ? [...(thread?.blocks ?? [])]
-        .reverse()
-        .find((b): b is Extract<typeof b, { kind: "tool-call" }> =>
-          b.kind === "tool-call" && b.status === "running",
-        )
-    : undefined;
-  // The thought streaming right now: the last block of a still-running turn.
-  // It renders expanded and live, then collapses to a "Thought" line once the
-  // agent moves on (a later block appears) or the turn ends.
-  const lastBlock = thread?.blocks[thread.blocks.length - 1];
-  const liveReasoningIndex =
-    running && thread && lastBlock?.kind === "reasoning"
-      ? thread.blocks.length - 1
-      : undefined;
-
-  // Esc interrupts the running turn (like a terminal agent). Modals own Esc
-  // while open; the composer's palette marks its Esc as handled.
+    return [...dirs];
+  }, [single, tree, sessions]);
+  const paneDirsKey = paneDirs.join("|");
   useEffect(() => {
-    if (!running) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented) return;
-      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
-      void interrupt();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [running, interrupt]);
+    syncPaneStreams(paneDirs);
+    // Re-runs on pane-set, folder-resolution, and foreground-folder changes
+    // (syncPaneStreams excludes whatever folder the foreground stream covers).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paneDirsKey, workspace, connected, syncPaneStreams]);
 
-  // Backstop while "Working…": if session.idle got lost (SSE reconnect
-  // windows), a slow poll re-checks the server so the spinner can never
-  // outlive the turn.
+  // URL → focus: sidebar navigation / deep-links / reload land the target
+  // session in a pane. If another pane already shows it, focus THAT pane rather
+  // than duplicating it into the focused one; otherwise bind it onto the focused
+  // pane. Read fresh layout state so this reacts only to real URL changes.
+  const urlId = params.sessionId ?? null;
   useEffect(() => {
-    if (!running) return;
+    const st = useLayoutStore.getState();
+    const leaf = findLeaf(st.tree, st.focusedLeafId);
+    if ((leaf?.sessionId ?? null) === urlId) return;
+    const existing = urlId ? leaves(st.tree).find((l) => l.sessionId === urlId) : null;
+    if (existing) st.focusLeaf(existing.id);
+    else st.bindSession(st.focusedLeafId, urlId);
+  }, [urlId]);
+
+  // focus → URL: reflect the focused session in the address bar (switching
+  // panes, or a draft's first send binding a new id). Only ever navigates TO a
+  // real session, never back to bare "/live" — so it can never clobber a
+  // deep-linked/reloaded URL before URL→focus binds it (the loop the old
+  // single-pane page avoided by reading the param directly). Draft transitions
+  // (/new, /clear) navigate to "/live" explicitly where they happen. Push (not
+  // replace) so a new conversation adds a history entry (Back works).
+  useEffect(() => {
+    if (!focusedSid) return;
+    const want = `/live/${focusedSid}`;
+    if (location.pathname !== want) navigate(want);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusedSid]);
+
+  // focus → runtime: bind the single directory-scoped stream to the focused
+  // session (cross-folder opens restart the sidecar). A draft focus resets to a
+  // blank draft only if a real session was current — never wiping a just-written
+  // /clear thread (currentId is already null then).
+  useEffect(() => {
+    if (focusedSid) {
+      void openSession(focusedSid);
+    } else if (useRuntimeStore.getState().currentId) {
+      startDraft();
+    }
+  }, [focusedSid, connected, sessionDir, openSession, startDraft]);
+
+  // One backstop poll for the whole layout: if any pane's session.idle was lost
+  // (SSE reconnect windows), re-check the server so no spinner outlives its turn.
+  useEffect(() => {
+    if (runningCount === 0) return;
     const timer = window.setInterval(() => void reconcileRunning(), 15_000);
     return () => window.clearInterval(timer);
-  }, [running, reconcileRunning]);
+  }, [runningCount, reconcileRunning]);
 
-  // The oldest unanswered request blocks the run — surface it. Requests from
-  // subagents carry their CHILD session id; resolve through the parent chain
-  // so they still land in the conversation the user is looking at.
-  const belongsHere = (sid: string) =>
-    !!currentId && (sid === currentId || rootSessionOf(sessionParents, sid) === currentId);
-  const activeQuestion = questions.find((q) => belongsHere(q.sessionId));
-  const activePermission = permissions.find((p) => belongsHere(p.sessionId));
-  const activeRequest = activeQuestion ?? activePermission;
-  // Name the subagent on the card when the ask isn't from the main agent.
-  const requestOrigin =
-    activeRequest && activeRequest.sessionId !== currentId
-      ? (sessions.find((s) => s.id === activeRequest.sessionId)?.title ?? t("live.subagentFallback"))
-      : undefined;
-
-  // Notebooks the agent touched in THIS session — the conversation ↔ notebook map.
-  const sessionNotebooks = (thread?.blocks ?? []).filter(
-    (b): b is Extract<typeof b, { kind: "artifact" }> =>
-      b.kind === "artifact" && b.filename.endsWith(".ipynb"),
-  );
-  const uniqueNotebooks = [...new Map(sessionNotebooks.map((b) => [b.path, b])).values()];
-
-  // The right pane belongs to the session: each one remembers its own open
-  // artifact or Files browser (mutually exclusive, enforced by the store) and
-  // gets it back when the user returns.
-  const pane = panes[currentId ?? DRAFT_KEY];
-  // The Build/Plan switch exists only when the runtime actually has the plan
-  // agent (older/custom sidecars may not) — otherwise Composer hides it and
-  // sends never pin an agent.
-  const planAvailable = agents.some((a) => a.name === "plan");
-  const agentMode = sessionAgents[currentId ?? DRAFT_KEY] ?? "build";
-  const activeArtifact = pane?.artifact ?? null;
-  const showFiles = !activeArtifact && !!pane?.showFiles;
-  const showRuns = !activeArtifact && !showFiles && !!pane?.showRuns;
-
-  // Show the Runs toggle only when this session has runs (like the Files/folder
-  // affordance — present when there's content). Cheap count query on open.
-  const [hasRuns, setHasRuns] = useState(false);
+  // Drop tiled panes whose session was deleted, collapsing toward one pane.
   useEffect(() => {
-    if (!sessionId) return setHasRuns(false);
-    let cancelled = false;
-    void queryRuns({ sessionId, limit: 1 }).then((p) => !cancelled && setHasRuns(p.total > 0));
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId]);
+    if (sessions.length === 0) return;
+    pruneSessions(new Set(sessions.map((s) => s.id)));
+  }, [sessions, pruneSessions]);
 
-  // Conversation scroll position, per session — restored once history is in.
-  const chatRef = useRef<HTMLDivElement>(null);
-  const onChatScroll = useScrollMemory(chatRef, `chat:${currentId ?? DRAFT_KEY}`, !historyLoading);
-
-  // When the agent starts working a notebook (Jupyter MCP), open it beside the
-  // chat automatically — once per notebook, so a manual close stays closed.
-  const autoOpened = useRef(new Set<string>());
-  useEffect(() => {
-    const agentNb = uniqueNotebooks.find(
-      (b) => b.tool.toLowerCase().includes("jupyter") && !autoOpened.current.has(b.path),
-    );
-    if (agentNb) {
-      autoOpened.current.add(agentNb.path);
-      openArtifact(agentNb);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uniqueNotebooks.length]);
-
-  // With the sidebar collapsed this header doubles as the titlebar (macOS
-  // overlay): it clears the traffic lights, hosts the sidebar expand button,
-  // and empty stretches drag the window — one row, never two.
-  const { sidebarCollapsed, setSidebarCollapsed } = useUiStore();
-  const isMac = navigator.userAgent.includes("Mac");
-  const overlayTitlebar = useOverlayTitlebar();
-
-  return (
-    <div className="flex h-full min-w-0">
-      <div className="flex h-full min-w-0 flex-1 flex-col">
-        <div
-          data-tauri-drag-region={overlayTitlebar || undefined}
-          // Collapsed + overlay, this row IS the titlebar: it clears the traffic
-          // lights and counter-scales for page zoom so the expand button stays
-          // pinned to them (overlayTitlebarStyle). Otherwise it's a normal header.
-          style={sidebarCollapsed && overlayTitlebar ? overlayTitlebarStyle(true) : undefined}
-          className={cn(
-            "flex shrink-0 items-center gap-2 px-6",
-            // A draft is a clean page — no separator; an open session gets a
-            // faint one so the title row reads as part of the conversation.
-            sessionId && "border-b border-faint",
-            !(sidebarCollapsed && overlayTitlebar) && "h-12",
-          )}
-        >
-          {sidebarCollapsed && (
-            <button
-              onClick={() => setSidebarCollapsed(false)}
-              aria-label={t("live.header.expandSidebarAria")}
-              title={t("live.header.expandSidebarTitle", { shortcut: isMac ? "⌘B" : "Ctrl+B" })}
-              className="fade-in rounded p-1 text-text hover:bg-surface-2"
-            >
-              <PanelLeft size={14} strokeWidth={1.5} />
-            </button>
-          )}
-          {/* Left: the session title is the identity anchor. A draft shows no
-              title — the workspace picker lives in the composer until the
-              session exists. min-w-0 lets it truncate instead of shoving the
-              right-side controls off the bar. */}
-          {sessionId && (
-            <h1 className="min-w-0 truncate text-[13px] font-medium text-text">{title ?? ""}</h1>
-          )}
-          {/* Goal mode (/goal): the objective stays visible with live status
-              and instant pause/clear — an agent that keeps working on its own
-              must never be invisible. Resume also kicks one turn: a paused
-              session has no idle event left to re-arm the plugin's loop. */}
-          {sessionId && (
-            <GoalPill
-              sessionId={sessionId}
-              onResumed={() => void sendPrompt(GOAL_RESUME_NUDGE)}
-            />
-          )}
-          <div data-tauri-drag-region={overlayTitlebar || undefined} className="flex-1" />
-          {/* Right: quiet ghost controls — no border or fill until hovered or
-              active, so the row stays flat and editorial (one visual language
-              across the Files toggle and every notebook chip). The Files toggle
-              names this session's folder; a draft has none yet. */}
-          {sessionId && (
-            <button
-              onClick={() => setShowFiles(!showFiles)}
-              className={cn(
-                "flex items-center gap-1 rounded-md px-1.5 py-1 text-xs transition-colors hover:bg-surface-2",
-                showFiles ? "bg-surface-2 text-text" : "text-muted",
-              )}
-              title={`${t("live.filesToggle.title")}${workspace ? ` — ${workspace}` : ""}`}
-              aria-pressed={showFiles}
-            >
-              <FolderOpen size={13} />
-              <span className="max-w-[160px] truncate">
-                {workspace ? baseName(workspace) : t("live.filesToggle.default")}
-              </span>
-            </button>
-          )}
-          {sessionId && hasRuns && (
-            <button
-              onClick={() => setShowRuns(!showRuns)}
-              className={cn(
-                "flex items-center gap-1 rounded-md px-1.5 py-1 text-xs transition-colors hover:bg-surface-2",
-                showRuns ? "bg-surface-2 text-text" : "text-muted",
-              )}
-              title={t("live.runsToggle.title")}
-              aria-pressed={showRuns}
-            >
-              <FlaskConical size={13} />
-              <span>{t("live.runsToggle.label")}</span>
-            </button>
-          )}
-          <ConnBadge status={displayStatus} />
-          {uniqueNotebooks.map((nb) => (
-            <button
-              key={nb.path}
-              onClick={() => openArtifact(nb)}
-              className={cn(
-                "flex items-center gap-1 rounded-md px-1.5 py-1 font-mono text-xs transition-colors hover:bg-surface-2",
-                activeArtifact?.path === nb.path ? "bg-surface-2 text-text" : "text-muted",
-              )}
-              title={t("live.notebook.openTitle", { path: nb.path })}
-            >
-              <NotebookPen size={12} />
-              <span className="max-w-[180px] truncate">{nb.filename}</span>
-            </button>
-          ))}
-          {!connected && (
-            <button
-              onClick={connect}
-              disabled={connecting}
-              className="flex items-center gap-1.5 rounded-input bg-accent px-2.5 py-0.5 text-xs font-medium text-accent-fg hover:opacity-90 disabled:opacity-50"
-            >
-              {connecting ? <Loader2 size={13} className="animate-spin" /> : <PlugZap size={13} />}
-              {t("live.connect")}
-            </button>
-          )}
-        </div>
-
-        <div ref={chatRef} onScroll={onChatScroll} className="flex-1 overflow-y-auto">
-          <div className="mx-auto flex max-w-[760px] flex-col gap-4 px-8 py-6">
-            {/* Deliberate workspace switches don't render anything at all (they're
-                masked as connected); a genuine boot/reconnect shows only the
-                header badge's pulsing dot — anything appearing and disappearing
-                in the content flow makes the page jump. The help card is for
-                real error/offline states. */}
-            {!connected && !connecting && (
-              <div className="rounded-card border border-border bg-surface p-5 shadow-card">
-                <div className="text-sm font-medium text-text">{t("live.runtime.title")}</div>
-                <p className="mt-1 text-sm text-muted">
-                  {t("live.runtime.bodyPrefix")}{" "}
-                  {/* eslint-disable-next-line i18next/no-literal-string -- literal shell command, not prose */}
-                  <span className="font-mono">opencode serve</span>
-                  {t("live.runtime.bodySuffix")}
-                </p>
-                <div className="mt-3 rounded-input bg-surface-2 px-3 py-2 font-mono text-xs text-text">
-                  {serverUrl}
-                </div>
-              </div>
-            )}
-            {error && (
-              <div className="rounded-input border border-error/30 bg-error/10 px-3 py-2 text-sm text-error">
-                {error}
-              </div>
-            )}
-            {/* Starters send a prompt — pointless with a read-only web token. */}
-            {connected && isEmpty && !sessionId && !webReadOnly && (
-              <WorkflowStarters onPick={(p) => void onSend(p)} />
-            )}
-            {historyLoading && <ThreadSkeleton />}
-            {!historyLoading && thread && (
-              <BlockList
-                blocks={thread.blocks}
-                handlers={handlers}
-                liveReasoningIndex={liveReasoningIndex}
-              />
-            )}
-            {working && (
-              // Typing-indicator at the bottom of the conversation: the message
-              // just echoed above it, so the user always sees the send is alive.
-              <div className="flex min-w-0 items-center gap-2 text-sm text-muted">
-                <Loader2 size={14} className="shrink-0 animate-spin" />
-                <span className="shrink-0">
-                  {activeRequest
-                    ? t("live.status.paused")
-                    : retryNotice
-                      ? t("live.status.retrying", { attempt: Math.max(1, retryNotice.attempt) })
-                      : sending && !currentId
-                        ? t("live.status.startingSession")
-                        : t("live.status.working")}
-                </span>
-                {!activeRequest && !retryNotice && step >= 2 && (
-                  <span className="shrink-0 text-xs text-muted/70">
-                    {t("live.status.step", { count: step })}
-                  </span>
-                )}
-                {!activeRequest && retryNotice && (
-                  <span className="truncate font-mono text-xs text-warn" title={retryNotice.message}>
-                    {retryNotice.message}
-                  </span>
-                )}
-                {!activeRequest && !retryNotice && currentTool && (
-                  <>
-                    <span
-                      className="truncate font-mono text-xs"
-                      title={currentTool.command ?? currentTool.title}
-                    >
-                      {currentTool.title}
-                    </span>
-                    {currentTool.startedAt !== undefined && (
-                      <Elapsed start={currentTool.startedAt} />
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="px-8 pb-5 pt-2">
-          <div className="mx-auto max-w-[760px] space-y-3">
-            {activeRequest && (
-              <InteractionPrompt
-                question={activeQuestion}
-                permission={activeQuestion ? undefined : activePermission}
-                origin={requestOrigin}
-                onAnswer={(id, answers) => void answerQuestion(id, answers)}
-                onReject={(id) => void rejectQuestion(id)}
-                onPermission={(id, reply) => void replyPermission(id, reply)}
-              />
-            )}
-            <Composer
-              onSend={onSend}
-              onRunShell={(c) => void onRunShell(c)}
-              onRunCommand={(n, a) => void onRunCommand(n, a)}
-              commands={composerCommands}
-              disabled={!connected || working || webReadOnly}
-              working={running}
-              onStop={() => void interrupt()}
-              placeholder={
-                webReadOnly
-                  ? t("live.placeholder.readOnly")
-                  : working
-                    ? t("live.placeholder.waiting")
-                    : !connected
-                      ? t("live.placeholder.disconnected")
-                      : planAvailable && agentMode === "plan"
-                        ? t("composer.placeholder.plan")
-                        : t("composer.placeholder.default")
-              }
-              approvalMode={approvalMode}
-              onApprovalModeChange={(mode) => void setApprovalMode(mode)}
-              agentMode={planAvailable ? agentMode : undefined}
-              onAgentModeChange={planAvailable ? setAgentMode : undefined}
-              showModelPicker={connected && !webReadOnly}
-            />
-          </div>
-        </div>
-      </div>
-
-      {(activeArtifact || showFiles || showRuns) && (
-        <RightPane
-          onClose={activeArtifact ? closeArtifact : showRuns ? () => setShowRuns(false) : () => setShowFiles(false)}
-        >
-          {activeArtifact ? (
-            <InspectorShell
-              inspector={fileInspectorFromBlock(activeArtifact)}
-              onClose={closeArtifact}
-              onEvaluate={onEvaluate}
-              controls={<MaximizePaneButton />}
-            />
-          ) : showRuns ? (
-            <RunsPane
-              sessionId={sessionId!}
-              onClose={() => setShowRuns(false)}
-              controls={<MaximizePaneButton />}
-            />
-          ) : (
-            <div className="h-full border-l border-border bg-surface">
-              <SessionFilesPane
-                onClose={() => setShowFiles(false)}
-                controls={<MaximizePaneButton />}
-              />
-            </div>
-          )}
-        </RightPane>
-      )}
-    </div>
-  );
-}
-
-/** Loading placeholder mirroring the thread's real shapes: a user card, agent
- *  text lines, a quiet tool row — so the page never sits blank while history
- *  loads and nothing jumps when the content arrives. */
-function ThreadSkeleton() {
-  return (
-    <div className="animate-pulse space-y-4" aria-hidden>
-      <div className="h-11 rounded-card bg-surface-2" />
-      <div className="space-y-2.5 px-1 pt-1">
-        <div className="h-3.5 w-11/12 rounded bg-surface-2" />
-        <div className="h-3.5 w-4/5 rounded bg-surface-2" />
-        <div className="h-3.5 w-2/3 rounded bg-surface-2" />
-      </div>
-      <div className="ml-2 h-4 w-2/5 rounded bg-surface-2 opacity-60" />
-      <div className="h-11 rounded-card bg-surface-2" />
-      <div className="space-y-2.5 px-1 pt-1">
-        <div className="h-3.5 w-5/6 rounded bg-surface-2" />
-        <div className="h-3.5 w-3/5 rounded bg-surface-2" />
-      </div>
-    </div>
-  );
-}
-
-function ConnBadge({ status }: { status: RuntimeStatus }) {
-  const { t } = useTranslation(["session", "common"]);
-  const tone = status === "ready" ? "text-ok" : status === "error" ? "text-error" : "text-muted";
-  return (
-    <span
-      className={cn("flex items-center gap-1.5 text-xs", tone)}
-      title={t("live.connBadge.title", { status: t(`live.connBadge.status.${status}`) })}
-    >
-      <span
-        className={cn(
-          "h-1.5 w-1.5 rounded-full",
-          status === "ready" ? "bg-ok" : status === "error" ? "bg-error" : "bg-muted",
-          status === "connecting" && "animate-pulse",
-        )}
+  if (single && focusedLeaf) {
+    return (
+      <SessionView
+        sessionId={focusedLeaf.sessionId}
+        leafId={focusedLeaf.id}
+        focused
+        chromeAsTitlebar
       />
-      {/* Ready is the norm — a green dot says it all (hover for detail). Text
-          appears only for states that need attention. */}
-      {status !== "ready" && t("live.connBadge.title", { status: t(`live.connBadge.status.${status}`) })}
-    </span>
-  );
+    );
+  }
+  return <PaneTree />;
 }

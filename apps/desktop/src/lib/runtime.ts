@@ -144,11 +144,14 @@ interface RuntimeState {
    *  In-memory, but reconciled from the message stream and history: OpenCode's
    *  plan_exit "Yes" continues the session as build — the pill must follow. */
   sessionAgents: Record<string, AgentMode>;
-  setAgentMode: (mode: AgentMode) => void;
-  openArtifact: (a: ArtifactBlock) => void;
-  closeArtifact: () => void;
-  setShowFiles: (show: boolean) => void;
-  setShowRuns: (show: boolean) => void;
+  // The pane/agent setters and turn actions below take an optional `sessionId`
+  // so a split pane acts on its OWN session; omitted, they fall back to the
+  // focused session (`currentId ?? DRAFT_KEY`) — the single-pane behavior.
+  setAgentMode: (mode: AgentMode, sessionId?: string) => void;
+  openArtifact: (a: ArtifactBlock, sessionId?: string) => void;
+  closeArtifact: (sessionId?: string) => void;
+  setShowFiles: (show: boolean, sessionId?: string) => void;
+  setShowRuns: (show: boolean, sessionId?: string) => void;
   answerQuestion: (requestId: string, answers: string[][]) => Promise<void>;
   rejectQuestion: (requestId: string) => Promise<void>;
   replyPermission: (requestId: string, reply: PermissionReply) => Promise<void>;
@@ -188,8 +191,14 @@ interface RuntimeState {
    *  flip, no Connect button, no help card. Real failures surface after the
    *  retry window is exhausted, once this clears. */
   switching: boolean;
-  /** A sendPrompt is in flight (click → POST accepted). Locks the composer. */
+  /** A sendPrompt is in flight for SOME session (click → POST accepted). Kept as
+   *  the OR of `sendingSessions` for single-pane call sites; per-pane composers
+   *  read `sendingSessions[sessionId]` instead. */
   sending: boolean;
+  /** Sessions with a send in flight (POST not yet settled), keyed by id
+   *  (DRAFT_KEY for a draft). Lets split panes send concurrently while still
+   *  blocking a double-send to the SAME session. */
+  sendingSessions: Record<string, true>;
   /** Sessions with an active turn (send accepted, session.idle not yet seen).
    *  Drives the composer lock and the "Working…" indicator. */
   runningSessions: Record<string, true>;
@@ -214,25 +223,26 @@ interface RuntimeState {
    *  orphaning it. No-op once a session exists or the folder is already pinned. */
   ensureDraftWorkspace: () => Promise<void>;
   openSession: (id: string) => Promise<void>;
-  sendPrompt: (text: string) => Promise<string | null>;
+  sendPrompt: (text: string, sessionId?: string) => Promise<string | null>;
   /** Run a "!" shell command directly in the session's workspace folder —
    *  no model turn; the output folds into the thread as a bash tool row. */
-  runShell: (command: string) => Promise<string | null>;
+  runShell: (command: string, sessionId?: string) => Promise<string | null>;
   /** Run a "/" slash command (config command / skill / MCP prompt). */
-  runCommand: (name: string, args?: string) => Promise<string | null>;
-  /** Interrupt the current session's running turn (Stop button / Esc). */
-  interrupt: () => Promise<void>;
+  runCommand: (name: string, args?: string, sessionId?: string) => Promise<string | null>;
+  /** Interrupt a session's running turn (Stop button / Esc); the focused
+   *  session when `sessionId` is omitted. */
+  interrupt: (sessionId?: string) => Promise<void>;
   /** Edit a past user message: revert the session to (and including) that
    *  message — dropping it and everything after, rolling back the files those
    *  turns changed — then resend the corrected text as a new turn. Destructive:
    *  callers must confirm first. `messageID` is the id on the user block. */
-  editMessage: (messageID: string, newText: string) => Promise<void>;
+  editMessage: (messageID: string, newText: string, sessionId?: string) => Promise<void>;
   /** Revert the session to (and including) a past user message WITHOUT
    *  resending — drops it and everything after and rolls back those turns'
    *  files, leaving the session idle at that point. Returns whether it
    *  succeeded (the caller prefills the composer with the message on success).
    *  Destructive: callers must confirm first. */
-  revertMessage: (messageID: string) => Promise<boolean>;
+  revertMessage: (messageID: string, sessionId?: string) => Promise<boolean>;
   /** Check every session holding a running lock against the server: if its
    *  turn is actually over (idle was missed — SSE reconnect windows, the
    *  directory-scoped event stream), reload the missed history and unlock. */
@@ -240,6 +250,15 @@ interface RuntimeState {
   deleteSession: (id: string) => Promise<void>;
   hideExample: (id: string) => void;
   installSkill: (text: string) => Promise<string | null>;
+  /** Create an empty session in the CURRENT workspace folder for a new split
+   *  pane, without touching the focused session. Same folder → it co-streams
+   *  with the other same-folder panes. Returns its id (null if not connected). */
+  newTiledSession: () => Promise<string | null>;
+  /** Ensure a live background event stream for every workspace folder shown in
+   *  a split pane (besides the foreground folder), and drop streams for folders
+   *  no longer tiled — so sessions across DIFFERENT projects stream live at once.
+   *  Desktop only (single-pane on web). */
+  syncPaneStreams: (directories: string[]) => void;
 }
 
 // The internal store depends only on the runtime-agnostic AgentRuntime contract
@@ -290,6 +309,46 @@ function teardownClient() {
   client?.close();
   client = null;
   opencodeClient = null;
+}
+
+// ---- Cross-folder streaming (split panes) ----
+// The foreground `client` streams the ACTIVE folder. Split panes showing
+// sessions from OTHER folders each get a background stream here, keyed by
+// directory, so they update live concurrently. All streams fold through the one
+// `sharedEventHandler` — events carry `sessionId` and the store is sid-keyed, so
+// N streams need no per-stream demux. Same sidecar → same baseUrl/password.
+const streamClients = new Map<string, OpenCodeClient>();
+let streamBaseUrl = "";
+let streamPassword: string | undefined;
+/** The store's event handler, captured once (set/get are stable) so foreground
+ *  and every background stream share one folding path. */
+let sharedEventHandler: ((event: OpenCodeEvent) => void) | null = null;
+function removeStreamClient(dir: string) {
+  const c = streamClients.get(dir);
+  if (c) {
+    c.close();
+    streamClients.delete(dir);
+  }
+}
+function teardownStreamClients() {
+  for (const c of streamClients.values()) c.close();
+  streamClients.clear();
+}
+/** The connected client whose stream owns `sid` — its folder's background
+ *  stream, else the foreground client. Session-scoped calls (send/abort/history)
+ *  work through any client, but the directory-scoped interactive replies
+ *  (question/permission) must go to the matching per-directory instance. */
+function clientForSession(get: StoreGet, sid: string): AgentRuntime | null {
+  // Subagent asks carry the CHILD sid (which may not be listed in `sessions`
+  // yet); resolve to the root session to find the owning folder, mirroring how
+  // belongsHere surfaces the ask in the parent's pane.
+  const root = rootSessionOf(get().sessionParents, sid);
+  const dir = get().sessions.find((x) => x.id === root)?.directory;
+  if (dir && dir !== get().workspace) {
+    const bg = streamClients.get(dir);
+    if (bg) return bg;
+  }
+  return client;
 }
 const emptyThread = (): Thread => ({ blocks: [], index: {}, loaded: false });
 /** Threads key for the draft conversation — its blocks move to the real
@@ -408,17 +467,26 @@ async function performTurn(
   post: (sid: string) => Promise<void>,
   syncTurn: boolean,
   shell = false,
+  // Explicit target session. When omitted, the turn targets the focused session
+  // (`currentId`) and may lazily CREATE it from the draft; when a real id is
+  // given (a split pane sending to its own session), creation is skipped.
+  target?: string,
 ): Promise<string | null> {
   if (!client) {
     set({ error: "Not connected to the OpenCode runtime." });
     return null;
   }
-  if (get().sending) return null; // one send at a time
-  const echoKey = get().currentId ?? DRAFT_KEY;
+  const echoKey = target ?? get().currentId ?? DRAFT_KEY;
+  if (get().sendingSessions[echoKey]) return null; // one send at a time per session
+  // The lock is held under `echoKey`, but a draft's first send grafts DRAFT_KEY
+  // onto the real id mid-turn — track the current key so the lock moves with it
+  // (and the finally clears the right one).
+  let lockKey = echoKey;
   set((s) => {
     const cur = s.threads[echoKey] ?? emptyThread();
     return {
       sending: true,
+      sendingSessions: { ...s.sendingSessions, [echoKey]: true },
       threads: {
         ...s.threads,
         [echoKey]: { ...cur, loaded: true, blocks: [...cur.blocks, { kind: "user", text: echo }] },
@@ -426,7 +494,7 @@ async function performTurn(
     };
   });
   try {
-    let id = get().currentId;
+    let id = target ?? get().currentId;
     if (!id) {
       // Lazy-create the session on the first message (#3). Unless the user
       // pinned a folder via the workspace switcher, a new session gets its
@@ -474,8 +542,17 @@ async function performTurn(
           sessionAgents[id!] = sessionAgents[DRAFT_KEY];
           delete sessionAgents[DRAFT_KEY];
         }
-        return { currentId: id, threads, panes, sessionAgents };
+        // Move the in-flight send lock too, so a pane keyed on the new id (the
+        // draft pane follows currentId onto the real session) still reads itself
+        // as sending across the graft — no flicker to an unlocked composer.
+        const sendingSessions = { ...s.sendingSessions };
+        if (sendingSessions[DRAFT_KEY]) {
+          sendingSessions[id!] = sendingSessions[DRAFT_KEY];
+          delete sendingSessions[DRAFT_KEY];
+        }
+        return { currentId: id, threads, panes, sessionAgents, sendingSessions };
       });
+      lockKey = id;
       moveScrollMemory(`chat:${DRAFT_KEY}`, `chat:${id}`);
       void get().refreshSessions();
     }
@@ -536,7 +613,7 @@ async function performTurn(
     const msg = err instanceof Error ? err.message : String(err);
     void logDebug(`turn FAILED: ${msg}`);
     // The failure belongs next to the message that caused it.
-    const key = get().currentId ?? DRAFT_KEY;
+    const key = target ?? get().currentId ?? DRAFT_KEY;
     set((s) => {
       const cur = s.threads[key] ?? emptyThread();
       return {
@@ -551,9 +628,15 @@ async function performTurn(
         },
       };
     });
-    return get().currentId;
+    return target ?? get().currentId;
   } finally {
-    set({ sending: false });
+    // Clear the lock under its CURRENT key (`lockKey` follows the draft→session
+    // graft, so this never leaks a stale DRAFT_KEY lock).
+    set((s) => {
+      const sendingSessions = { ...s.sendingSessions };
+      delete sendingSessions[lockKey];
+      return { sendingSessions, sending: Object.keys(sendingSessions).length > 0 };
+    });
   }
 }
 
@@ -564,11 +647,16 @@ async function performTurn(
  *  local thread. Returns whether the revert succeeded. OpenCode rejects a
  *  revert on a busy session, so the abort's trailing session.idle is given a
  *  few short retries to land first. */
-async function revertToMessage(set: StoreSet, get: StoreGet, messageID: string): Promise<boolean> {
-  const sid = get().currentId;
+async function revertToMessage(
+  set: StoreSet,
+  get: StoreGet,
+  messageID: string,
+  sessionId?: string,
+): Promise<boolean> {
+  const sid = sessionId ?? get().currentId;
   if (!sid || !client) return false;
   const c = client;
-  if (get().runningSessions[sid]) await get().interrupt();
+  if (get().runningSessions[sid]) await get().interrupt(sid);
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
       await c.revert(sid, messageID);
@@ -641,14 +729,15 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
   sessionParents: {},
   panes: {},
   sessionAgents: {},
-  setAgentMode: (mode) =>
-    set((s) => ({ sessionAgents: { ...s.sessionAgents, [s.currentId ?? DRAFT_KEY]: mode } })),
+  setAgentMode: (mode, sessionId) =>
+    set((s) => ({ sessionAgents: { ...s.sessionAgents, [sessionId ?? s.currentId ?? DRAFT_KEY]: mode } })),
   projects: [],
   workspace: null,
   webReadOnly: false,
   workspacePinned: false,
   switching: false,
   sending: false,
+  sendingSessions: {},
   runningSessions: {},
   stepCounts: {},
   shellTurns: {},
@@ -657,19 +746,19 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
   // These write the CURRENT session's pane (DRAFT_KEY on a draft), keeping the
   // artifact inspector, the Files browser, and the Runs pane mutually exclusive
   // — one pane at a time.
-  openArtifact: (artifact) =>
+  openArtifact: (artifact, sessionId) =>
     set((s) => ({
-      panes: { ...s.panes, [s.currentId ?? DRAFT_KEY]: { artifact, showFiles: false, showRuns: false } },
+      panes: { ...s.panes, [sessionId ?? s.currentId ?? DRAFT_KEY]: { artifact, showFiles: false, showRuns: false } },
     })),
-  closeArtifact: () =>
+  closeArtifact: (sessionId) =>
     set((s) => {
-      const key = s.currentId ?? DRAFT_KEY;
+      const key = sessionId ?? s.currentId ?? DRAFT_KEY;
       const p = s.panes[key];
       return { panes: { ...s.panes, [key]: { artifact: null, showFiles: p?.showFiles ?? false, showRuns: p?.showRuns ?? false } } };
     }),
-  setShowFiles: (show) =>
+  setShowFiles: (show, sessionId) =>
     set((s) => {
-      const key = s.currentId ?? DRAFT_KEY;
+      const key = sessionId ?? s.currentId ?? DRAFT_KEY;
       const p = s.panes[key];
       return {
         panes: {
@@ -678,9 +767,9 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         },
       };
     }),
-  setShowRuns: (show) =>
+  setShowRuns: (show, sessionId) =>
     set((s) => {
-      const key = s.currentId ?? DRAFT_KEY;
+      const key = sessionId ?? s.currentId ?? DRAFT_KEY;
       const p = s.panes[key];
       return {
         panes: {
@@ -692,27 +781,35 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
 
   answerQuestion: async (requestId, answers) => {
     const q = get().questions.find((x) => x.requestId === requestId);
-    if (!q || !client) return;
+    if (!q) return;
+    // Route to the client whose folder owns the asking session (a split pane in
+    // another project has its own directory-scoped instance).
+    const c = clientForSession(get, q.sessionId);
+    if (!c) return;
     set((s) => ({ questions: s.questions.filter((x) => x.requestId !== requestId) }));
     try {
-      await client.answerQuestion(requestId, answers);
+      await c.answerQuestion(requestId, answers);
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
     }
   },
   rejectQuestion: async (requestId) => {
     const q = get().questions.find((x) => x.requestId === requestId);
-    if (!q || !client) return;
+    if (!q) return;
+    const c = clientForSession(get, q.sessionId);
+    if (!c) return;
     set((s) => ({ questions: s.questions.filter((x) => x.requestId !== requestId) }));
     try {
-      await client.rejectQuestion(requestId);
+      await c.rejectQuestion(requestId);
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
     }
   },
   replyPermission: async (requestId, reply) => {
     const p = get().permissions.find((x) => x.requestId === requestId);
-    if (!p || !client) return;
+    if (!p) return;
+    const c = clientForSession(get, p.sessionId);
+    if (!c) return;
     // Identical pending asks (same session, action and resources — e.g. three
     // parallel reads into one folder) are ONE question to the user: answer
     // them all with one click instead of re-asking for each tool call.
@@ -721,7 +818,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     const batch = get().permissions.filter((x) => sig(x) === sig(p));
     set((s) => ({ permissions: s.permissions.filter((x) => sig(x) !== sig(p)) }));
     try {
-      await Promise.all(batch.map((x) => client!.replyPermission(x.requestId, reply)));
+      await Promise.all(batch.map((x) => c.replyPermission(x.requestId, reply)));
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
     }
@@ -917,6 +1014,12 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     });
     opencodeClient = c;
     client = c;
+    // Background streams reuse the same sidecar; the foreground now streams this
+    // folder, so drop any background stream that was covering it (avoid a double
+    // fold of the same events).
+    streamBaseUrl = baseUrl;
+    streamPassword = password ?? undefined;
+    if (directory) removeStreamClient(directory);
     clientStatusUnsub = c.onStatus((status) => {
       void logDebug(`status → ${status}`);
       if (status === "connecting" && get().status === "ready") {
@@ -932,7 +1035,8 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       clearStatusBlip();
       set({ status });
     });
-    c.onEvent((event) => {
+    if (!sharedEventHandler)
+      sharedEventHandler = (event) => {
       // text.updated fires per streamed token, and a running bash tool fires
       // per stdout write (tqdm redraws dozens of times a second) — logging
       // each one would flood debug.log with an IPC call per event.
@@ -1224,7 +1328,8 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
             logDebug(`git snapshot skipped for ${sid}: ${err instanceof Error ? err.message : String(err)}`),
           );
       }
-    });
+      };
+    c.onEvent(sharedEventHandler);
     try {
       void logDebug(`connect → ${get().serverUrl}`);
       await c.connect();
@@ -1334,6 +1439,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
 
   disconnect: () => {
     teardownClient();
+    teardownStreamClients();
     set({ status: "offline", modelSwitchError: null });
   },
 
@@ -1586,13 +1692,13 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
 
   // The send lifecycle (new → input → send → response) is shared by plain
   // prompts, "!" shell commands and "/" slash commands — see performTurn.
-  sendPrompt: (text) => {
+  sendPrompt: (text, sessionId) => {
     // Capture the mode BEFORE performTurn: on a draft, currentId is still null
     // here (the session is created inside), so this reads DRAFT_KEY correctly.
     // Pin "plan" only when the catalog actually has it — a stale mode against
     // an older/custom sidecar must not fail every send with "Agent not found".
     const s = get();
-    const mode = s.sessionAgents[s.currentId ?? DRAFT_KEY];
+    const mode = s.sessionAgents[sessionId ?? s.currentId ?? DRAFT_KEY];
     const agent =
       mode === "plan" && s.agents.some((a) => a.name === "plan") ? "plan" : undefined;
     return performTurn(
@@ -1606,11 +1712,13 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
           client!.sendPrompt(sid, text, agent, get().defaultModel, activeVariant(get())),
         ),
       false,
+      false,
+      sessionId,
     );
   },
 
   // No retry for shell/command: re-POSTing would run the command twice.
-  runShell: (command) => {
+  runShell: (command, sessionId) => {
     const agent = get().agents.find((a) => a.mode === "primary")?.name ?? "build";
     return performTurn(
       set,
@@ -1619,10 +1727,11 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       (sid) => client!.runShell(sid, command, agent),
       true,
       true,
+      sessionId,
     );
   },
 
-  runCommand: async (name, args) => {
+  runCommand: async (name, args, sessionId) => {
     if (name === "new" || name === "clear") {
       get().startDraftInCurrentWorkspace();
       return null;
@@ -1633,11 +1742,13 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       args ? `/${name} ${args}` : `/${name}`,
       (sid) => client!.runCommand(sid, name, args),
       true,
+      false,
+      sessionId,
     );
   },
 
-  interrupt: async () => {
-    const sid = get().currentId;
+  interrupt: async (sessionId) => {
+    const sid = sessionId ?? get().currentId;
     if (!sid || !client || !get().runningSessions[sid]) return;
     // Arm the guard BEFORE the abort POST: the server answers an abort with its
     // own SSE burst (an "aborted" error and one or more session.idle events)
@@ -1672,11 +1783,12 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     });
   },
 
-  editMessage: async (messageID, newText) => {
-    if (await revertToMessage(set, get, messageID)) await get().sendPrompt(newText);
+  editMessage: async (messageID, newText, sessionId) => {
+    if (await revertToMessage(set, get, messageID, sessionId))
+      await get().sendPrompt(newText, sessionId);
   },
 
-  revertMessage: async (messageID) => revertToMessage(set, get, messageID),
+  revertMessage: async (messageID, sessionId) => revertToMessage(set, get, messageID, sessionId),
 
   reconcileRunning: async () => {
     const c = client;
@@ -1775,6 +1887,49 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });
       return null;
+    }
+  },
+
+  newTiledSession: async () => {
+    if (!client) {
+      set({ error: "Not connected to the OpenCode runtime." });
+      return null;
+    }
+    try {
+      const id = await withRetry(() => client!.createSession());
+      // Seed an empty loaded thread so the new pane shows a clean composer
+      // immediately rather than a history skeleton.
+      set((s) => ({ threads: { ...s.threads, [id]: { ...emptyThread(), loaded: true } } }));
+      await get().refreshSessions();
+      return id;
+    } catch (err) {
+      set({ error: err instanceof Error ? err.message : String(err) });
+      return null;
+    }
+  },
+
+  syncPaneStreams: (directories) => {
+    // The foreground `client` already streams the active folder; web is
+    // single-pane. Open one background stream per OTHER folder shown, and close
+    // streams for folders no longer tiled.
+    if (isGatewayWeb || !opencodeClient) return;
+    const foreground = get().workspace;
+    const wanted = new Set(directories.filter((d): d is string => !!d && d !== foreground));
+    for (const dir of [...streamClients.keys()]) {
+      if (!wanted.has(dir)) removeStreamClient(dir);
+    }
+    for (const dir of wanted) {
+      if (streamClients.has(dir)) continue;
+      const c = new OpenCodeClient({
+        baseUrl: streamBaseUrl,
+        directory: dir,
+        password: streamPassword,
+      });
+      if (sharedEventHandler) c.onEvent(sharedEventHandler);
+      streamClients.set(dir, c);
+      // Best-effort: a background stream that can't open just leaves that pane
+      // non-live until it's focused (foreground reconnect covers it).
+      void c.connect().catch(() => {});
     }
   },
 }));

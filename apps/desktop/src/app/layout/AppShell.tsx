@@ -16,6 +16,7 @@ import { useUpdateStore } from "@/lib/update";
 import { isGatewayWeb, gatewayToken, setUnauthorizedHandler } from "@/lib/webMode";
 import { WebTokenGate } from "@/components/web/WebTokenGate";
 import { useIsMobile } from "@/lib/useIsMobile";
+import { leaves, useLayoutStore, type SplitDir } from "@/lib/layout";
 
 export function AppShell() {
   const { t } = useTranslation("nav");
@@ -39,6 +40,47 @@ export function AppShell() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // Ghostty-style split-pane shortcuts, live only on the /live surface. Disabled
+  // where tiling can't work (phone width, web gateway) and in Settings. New
+  // panes get a real session in the focused folder so they co-stream.
+  const splitDisabled = isMobile || isGatewayWeb;
+  useEffect(() => {
+    if (splitDisabled) return;
+    const doSplit = async (dir: SplitDir) => {
+      const id = await useRuntimeStore.getState().newTiledSession();
+      if (id) useLayoutStore.getState().split(dir, id);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (!window.location.pathname.startsWith("/live")) return;
+      const layout = useLayoutStore.getState();
+      const key = e.key.toLowerCase();
+      if (key === "d") {
+        // Cmd+D splits side-by-side; Cmd+Shift+D stacks.
+        e.preventDefault();
+        void doSplit(e.shiftKey ? "col" : "row");
+      } else if (e.shiftKey && key === "enter") {
+        e.preventDefault();
+        layout.toggleZoom();
+      } else if (key === "w") {
+        // Close the focused pane — but only while tiled; a lone pane lets
+        // Cmd+W fall through to its usual window-close.
+        if (leaves(layout.tree).length > 1) {
+          e.preventDefault();
+          layout.closeFocused();
+        }
+      } else if (e.altKey && (key === "arrowleft" || key === "arrowup")) {
+        e.preventDefault();
+        layout.focusAdjacent("prev");
+      } else if (e.altKey && (key === "arrowright" || key === "arrowdown")) {
+        e.preventDefault();
+        layout.focusAdjacent("next");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [splitDisabled]);
   // In the packaged desktop app, auto-start the bundled OpenCode and connect,
   // and bring the Jupyter server back up if the user enabled it before.
   useEffect(() => {

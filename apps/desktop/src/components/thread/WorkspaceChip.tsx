@@ -3,7 +3,7 @@ import { FolderOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { isTauri, pickFolder } from "@/lib/tauri";
-import { datedWorkspaceName, useRuntimeStore } from "@/lib/runtime";
+import { datedWorkspaceName, DRAFT_KEY, useRuntimeStore } from "@/lib/runtime";
 
 /** Last path segment of the workspace folder, or "Workspace" when unknown. */
 export function baseName(path: string | null): string {
@@ -25,7 +25,9 @@ export function WorkspaceChip() {
   const currentId = useRuntimeStore((s) => s.currentId);
   const workspacePinned = useRuntimeStore((s) => s.workspacePinned);
   const switchWorkspace = useRuntimeStore((s) => s.switchWorkspace);
-  const sending = useRuntimeStore((s) => s.sending);
+  // Only THIS draft's own send should lock the picker — not an unrelated split
+  // pane's send (the global `sending` is the OR across all panes).
+  const sending = useRuntimeStore((s) => !!s.sendingSessions[DRAFT_KEY]);
   const [busy, setBusy] = useState(false);
 
   if (!isTauri || currentId) return null;

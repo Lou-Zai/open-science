@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { INSPECTOR_MAX, INSPECTOR_MIN, useOverlayTitlebar, useUiStore } from "@/lib/store";
 import { cn } from "@/lib/cn";
 import { useIsMobile } from "@/lib/useIsMobile";
+import { useDragDivider } from "@/lib/useDragDivider";
 
 /** Dragging the divider below this pane width closes the pane — the same
  *  snap-shut behaviour as the sidebar. Sits below INSPECTOR_MIN for a clear snap. */
@@ -28,10 +29,6 @@ export function RightPane({
   const { inspectorWidth, inspectorMaximized, setInspectorWidth, setInspectorMaximized } =
     useUiStore();
   const isMobile = useIsMobile();
-  // While dragging, the live width lives here; the store (and localStorage)
-  // are only written on pointer-up.
-  const [dragWidth, setDragWidth] = useState<number | null>(null);
-  const dragging = dragWidth !== null;
 
   // Maximized never outlives the pane — closing it returns the next pane
   // (possibly for a different artifact or session) to the normal split.
@@ -43,31 +40,18 @@ export function RightPane({
       Math.min(w, INSPECTOR_MAX, Math.round(window.innerWidth * MAX_FRACTION)),
     );
 
-  const onDividerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setDragWidth(inspectorWidth);
-  };
-
-  const onDividerPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragging) return;
-    // The pane ends at the window's right edge, so the width is whatever is
-    // right of the pointer.
-    const w = window.innerWidth - e.clientX;
-    if (w < COLLAPSE_BELOW) {
-      // Snap closed — the pane unmounts, which also ends the drag.
-      setDragWidth(null);
-      onClose();
-      return;
-    }
-    setDragWidth(clamp(w));
-  };
-
-  const onDividerPointerUp = () => {
-    if (!dragging) return;
-    setInspectorWidth(dragWidth);
-    setDragWidth(null);
-  };
+  // The pane ends at the window's right edge, so its width is whatever is right
+  // of the pointer; dragging far right (below COLLAPSE_BELOW) snaps it closed,
+  // which unmounts the pane and thereby ends the drag.
+  const { dragging, dragValue, handleProps } = useDragDivider({
+    value: inspectorWidth,
+    compute: ({ x }) => {
+      const w = window.innerWidth - x;
+      return w < COLLAPSE_BELOW ? null : clamp(w);
+    },
+    onCommit: setInspectorWidth,
+    onCollapse: onClose,
+  });
 
   if (inspectorMaximized || isMobile) {
     // Maximized, OR mobile: the split-pane column (`lg:block`, fixed width) has
@@ -80,16 +64,13 @@ export function RightPane({
   return (
     <div
       className="relative hidden h-full shrink-0 lg:block"
-      style={{ width: dragWidth ?? inspectorWidth }}
+      style={{ width: dragValue ?? inspectorWidth }}
     >
       <div className="h-full">{children}</div>
       {/* Drag divider: resize within [INSPECTOR_MIN, INSPECTOR_MAX]; dragging
           far right snaps the pane closed. */}
       <div
-        onPointerDown={onDividerPointerDown}
-        onPointerMove={onDividerPointerMove}
-        onPointerUp={onDividerPointerUp}
-        onPointerCancel={onDividerPointerUp}
+        {...handleProps}
         className="group absolute inset-y-0 left-0 z-10 w-[5px] cursor-col-resize"
       >
         <div
