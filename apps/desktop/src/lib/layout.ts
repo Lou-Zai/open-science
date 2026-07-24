@@ -315,6 +315,20 @@ interface LayoutState {
   focusedLeafId: string | null;
   /** A transiently maximized leaf (Cmd+Shift+Enter); not persisted. */
   zoomedLeafId: string | null;
+  /** The "tentative" (preview) screen opened by clicking a sidebar session, à la
+   *  a browser preview tab. While tentative, clicking another session REUSES it
+   *  (swaps its one pane); any real interaction — typing, sending, splitting,
+   *  docking, or switching to another screen — PINS it (clears this) so the next
+   *  session-click opens a fresh tentative screen. Not persisted (a relaunch
+   *  restores every screen as pinned). Invariant: non-null ⟹ === activeGroupId. */
+  ephemeralGroupId: string | null;
+  /** Open `sessionId` full-screen in the tentative screen — reusing the current
+   *  tentative screen if one exists, else opening a new one. The sidebar-click
+   *  entry (#3). */
+  openSessionEphemeral: (sessionId: string) => void;
+  /** Pin the tentative screen (clear `ephemeralGroupId`) — called by any real
+   *  interaction with it. No-op when there is none. */
+  pinEphemeral: () => void;
   /** Add a new empty group and activate it; returns its id. */
   addGroup: () => string;
   /** Close a group; never drops below one (the last group is emptied instead). */
@@ -322,8 +336,8 @@ interface LayoutState {
   renameGroup: (groupId: string, name: string) => void;
   setActiveGroup: (groupId: string) => void;
   /** Split the focused leaf toward `dir` (row → new pane on the right, col →
-   *  below), binding `sessionId` to it and focusing it. */
-  split: (dir: SplitDir, sessionId: string) => void;
+   *  below), binding `sessionId` to it (or a draft when null) and focusing it. */
+  split: (dir: SplitDir, sessionId: string | null) => void;
   /** Dock a NEW pane (bound to `sessionId`, or a draft when null) against
    *  `targetLeafId` on `edge`; focuses it. The drag-to-dock entry for a session
    *  coming from the sidebar. */
@@ -331,6 +345,11 @@ interface LayoutState {
   /** Move an existing leaf to dock against `targetLeafId` on `edge` (re-dock via
    *  dragging a pane header). No-op if target === moved or target is missing. */
   moveLeaf: (leafId: string, targetLeafId: string, edge: DockEdge) => void;
+  /** Move a leaf from ANOTHER group into the ACTIVE group, docked against
+   *  `targetLeafId` on `edge` (or filling the active group when target is ""):
+   *  the cross-screen drag (#4). Removes it from its source group (which may
+   *  become empty). No-op if the leaf isn't found in another group. */
+  moveLeafToActiveGroup: (leafId: string, targetLeafId: string, edge: DockEdge) => void;
   /** Close the focused leaf (no-op on the last pane). */
   closeFocused: () => void;
   closePane: (leafId: string) => void;
@@ -379,6 +398,45 @@ export const useLayoutStore = create<LayoutState>((set, get) => {
     tree: initActive.tree,
     focusedLeafId: initActive.focusedLeafId,
     zoomedLeafId: null,
+    ephemeralGroupId: null,
+
+    openSessionEphemeral: (sessionId) =>
+      set((s) => {
+        const reusable =
+          s.ephemeralGroupId && s.groups.some((g) => g.id === s.ephemeralGroupId)
+            ? s.ephemeralGroupId
+            : null;
+        const leaf = makeLeaf(sessionId);
+        if (reusable) {
+          // Reuse the tentative screen: swap its single pane's session, stay
+          // tentative. This is the ONE path that keeps ephemeralGroupId.
+          const groups = s.groups.map((g) =>
+            g.id === reusable ? { ...g, tree: leaf, focusedLeafId: leaf.id, zoomedLeafId: null } : g,
+          );
+          persist(groups, reusable);
+          return {
+            groups,
+            activeGroupId: reusable,
+            tree: leaf,
+            focusedLeafId: leaf.id,
+            zoomedLeafId: null,
+            ephemeralGroupId: reusable,
+          };
+        }
+        // Open a fresh tentative screen.
+        const g: LayoutGroup = { id: genGroupId(), name: "", tree: leaf, focusedLeafId: leaf.id, zoomedLeafId: null };
+        const groups = [...s.groups, g];
+        persist(groups, g.id);
+        return {
+          groups,
+          activeGroupId: g.id,
+          tree: g.tree,
+          focusedLeafId: g.focusedLeafId,
+          zoomedLeafId: null,
+          ephemeralGroupId: g.id,
+        };
+      }),
+    pinEphemeral: () => set((s) => (s.ephemeralGroupId ? { ephemeralGroupId: null } : {})),
 
     addGroup: () => {
       const g: LayoutGroup = { id: genGroupId(), name: "", tree: null, focusedLeafId: null, zoomedLeafId: null };
@@ -388,16 +446,19 @@ export const useLayoutStore = create<LayoutState>((set, get) => {
         tree: null,
         focusedLeafId: null,
         zoomedLeafId: null,
+        // Leaving the tentative screen for an explicit new one pins it.
+        ephemeralGroupId: null,
       }));
       persist(get().groups, get().activeGroupId);
       return g.id;
     },
     closeGroup: (groupId) => {
       set((s) => {
+        const ephemeralGroupId = s.ephemeralGroupId === groupId ? null : s.ephemeralGroupId;
         if (s.groups.length <= 1) {
           // Never zero groups — empty the sole group instead of removing it.
           const only: LayoutGroup = { ...s.groups[0], tree: null, focusedLeafId: null, zoomedLeafId: null };
-          return { groups: [only], activeGroupId: only.id, tree: null, focusedLeafId: null, zoomedLeafId: null };
+          return { groups: [only], activeGroupId: only.id, tree: null, focusedLeafId: null, zoomedLeafId: null, ephemeralGroupId };
         }
         const idx = s.groups.findIndex((g) => g.id === groupId);
         if (idx < 0) return {};
@@ -411,6 +472,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => {
           tree: active.tree,
           focusedLeafId: active.focusedLeafId,
           zoomedLeafId: active.zoomedLeafId,
+          ephemeralGroupId,
         };
       });
       persist(get().groups, get().activeGroupId);
@@ -423,18 +485,24 @@ export const useLayoutStore = create<LayoutState>((set, get) => {
       set((s) => {
         const g = s.groups.find((x) => x.id === groupId);
         if (!g) return {};
+        // Switching AWAY from the tentative screen pins it — only a direct
+        // sidebar session-click (openSessionEphemeral) keeps it tentative.
+        const ephemeralGroupId =
+          s.ephemeralGroupId && s.ephemeralGroupId !== groupId ? null : s.ephemeralGroupId;
         persist(s.groups, groupId);
-        return { activeGroupId: groupId, tree: g.tree, focusedLeafId: g.focusedLeafId, zoomedLeafId: g.zoomedLeafId };
+        return { activeGroupId: groupId, tree: g.tree, focusedLeafId: g.focusedLeafId, zoomedLeafId: g.zoomedLeafId, ephemeralGroupId };
       }),
 
     split: (dir, sessionId) => {
       const { tree, focusedLeafId } = get();
       if (!tree || !focusedLeafId) return;
+      get().pinEphemeral();
       const leaf = makeLeaf(sessionId);
       const edge: DockEdge = dir === "row" ? "right" : "bottom";
       commitActive({ tree: insertLeaf(tree, focusedLeafId, edge, leaf), focusedLeafId: leaf.id, zoomedLeafId: null });
     },
     dockSession: (targetLeafId, edge, sessionId) => {
+      get().pinEphemeral();
       const { tree } = get();
       const leaf = makeLeaf(sessionId);
       // No target (empty group) → the dragged session fills the group.
@@ -454,6 +522,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => {
       if (!tree) return;
       const moved = findLeaf(tree, leafId);
       if (!moved || !findLeaf(tree, targetLeafId)) return;
+      get().pinEphemeral();
       // Insert a copy at the destination, then remove the original. A fresh id
       // keeps the two operations from colliding on one id mid-tree.
       const clone = makeLeaf(moved.sessionId);
@@ -465,6 +534,44 @@ export const useLayoutStore = create<LayoutState>((set, get) => {
         tree: nextTree,
         focusedLeafId: nextFocus && findLeaf(nextTree, nextFocus) ? nextFocus : clone.id,
         zoomedLeafId: null,
+      });
+    },
+    moveLeafToActiveGroup: (leafId, targetLeafId, edge) => {
+      get().pinEphemeral();
+      set((s) => {
+        // Find the leaf's SOURCE group (may be any group but the active one).
+        const source = s.groups.find((g) => g.tree && findLeaf(g.tree, leafId));
+        if (!source) return {};
+        const moved = source.tree ? findLeaf(source.tree, leafId) : null;
+        if (!moved) return {};
+        const active = s.groups.find((g) => g.id === s.activeGroupId)!;
+        // Same-group drops go through moveLeaf, not here.
+        if (source.id === active.id) return {};
+        const clone = makeLeaf(moved.sessionId);
+        // Dock the clone into the active group: fill an empty group, else insert
+        // beside the target leaf (bail if the target vanished mid-drag).
+        let activeTree: PaneNode;
+        if (!active.tree) activeTree = clone;
+        else if (findLeaf(active.tree, targetLeafId)) activeTree = insertLeaf(active.tree, targetLeafId, edge, clone);
+        else return {};
+        // Remove the leaf from its source group (which may go empty → onboarding).
+        const removed = source.tree ? removeLeaf(source.tree, leafId) : null;
+        const sourceTree = removed ? removed.tree : null;
+        const sourceFocus = removed ? removed.nextFocusId : null;
+        const groups = s.groups.map((g) => {
+          if (g.id === active.id)
+            return { ...g, tree: activeTree, focusedLeafId: clone.id, zoomedLeafId: null };
+          if (g.id === source.id)
+            return {
+              ...g,
+              tree: sourceTree,
+              focusedLeafId: sourceFocus,
+              zoomedLeafId: g.zoomedLeafId && sourceTree && findLeaf(sourceTree, g.zoomedLeafId) ? g.zoomedLeafId : null,
+            };
+          return g;
+        });
+        persist(groups, s.activeGroupId);
+        return { groups, tree: activeTree, focusedLeafId: clone.id, zoomedLeafId: null };
       });
     },
     closeFocused: () => {

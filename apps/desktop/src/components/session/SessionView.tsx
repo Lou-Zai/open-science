@@ -13,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import type { RuntimeStatus } from "@ai4s/shared";
-import { DRAFT_KEY, rootSessionOf, useRuntimeStore } from "@/lib/runtime";
+import { draftKeyFor, rootSessionOf, useRuntimeStore } from "@/lib/runtime";
 import { useLayoutStore } from "@/lib/layout";
 import { startPaneDrag } from "@/lib/dragPane";
 import { isGatewayWeb } from "@/lib/webMode";
@@ -73,12 +73,16 @@ export function SessionView({
   // `sid` is what this pane WRITES to (null = draft → create on first send).
   // `eid` is what it DISPLAYS: a real pane is its own session, but the focused
   // draft follows `currentId` so a first send's draft→session graft (which moves
-  // the thread off DRAFT_KEY and sets currentId) never blanks the pane. `key`
-  // addresses the per-session maps (threads/panes/agents), DRAFT_KEY on a draft.
+  // the thread off the draft slot and sets currentId) never blanks the pane.
+  // `key` addresses the per-session maps (threads/panes/agents): a real session
+  // by id, else this pane's own `draft:<leafId>` slot.
   const sid = sessionId;
   const currentId = useRuntimeStore((s) => s.currentId);
   const eid = sid ?? (focused ? currentId : null);
-  const key = eid ?? DRAFT_KEY;
+  // This pane's OWN draft slot, so several unbound panes each keep an
+  // independent draft and each create their own session on first send (#2).
+  const draftKey = draftKeyFor(leafId);
+  const key = eid ?? draftKey;
 
   // Per-field selection (never a bare useRuntimeStore()): a background session's
   // SSE folds must not repaint this pane. The active thread is selected on its
@@ -122,7 +126,8 @@ export function SessionView({
   const bindSession = useLayoutStore((s) => s.bindSession);
   const dockSession = useLayoutStore((s) => s.dockSession);
   const setLeafZoom = useLayoutStore((s) => s.setLeafZoom);
-  const newTiledSession = useRuntimeStore((s) => s.newTiledSession);
+  // Any real interaction with a tentative (preview) screen pins it (#3).
+  const pinEphemeral = useLayoutStore((s) => s.pinEphemeral);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   // Split buttons/drag only make sense where tiling works (desktop, not web).
@@ -137,18 +142,24 @@ export function SessionView({
   const bindIfCreated = (created: string | null) => {
     if (created && sid === null) bindSession(leafId, created);
   };
-  // Split THIS pane: create a fresh session in the same folder and dock it to
-  // the given edge (the visible, no-shortcut-needed entry to tiling).
-  const onSplit = async (edge: "right" | "bottom") => {
-    const id = await newTiledSession();
-    if (id) dockSession(leafId, edge, id);
+  // Split THIS pane: dock a fresh DRAFT pane on the given edge. No session or
+  // folder is created until that pane's first send (#2), and it carries its own
+  // independent draft (thread/composer/model).
+  const onSplit = (edge: "right" | "bottom") => {
+    dockSession(leafId, edge, null);
   };
-  const onSend = async (text: string) => bindIfCreated(await sendPrompt(text, sid ?? undefined));
-  const onRunShell = async (command: string) =>
-    bindIfCreated(await runShell(command, sid ?? undefined));
+  const onSend = async (text: string) => {
+    pinEphemeral();
+    bindIfCreated(await sendPrompt(text, sid ?? undefined, draftKey));
+  };
+  const onRunShell = async (command: string) => {
+    pinEphemeral();
+    bindIfCreated(await runShell(command, sid ?? undefined, draftKey));
+  };
   const onRunCommand = async (name: string, args: string) => {
+    pinEphemeral();
     const localClear = name === "new" || name === "clear";
-    const created = await runCommand(name, args, sid ?? undefined);
+    const created = await runCommand(name, args, sid ?? undefined, draftKey);
     if (localClear) {
       // /new and /clear reset this pane to a fresh draft in the same folder.
       // focus→URL never navigates to bare "/live", so do it here (the draft
@@ -168,7 +179,10 @@ export function SessionView({
 
   const handlers: BlockHandlers = useMemo(
     () => ({
-      onArtifactOpen: (a) => openArtifact(a, sid ?? undefined),
+      onArtifactOpen: (a) => {
+        pinEphemeral();
+        openArtifact(a, sid ?? undefined);
+      },
       onFigureComment: (a, title) =>
         void sendPrompt(
           `On the figure ${title}, at (${a.x.toFixed(0)}%, ${a.y.toFixed(0)}%): ${a.note}`,
@@ -179,7 +193,7 @@ export function SessionView({
         if (await revertMessage(id, sid ?? undefined)) setComposerDraft(text);
       },
     }),
-    [openArtifact, sendPrompt, editMessage, revertMessage, setComposerDraft, sid],
+    [openArtifact, sendPrompt, editMessage, revertMessage, setComposerDraft, sid, pinEphemeral],
   );
   const onEvaluate = (expr: string) =>
     void sendPrompt(`Evaluate in the notebook kernel:\n\`\`\`python\n${expr}\n\`\`\``, sid ?? undefined);
@@ -263,6 +277,22 @@ export function SessionView({
   const chatRef = useRef<HTMLDivElement>(null);
   const onChatScroll = useScrollMemory(chatRef, `chat:${key}`, !historyLoading);
 
+  // Measure the floating composer so the conversation can pad its bottom by
+  // exactly that height (in real px, outside the chat zoom) — the last message
+  // always clears the composer, whatever the zoom or composer height.
+  const composerRef = useRef<HTMLDivElement>(null);
+  const [composerH, setComposerH] = useState(80);
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    const measure = () => setComposerH(el.offsetHeight);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [inspectorFillsPane]);
+
   const autoOpened = useRef(new Set<string>());
   useEffect(() => {
     const agentNb = uniqueNotebooks.find(
@@ -299,7 +329,8 @@ export function SessionView({
 
   return (
     <div className="flex h-full min-w-0">
-      <div className="flex h-full min-w-0 flex-1 flex-col">
+      {/* `relative` anchors the floating composer (absolute, below). */}
+      <div className="relative flex h-full min-w-0 flex-1 flex-col">
         <div
           data-tauri-drag-region={asTitlebar || undefined}
           style={sidebarCollapsed && asTitlebar ? overlayTitlebarStyle(true) : undefined}
@@ -344,7 +375,10 @@ export function SessionView({
           <div data-tauri-drag-region={asTitlebar || undefined} className="flex-1" />
           {eid && (
             <button
-              onClick={() => setShowFiles(!showFiles, sid ?? undefined)}
+              onClick={() => {
+                pinEphemeral();
+                setShowFiles(!showFiles, sid ?? undefined);
+              }}
               className={cn(
                 "flex items-center gap-1 rounded-md px-1.5 py-1 text-xs transition-colors hover:bg-surface-2",
                 showFiles ? "bg-surface-2 text-text" : "text-muted",
@@ -363,7 +397,10 @@ export function SessionView({
           )}
           {eid && hasRuns && (
             <button
-              onClick={() => setShowRuns(!showRuns, sid ?? undefined)}
+              onClick={() => {
+                pinEphemeral();
+                setShowRuns(!showRuns, sid ?? undefined);
+              }}
               className={cn(
                 "flex items-center gap-1 rounded-md px-1.5 py-1 text-xs transition-colors hover:bg-surface-2",
                 showRuns ? "bg-surface-2 text-text" : "text-muted",
@@ -413,7 +450,10 @@ export function SessionView({
           {uniqueNotebooks.map((nb) => (
             <button
               key={nb.path}
-              onClick={() => openArtifact(nb, sid ?? undefined)}
+              onClick={() => {
+                pinEphemeral();
+                openArtifact(nb, sid ?? undefined);
+              }}
               className={cn(
                 "flex items-center gap-1 rounded-md px-1.5 py-1 font-mono text-xs transition-colors hover:bg-surface-2",
                 activeArtifact?.path === nb.path ? "bg-surface-2 text-text" : "text-muted",
@@ -446,10 +486,16 @@ export function SessionView({
         <div
           ref={chatRef}
           onScroll={onChatScroll}
-          style={zoom !== 1 ? { zoom } : undefined}
+          // Bottom padding (real px, outside the zoom) = the measured floating
+          // composer height, so the last message always clears it at any zoom.
+          style={{ paddingBottom: composerH + 12 }}
           className="flex-1 overflow-y-auto"
         >
-          <div className="mx-auto flex max-w-[760px] flex-col gap-4 px-8 py-6">
+          {/* Zoom the CHAT content (not the scroll box or the composer). */}
+          <div
+            style={zoom !== 1 ? { zoom } : undefined}
+            className="mx-auto flex max-w-[760px] flex-col gap-4 px-8 pt-6"
+          >
             {!connected && !connecting && (
               <div className="rounded-card border border-border bg-surface p-5 shadow-card">
                 <div className="text-sm font-medium text-text">{t("live.runtime.title")}</div>
@@ -518,16 +564,45 @@ export function SessionView({
           </div>
         </div>
 
-        {/* `pointer-events-none` on the gutter + `-auto` on the input so the
-            empty area beside the composer never blocks the conversation behind
-            it. Tiled panes use tighter padding and the full width. */}
+        {/* Floating composer: absolute over the conversation's bottom, with a
+            `pointer-events-none` transparent gutter so the conversation stays
+            visible and scrolls BEHIND it (only the input box itself is opaque).
+            The conversation's `pb-28` keeps the last message clear. Not zoomed —
+            the pane zoom shrinks the CHAT text; the input stays a usable size.
+            Width is a proportion of the pane (zoom-independent), so it never
+            spans edge-to-edge nor gets too narrow. */}
         <div
-          style={zoom !== 1 ? { zoom } : undefined}
-          className={cn("pointer-events-none", solo ? "px-8 pb-5 pt-2" : "px-2.5 pb-2.5 pt-1")}
+          ref={composerRef}
+          className={cn(
+            "pointer-events-none absolute inset-x-0 bottom-0 z-10",
+            solo ? "px-8 pb-5 pt-8" : "px-2.5 pb-3 pt-7",
+          )}
         >
-          {/* Centered + capped so the input never spans edge-to-edge — full
-              width looked cramped in a tiled pane, especially when zoomed. */}
-          <div className={cn("pointer-events-auto mx-auto space-y-3", solo ? "max-w-[760px]" : "max-w-[560px]")}>
+          {/* Frosted-glass layer BEHIND the input: a light tint + blur that both
+              fade out toward the top via a mask, so there's no hard boundary
+              line and the strip is most transparent at the top, gradually
+              frosting toward the bottom. Kept separate from the input so masking
+              never dims the input itself. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 backdrop-blur-md"
+            style={{
+              background:
+                "linear-gradient(to top, color-mix(in srgb, var(--surface) 68%, transparent), transparent 72%)",
+              maskImage: "linear-gradient(to top, #000 28%, transparent)",
+              WebkitMaskImage: "linear-gradient(to top, #000 28%, transparent)",
+            }}
+          />
+          {/* Zoomed with the chat so the input scales down in a small/zoomed
+              pane; width is a proportion of the pane, centered. `relative` keeps
+              it above the frost layer. */}
+          <div
+            style={zoom !== 1 ? { zoom } : undefined}
+            className={cn(
+              "pointer-events-auto relative mx-auto space-y-3",
+              solo ? "max-w-[760px]" : "w-[94%]",
+            )}
+          >
             {activeRequest && (
               <InteractionPrompt
                 question={activeQuestion}
@@ -542,6 +617,7 @@ export function SessionView({
               onSend={onSend}
               onRunShell={(c) => void onRunShell(c)}
               onRunCommand={(n, a) => void onRunCommand(n, a)}
+              onInteract={pinEphemeral}
               commands={composerCommands}
               disabled={!connected || working || webReadOnly}
               working={running}
@@ -560,7 +636,7 @@ export function SessionView({
               approvalMode={approvalMode}
               onApprovalModeChange={(mode) => void setApprovalMode(mode)}
               agentMode={planAvailable ? agentMode : undefined}
-              onAgentModeChange={planAvailable ? (mode) => setAgentMode(mode, sid ?? undefined) : undefined}
+              onAgentModeChange={planAvailable ? (mode) => setAgentMode(mode, key) : undefined}
               showModelPicker={connected && !webReadOnly}
               modelSessionId={key}
               showWorkspaceChip={eid === null}

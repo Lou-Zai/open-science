@@ -59,6 +59,28 @@ const HIDDEN_KEY = "ai4s.hiddenExamples";
 // / recent models persist too, so the effort should as well). Sibling of the
 // model-preferences keys in components/settings/modelPreferences.
 const REASONING_KEY = "ai4s.models.variant.v1";
+/** Per-session model + reasoning-effort overrides, persisted so a restored split
+ *  layout keeps each pane's model/effort (they're keyed by real session id,
+ *  which survives across runs). */
+const SESSION_MODELS_KEY = "ai4s.session.models.v1";
+const SESSION_VARIANTS_KEY = "ai4s.session.variants.v1";
+function loadRecord<V>(key: string): Record<string, V> {
+  if (typeof window === "undefined") return {};
+  try {
+    const v = JSON.parse(window.localStorage.getItem(key) ?? "{}");
+    return v && typeof v === "object" ? v : {};
+  } catch {
+    return {};
+  }
+}
+function saveRecord(key: string, rec: Record<string, unknown>): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(rec));
+  } catch {
+    /* storage full/unavailable never blocks a model switch */
+  }
+}
 
 function initialUrl(): string {
   if (typeof window === "undefined") return DEFAULT_OPENCODE_URL;
@@ -177,7 +199,7 @@ interface RuntimeState {
   disconnect: () => void;
   refreshSessions: () => Promise<void>;
   startDraft: () => void;
-  startDraftInCurrentWorkspace: () => void;
+  startDraftInCurrentWorkspace: (key?: string) => void;
   /** Projects: named shared-workspace folders under the base dir. Sessions
    *  group under a project by `directory`; multiple sessions share the folder. */
   projects: ProjectInfo[];
@@ -235,12 +257,19 @@ interface RuntimeState {
    *  orphaning it. No-op once a session exists or the folder is already pinned. */
   ensureDraftWorkspace: () => Promise<void>;
   openSession: (id: string) => Promise<void>;
-  sendPrompt: (text: string, sessionId?: string) => Promise<string | null>;
+  /** Load a session's history into its thread WITHOUT switching the foreground
+   *  folder/stream — for background split panes so they show their conversation
+   *  on launch instead of a skeleton until focused. No-op if already loaded. */
+  loadHistory: (id: string) => Promise<void>;
+  /** `draftKey` (a `draft:<leafId>` slot) is the per-pane draft this send may
+   *  lazily create a session from — passed by tiled panes so each unbound pane
+   *  keeps its own draft/thread and creates its own session on first send. */
+  sendPrompt: (text: string, sessionId?: string, draftKey?: string) => Promise<string | null>;
   /** Run a "!" shell command directly in the session's workspace folder —
    *  no model turn; the output folds into the thread as a bash tool row. */
-  runShell: (command: string, sessionId?: string) => Promise<string | null>;
+  runShell: (command: string, sessionId?: string, draftKey?: string) => Promise<string | null>;
   /** Run a "/" slash command (config command / skill / MCP prompt). */
-  runCommand: (name: string, args?: string, sessionId?: string) => Promise<string | null>;
+  runCommand: (name: string, args?: string, sessionId?: string, draftKey?: string) => Promise<string | null>;
   /** Interrupt a session's running turn (Stop button / Esc); the focused
    *  session when `sessionId` is omitted. */
   interrupt: (sessionId?: string) => Promise<void>;
@@ -262,10 +291,6 @@ interface RuntimeState {
   deleteSession: (id: string) => Promise<void>;
   hideExample: (id: string) => void;
   installSkill: (text: string) => Promise<string | null>;
-  /** Create an empty session in the CURRENT workspace folder for a new split
-   *  pane, without touching the focused session. Same folder → it co-streams
-   *  with the other same-folder panes. Returns its id (null if not connected). */
-  newTiledSession: () => Promise<string | null>;
   /** Ensure a live background event stream for every workspace folder shown in
    *  a split pane (besides the foreground folder), and drop streams for folders
    *  no longer tiled — so sessions across DIFFERENT projects stream live at once.
@@ -366,6 +391,11 @@ const emptyThread = (): Thread => ({ blocks: [], index: {}, loaded: false });
 /** Threads key for the draft conversation — its blocks move to the real
  *  session id once the session exists, so the page never visibly resets. */
 export const DRAFT_KEY = "draft";
+
+/** A tiled pane's own draft slot, keyed by its leaf id, so multiple unbound
+ *  panes each hold an independent draft (thread/composer/model/agent) and each
+ *  create their own session on first send — instead of sharing DRAFT_KEY. */
+export const draftKeyFor = (leafId: string): string => `draft:${leafId}`;
 
 /** The composer's agent switch: "build" edits and runs; "plan" is OpenCode's
  *  read-only planning agent (edits denied except its plan .md file). */
@@ -486,12 +516,22 @@ async function performTurn(
   // (`currentId`) and may lazily CREATE it from the draft; when a real id is
   // given (a split pane sending to its own session), creation is skipped.
   target?: string,
+  // The per-pane draft slot (`draft:<leafId>`) this send owns. When set, the
+  // echo/lock/thread live under it and — if no target — the lazily-created
+  // session is grafted FROM it, so each unbound tiled pane is fully independent
+  // (its own draft, its own new session on first send) rather than sharing the
+  // one global DRAFT_KEY. Legacy single-pane sends omit it → fall back to
+  // currentId/DRAFT_KEY exactly as before.
+  draftKey?: string,
 ): Promise<string | null> {
   if (!client) {
     set({ error: "Not connected to the OpenCode runtime." });
     return null;
   }
-  const echoKey = target ?? get().currentId ?? DRAFT_KEY;
+  // Where the draft's state is grafted from on lazy-create (this pane's own slot,
+  // or the legacy global slot for a single-pane send).
+  const draftSrc = draftKey ?? DRAFT_KEY;
+  const echoKey = target ?? draftKey ?? get().currentId ?? DRAFT_KEY;
   if (get().sendingSessions[echoKey]) return null; // one send at a time per session
   // The lock is held under `echoKey`, but a draft's first send grafts DRAFT_KEY
   // onto the real id mid-turn — track the current key so the lock moves with it
@@ -509,7 +549,10 @@ async function performTurn(
     };
   });
   try {
-    let id = target ?? get().currentId;
+    // A draft-pane send (draftKey set) always creates its OWN session — never
+    // borrow currentId, which may point at a different focused pane and would
+    // race the focus effect. Only a legacy (no-draftKey) send reuses currentId.
+    let id = target ?? (draftKey ? null : get().currentId);
     if (!id) {
       // Lazy-create the session on the first message (#3). Unless the user
       // pinned a folder via the workspace switcher, a new session gets its
@@ -544,42 +587,47 @@ async function performTurn(
       }
       id = await withRetry(() => client!.createSession());
       set((s) => {
-        // Graft the draft conversation (and its pane) onto the real session id.
-        const threads = { ...s.threads, [id!]: s.threads[DRAFT_KEY] ?? emptyThread() };
-        delete threads[DRAFT_KEY];
+        // Graft this pane's draft conversation (and its pane state) from its own
+        // slot (`draftSrc`) onto the real session id.
+        const threads = { ...s.threads, [id!]: s.threads[draftSrc] ?? emptyThread() };
+        delete threads[draftSrc];
         const panes = { ...s.panes };
-        if (panes[DRAFT_KEY]) {
-          panes[id!] = panes[DRAFT_KEY];
-          delete panes[DRAFT_KEY];
+        if (panes[draftSrc]) {
+          panes[id!] = panes[draftSrc];
+          delete panes[draftSrc];
         }
         const sessionAgents = { ...s.sessionAgents };
-        if (sessionAgents[DRAFT_KEY]) {
-          sessionAgents[id!] = sessionAgents[DRAFT_KEY];
-          delete sessionAgents[DRAFT_KEY];
+        if (sessionAgents[draftSrc]) {
+          sessionAgents[id!] = sessionAgents[draftSrc];
+          delete sessionAgents[draftSrc];
         }
         // Move the in-flight send lock too, so a pane keyed on the new id (the
         // draft pane follows currentId onto the real session) still reads itself
         // as sending across the graft — no flicker to an unlocked composer.
         const sendingSessions = { ...s.sendingSessions };
-        if (sendingSessions[DRAFT_KEY]) {
-          sendingSessions[id!] = sendingSessions[DRAFT_KEY];
-          delete sendingSessions[DRAFT_KEY];
+        if (sendingSessions[draftSrc]) {
+          sendingSessions[id!] = sendingSessions[draftSrc];
+          delete sendingSessions[draftSrc];
         }
         // Carry the draft's per-pane model/effort override onto the real session.
         const sessionModels = { ...s.sessionModels };
-        if (sessionModels[DRAFT_KEY]) {
-          sessionModels[id!] = sessionModels[DRAFT_KEY];
-          delete sessionModels[DRAFT_KEY];
+        if (sessionModels[draftSrc]) {
+          sessionModels[id!] = sessionModels[draftSrc];
+          delete sessionModels[draftSrc];
         }
         const sessionVariants = { ...s.sessionVariants };
-        if (sessionVariants[DRAFT_KEY] !== undefined) {
-          sessionVariants[id!] = sessionVariants[DRAFT_KEY];
-          delete sessionVariants[DRAFT_KEY];
+        if (sessionVariants[draftSrc] !== undefined) {
+          sessionVariants[id!] = sessionVariants[draftSrc];
+          delete sessionVariants[draftSrc];
         }
         return { currentId: id, threads, panes, sessionAgents, sendingSessions, sessionModels, sessionVariants };
       });
       lockKey = id;
-      moveScrollMemory(`chat:${DRAFT_KEY}`, `chat:${id}`);
+      // The draft's model/effort override moved onto the real id — repersist so
+      // a relaunch restores this pane's model, not the global default.
+      saveRecord(SESSION_MODELS_KEY, get().sessionModels);
+      saveRecord(SESSION_VARIANTS_KEY, get().sessionVariants);
+      moveScrollMemory(`chat:${draftSrc}`, `chat:${id}`);
       void get().refreshSessions();
     }
     const sid = id;
@@ -648,7 +696,7 @@ async function performTurn(
     const msg = err instanceof Error ? err.message : String(err);
     void logDebug(`turn FAILED: ${msg}`);
     // The failure belongs next to the message that caused it.
-    const key = target ?? get().currentId ?? DRAFT_KEY;
+    const key = target ?? draftKey ?? get().currentId ?? DRAFT_KEY;
     set((s) => {
       const cur = s.threads[key] ?? emptyThread();
       return {
@@ -778,12 +826,20 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
   sessionParents: {},
   panes: {},
   sessionAgents: {},
-  sessionModels: {},
-  sessionVariants: {},
+  sessionModels: loadRecord<string>(SESSION_MODELS_KEY),
+  sessionVariants: loadRecord<string | null>(SESSION_VARIANTS_KEY),
   setSessionModel: (sessionId, model) =>
-    set((s) => ({ sessionModels: { ...s.sessionModels, [sessionId]: model } })),
+    set((s) => {
+      const sessionModels = { ...s.sessionModels, [sessionId]: model };
+      saveRecord(SESSION_MODELS_KEY, sessionModels);
+      return { sessionModels };
+    }),
   setSessionVariant: (sessionId, variant) =>
-    set((s) => ({ sessionVariants: { ...s.sessionVariants, [sessionId]: variant } })),
+    set((s) => {
+      const sessionVariants = { ...s.sessionVariants, [sessionId]: variant };
+      saveRecord(SESSION_VARIANTS_KEY, sessionVariants);
+      return { sessionVariants };
+    }),
   setAgentMode: (mode, sessionId) =>
     set((s) => ({ sessionAgents: { ...s.sessionAgents, [sessionId ?? s.currentId ?? DRAFT_KEY]: mode } })),
   projects: [],
@@ -1535,11 +1591,13 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
 
   // Local /new and /clear: clear the visible chat context, but keep the active
   // folder. The first next message creates a new OpenCode session in that same
-  // folder; no session, database row, or file is deleted here.
-  startDraftInCurrentWorkspace: () =>
+  // folder; no session, database row, or file is deleted here. `key` is the
+  // draft slot to reset — the pane's own `draft:<leafId>` for a tiled pane,
+  // the global DRAFT_KEY for the single-pane fallback.
+  startDraftInCurrentWorkspace: (key = DRAFT_KEY) =>
     set((s) => {
       const threads = { ...s.threads };
-      threads[DRAFT_KEY] = {
+      threads[key] = {
         ...emptyThread(),
         loaded: true,
         blocks: [
@@ -1552,9 +1610,9 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         ],
       };
       const panes = { ...s.panes };
-      delete panes[DRAFT_KEY];
+      delete panes[key];
       const sessionAgents = { ...s.sessionAgents };
-      delete sessionAgents[DRAFT_KEY];
+      delete sessionAgents[key];
       return { currentId: null, workspacePinned: true, threads, panes, sessionAgents };
     }),
 
@@ -1751,15 +1809,33 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     }
   },
 
+  loadHistory: async (id) => {
+    const c = client;
+    if (!c || get().threads[id]?.loaded) return;
+    try {
+      // getMessages is session-scoped (server routes by the session's folder),
+      // so any connected client works — no folder switch, unlike openSession.
+      const messages = await c.getMessages(id);
+      if (get().threads[id]?.loaded) return; // a live fold beat us to it
+      set((s) => ({
+        threads: { ...s.threads, [id]: { ...historyToThread(messages, s.commands), loaded: true } },
+        sessionAgents: { ...s.sessionAgents, [id]: lastAgentMode(messages) },
+      }));
+    } catch {
+      /* best-effort; the pane keeps its skeleton and loads on focus */
+    }
+  },
+
   // The send lifecycle (new → input → send → response) is shared by plain
   // prompts, "!" shell commands and "/" slash commands — see performTurn.
-  sendPrompt: (text, sessionId) => {
+  sendPrompt: (text, sessionId, draftKey) => {
     // Capture the mode BEFORE performTurn: on a draft, currentId is still null
-    // here (the session is created inside), so this reads DRAFT_KEY correctly.
-    // Pin "plan" only when the catalog actually has it — a stale mode against
-    // an older/custom sidecar must not fail every send with "Agent not found".
+    // here (the session is created inside), so this reads the pane's draft slot
+    // correctly. Pin "plan" only when the catalog actually has it — a stale mode
+    // against an older/custom sidecar must not fail every send with "Agent not
+    // found".
     const s = get();
-    const key = sessionId ?? s.currentId ?? DRAFT_KEY;
+    const key = sessionId ?? draftKey ?? s.currentId ?? DRAFT_KEY;
     const mode = s.sessionAgents[key];
     const agent =
       mode === "plan" && s.agents.some((a) => a.name === "plan") ? "plan" : undefined;
@@ -1774,11 +1850,12 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       false,
       false,
       sessionId,
+      draftKey,
     );
   },
 
   // No retry for shell/command: re-POSTing would run the command twice.
-  runShell: (command, sessionId) => {
+  runShell: (command, sessionId, draftKey) => {
     const agent = get().agents.find((a) => a.mode === "primary")?.name ?? "build";
     return performTurn(
       set,
@@ -1788,12 +1865,13 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       true,
       true,
       sessionId,
+      draftKey,
     );
   },
 
-  runCommand: async (name, args, sessionId) => {
+  runCommand: async (name, args, sessionId, draftKey) => {
     if (name === "new" || name === "clear") {
-      get().startDraftInCurrentWorkspace();
+      get().startDraftInCurrentWorkspace(draftKey);
       return null;
     }
     return performTurn(
@@ -1804,6 +1882,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       true,
       false,
       sessionId,
+      draftKey,
     );
   },
 
@@ -1943,24 +2022,6 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         };
       });
       await client.sendPrompt(id, prompt, undefined, get().defaultModel);
-      return id;
-    } catch (err) {
-      set({ error: err instanceof Error ? err.message : String(err) });
-      return null;
-    }
-  },
-
-  newTiledSession: async () => {
-    if (!client) {
-      set({ error: "Not connected to the OpenCode runtime." });
-      return null;
-    }
-    try {
-      const id = await withRetry(() => client!.createSession());
-      // Seed an empty loaded thread so the new pane shows a clean composer
-      // immediately rather than a history skeleton.
-      set((s) => ({ threads: { ...s.threads, [id]: { ...emptyThread(), loaded: true } } }));
-      await get().refreshSessions();
       return id;
     } catch (err) {
       set({ error: err instanceof Error ? err.message : String(err) });

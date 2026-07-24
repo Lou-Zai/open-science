@@ -18,8 +18,12 @@ export type DragSource =
   | { kind: "session"; sessionId: string }
   | { kind: "pane"; leafId: string; sessionId: string | null };
 
-/** Where the pointer is hovering: a leaf's edge, or an empty group's fill zone. */
-export type DragTarget = { leafId: string; edge: DockEdge } | { empty: true };
+/** Where the pointer is hovering: a leaf's edge, an empty group's fill zone, or
+ *  a screen tab (a switch hint — dwelling there flips to that screen, #4). */
+export type DragTarget =
+  | { leafId: string; edge: DockEdge }
+  | { empty: true }
+  | { groupTab: string };
 
 interface DragPaneState {
   active: null | {
@@ -58,11 +62,16 @@ function hitTest(x: number, y: number): DragTarget | null {
   if (leafEl?.dataset.leafId) {
     return { leafId: leafEl.dataset.leafId, edge: edgeOf(leafEl.getBoundingClientRect(), x, y) };
   }
+  const tabEl = under?.closest<HTMLElement>("[data-group-tab]");
+  if (tabEl?.dataset.groupTab) return { groupTab: tabEl.dataset.groupTab };
   if (under?.closest("[data-empty-group]")) return { empty: true };
   return null;
 }
 
 const DRAG_THRESHOLD_PX = 5;
+/** Dwell over a screen tab before switching to it — long enough that a drag
+ *  merely passing over a tab doesn't thrash screens. */
+const GROUP_SWITCH_DWELL_MS = 400;
 
 /** Swallow the ONE click that a drag-source which is also a click target (a
  *  sidebar NavLink) fires right after the drag, so it doesn't also navigate.
@@ -95,6 +104,15 @@ export function startPaneDrag(
   const startX = e.clientX;
   const startY = e.clientY;
   let started = false;
+  // Screen-switch dwell: which tab the pointer is resting on and its pending
+  // timer, so hovering a screen tab ~400ms flips to that screen (#4).
+  let dwellTab: string | null = null;
+  let dwellTimer: number | undefined;
+  const clearDwell = () => {
+    if (dwellTimer !== undefined) window.clearTimeout(dwellTimer);
+    dwellTimer = undefined;
+    dwellTab = null;
+  };
   // Suppress text selection from the very first move — otherwise dragging a
   // pane header sweeps a selection across the conversation below it. Restored
   // unconditionally in teardown (a plain click restores it immediately).
@@ -105,6 +123,7 @@ export function startPaneDrag(
     window.removeEventListener("pointerup", onUp);
     window.removeEventListener("pointercancel", onCancel);
     window.removeEventListener("blur", onCancel);
+    clearDwell();
     document.body.style.userSelect = "";
     document.body.style.cursor = "";
     document.documentElement.classList.remove("pane-dragging");
@@ -120,7 +139,25 @@ export function startPaneDrag(
       useDragPane.getState().begin(source, title, ev.clientX, ev.clientY);
     }
     window.getSelection()?.removeAllRanges();
-    useDragPane.getState().update(ev.clientX, ev.clientY, hitTest(ev.clientX, ev.clientY));
+    const target = hitTest(ev.clientX, ev.clientY);
+    // Over a screen tab: after a short dwell, switch to that screen so its panes
+    // become drop targets below. Leaving the tab (or moving to another) resets.
+    if (target && "groupTab" in target) {
+      if (target.groupTab !== dwellTab) {
+        clearDwell();
+        dwellTab = target.groupTab;
+        if (target.groupTab !== useLayoutStore.getState().activeGroupId) {
+          const gid = target.groupTab;
+          dwellTimer = window.setTimeout(() => {
+            useLayoutStore.getState().setActiveGroup(gid);
+            clearDwell();
+          }, GROUP_SWITCH_DWELL_MS);
+        }
+      }
+    } else {
+      clearDwell();
+    }
+    useDragPane.getState().update(ev.clientX, ev.clientY, target);
   };
   const onUp = () => {
     teardown();
@@ -150,20 +187,31 @@ function commitPaneDrag(): void {
   const src = active.source;
   const target = active.target;
 
-  // Drop onto an empty group's onboarding zone → the session fills the group.
-  // (Moving an existing pane into another group is not a v1 flow.)
+  // Released over a screen tab (not a pane): the dwell already switched screens,
+  // and there's no pane to dock against — the user should drop onto a pane.
+  if ("groupTab" in target) return;
+
+  // Drop onto an empty group's onboarding zone → fill that (active) group.
   if ("empty" in target) {
     if (src.kind === "session") layout.dockSession("", "right", src.sessionId);
+    // A pane dragged into another (now-active) empty screen moves there.
+    else layout.moveLeafToActiveGroup(src.leafId, "", "right");
     return;
   }
   const { leafId: targetLeafId, edge } = target;
 
   if (src.kind === "pane") {
     if (src.leafId === targetLeafId) return;
-    layout.moveLeaf(src.leafId, targetLeafId, edge);
+    // Same-screen re-dock vs. a cross-screen move: if the source leaf still
+    // lives in the ACTIVE group it's a plain move; otherwise a screen switch
+    // happened mid-drag and it must be relocated out of its origin group (#4).
+    const inActive = layout.tree ? leaves(layout.tree).some((l) => l.id === src.leafId) : false;
+    if (inActive) layout.moveLeaf(src.leafId, targetLeafId, edge);
+    else layout.moveLeafToActiveGroup(src.leafId, targetLeafId, edge);
     return;
   }
-  // Sidebar session: reuse its existing pane if already tiled (no duplicate).
+  // Sidebar session: reuse its existing pane if already tiled in THIS screen
+  // (no duplicate within a group); otherwise dock a new pane for it.
   const tree = layout.tree;
   const existing = tree ? leaves(tree).find((l) => l.sessionId === src.sessionId) : undefined;
   if (existing) {

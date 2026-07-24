@@ -16,6 +16,7 @@ export function GroupTabs() {
   const { t } = useTranslation(["session", "nav"]);
   const groups = useLayoutStore((s) => s.groups);
   const activeGroupId = useLayoutStore((s) => s.activeGroupId);
+  const ephemeralGroupId = useLayoutStore((s) => s.ephemeralGroupId);
   const setActiveGroup = useLayoutStore((s) => s.setActiveGroup);
   const addGroup = useLayoutStore((s) => s.addGroup);
   const closeGroup = useLayoutStore((s) => s.closeGroup);
@@ -53,14 +54,19 @@ export function GroupTabs() {
       <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
         {groups.map((g, i) => {
           const active = g.id === activeGroupId;
+          const ephemeral = g.id === ephemeralGroupId;
           return (
             <div
               key={g.id}
+              // Dock-drag target: hovering this tab mid-drag switches screens (#4).
+              data-group-tab={g.id}
               onClick={() => setActiveGroup(g.id)}
               onDoubleClick={() => setEditingId(g.id)}
               className={cn(
                 "group/tab flex h-7 min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[12px] transition-colors",
                 active ? "bg-surface-2 text-text" : "text-muted hover:bg-surface-2/60",
+                // A tentative (preview) screen reads italic, like a browser preview tab.
+                ephemeral && "italic",
               )}
               title={t("group.renameHint")}
             >

@@ -44,17 +44,15 @@ export function AppShell() {
 
   // Ghostty-style split-pane shortcuts, live only on the /live surface. Disabled
   // where tiling can't work (phone width, web gateway) and in Settings. New
-  // panes get a real session in the focused folder so they co-stream.
+  // panes start as a DRAFT — no session/folder until the pane's first send (#2).
   const splitDisabled = isMobile || isGatewayWeb;
   useEffect(() => {
     if (splitDisabled) return;
-    const doSplit = async (dir: SplitDir) => {
-      const id = await useRuntimeStore.getState().newTiledSession();
-      if (!id) return;
+    const doSplit = (dir: SplitDir) => {
       const layout = useLayoutStore.getState();
-      // Empty group → the new session fills it; otherwise split the focused pane.
-      if (!layout.tree) layout.dockSession("", dir === "row" ? "right" : "bottom", id);
-      else layout.split(dir, id);
+      // Empty group → the new draft fills it; otherwise split the focused pane.
+      if (!layout.tree) layout.dockSession("", dir === "row" ? "right" : "bottom", null);
+      else layout.split(dir, null);
     };
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;

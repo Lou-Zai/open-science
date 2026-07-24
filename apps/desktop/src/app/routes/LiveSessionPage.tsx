@@ -35,6 +35,7 @@ export function LiveSessionPage() {
   const workspace = useRuntimeStore((s) => s.workspace);
   const runningCount = useRuntimeStore((s) => Object.keys(s.runningSessions).length);
   const openSession = useRuntimeStore((s) => s.openSession);
+  const loadHistory = useRuntimeStore((s) => s.loadHistory);
   const startDraft = useRuntimeStore((s) => s.startDraft);
   const reconcileRunning = useRuntimeStore((s) => s.reconcileRunning);
   const syncPaneStreams = useRuntimeStore((s) => s.syncPaneStreams);
@@ -122,6 +123,16 @@ export function LiveSessionPage() {
     if (location.pathname !== want) navigate(want);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusedSid]);
+
+  // Load history for every OTHER visible pane (the focused one loads via
+  // openSession). Without this a restored/tiled background pane shows a skeleton
+  // until clicked. loadHistory no-ops when already loaded, so this is cheap.
+  useEffect(() => {
+    if (!connected || webOrMobile || !tree) return;
+    for (const l of leaves(tree)) {
+      if (l.sessionId && l.sessionId !== focusedSid) void loadHistory(l.sessionId);
+    }
+  }, [tree, connected, webOrMobile, focusedSid, loadHistory]);
 
   // focus → runtime: bind the single directory-scoped stream to the focused
   // session (cross-folder opens restart the sidecar). A draft focus resets to a

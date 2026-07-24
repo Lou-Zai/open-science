@@ -302,18 +302,19 @@ export function Sidebar({ project }: { project: Project }) {
         onClick={(e) => {
           // A trailing click right after a drag is swallowed by the drag
           // controller's one-shot capture listener, so it never reaches here.
-          // Modifier-click opens an existing session in a NEW split pane instead
-          // of navigating the focused one (desktop only — tiling is disabled on
-          // phone width and the web gateway).
-          if (
-            row.kind === "session" &&
-            !isMobile &&
-            !isGatewayWeb &&
-            (e.metaKey || e.ctrlKey || e.altKey)
-          ) {
+          // Desktop tiling: a session click never clobbers the focused pane —
+          // a modifier-click opens the session in a NEW split pane; a plain
+          // click opens it full-screen in the tentative "preview" screen (#3).
+          // Web/phone (single-pane) fall through to the NavLink as before.
+          if (row.kind === "session" && !isMobile && !isGatewayWeb) {
             e.preventDefault();
-            // eslint-disable-next-line i18next/no-literal-string -- SplitDir enum, not UI copy
-            useLayoutStore.getState().split("row", row.id);
+            const layout = useLayoutStore.getState();
+            if (e.metaKey || e.ctrlKey || e.altKey) {
+              // eslint-disable-next-line i18next/no-literal-string -- SplitDir enum, not UI copy
+              layout.split("row", row.id);
+            } else {
+              layout.openSessionEphemeral(row.id);
+            }
           }
         }}
         className={cn(
