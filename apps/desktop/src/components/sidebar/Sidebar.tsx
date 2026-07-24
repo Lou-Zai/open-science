@@ -34,6 +34,7 @@ import { visibleSections, resolveSection } from "@/components/settings/sections"
 import { useIsMobile } from "@/lib/useIsMobile";
 import { useDragDivider } from "@/lib/useDragDivider";
 import { useLayoutStore } from "@/lib/layout";
+import { startPaneDrag } from "@/lib/dragPane";
 import { isGatewayWeb } from "@/lib/webMode";
 import { StatusPills } from "./StatusPills";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -120,6 +121,13 @@ export function Sidebar({ project }: { project: Project }) {
   });
 
   const startNew = () => {
+    // Desktop: "New" acts on the active group — the focused pane becomes a fresh
+    // draft, and an EMPTY group gets a draft pane (so New always shows one).
+    if (!isMobile && !isGatewayWeb) {
+      const layout = useLayoutStore.getState();
+      if (layout.tree && layout.focusedLeafId) layout.bindSession(layout.focusedLeafId, null);
+      else layout.reset(null);
+    }
     startDraft();
     navigate("/live");
   };
@@ -279,7 +287,21 @@ export function Sidebar({ project }: { project: Project }) {
     <div key={row.to} className="group relative">
       <NavLink
         to={row.to}
+        // An <a> is natively draggable; that native drag hijacks the pointer
+        // stream (selecting text instead) and defeats our pointer-based dock
+        // drag. Disable it so startPaneDrag's window listeners see the moves.
+        draggable={false}
+        onDragStart={(e) => e.preventDefault()}
+        onPointerDown={(e) => {
+          // Drag a session row into the pane area to dock it (desktop only).
+          if (row.kind === "session" && !isMobile && !isGatewayWeb) {
+            // eslint-disable-next-line i18next/no-literal-string -- DragSource kind, not UI copy
+            startPaneDrag(e, { kind: "session", sessionId: row.id }, row.title);
+          }
+        }}
         onClick={(e) => {
+          // A trailing click right after a drag is swallowed by the drag
+          // controller's one-shot capture listener, so it never reaches here.
           // Modifier-click opens an existing session in a NEW split pane instead
           // of navigating the focused one (desktop only — tiling is disabled on
           // phone width and the web gateway).

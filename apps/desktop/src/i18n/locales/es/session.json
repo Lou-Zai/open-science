@@ -3,6 +3,21 @@
     "title": "Sesión no encontrada",
     "hint": "Elige una sesión en la barra lateral."
   },
+  "group": {
+    "defaultName": "Pantalla {{n}}",
+    "newTab": "Nueva pantalla",
+    "close": "Cerrar pantalla",
+    "renameHint": "Doble clic para renombrar",
+    "splitRight": "Dividir a la derecha — abre una nueva sesión al lado",
+    "splitDown": "Dividir abajo — abre una nueva sesión debajo",
+    "closePane": "Cerrar este panel",
+    "zoom": "Zoom de este panel",
+    "empty": {
+      "title": "Pantalla vacía",
+      "hint": "Arrastra una sesión desde la barra lateral aquí para empezar, o pulsa ⌘D para dividir.",
+      "newSession": "Nueva sesión"
+    }
+  },
   "composer": {
     "placeholder": {
       "default": "Pregunta lo que quieras",

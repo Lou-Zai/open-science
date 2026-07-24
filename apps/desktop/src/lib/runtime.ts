@@ -144,6 +144,18 @@ interface RuntimeState {
    *  In-memory, but reconciled from the message stream and history: OpenCode's
    *  plan_exit "Yes" continues the session as build — the pill must follow. */
   sessionAgents: Record<string, AgentMode>;
+  /** Per-session model override (key = sid or DRAFT_KEY); absent = the global
+   *  `defaultModel`. Lets each split pane run a different model without a global
+   *  config switch (the model is sent per-turn), so switching one pane's model
+   *  never changes the others. In-memory. */
+  sessionModels: Record<string, string>;
+  /** Per-session reasoning-effort override; absent = the global
+   *  `reasoningVariant`. */
+  sessionVariants: Record<string, string | null>;
+  /** Set a session's model (per-pane); no sidecar config PATCH / reconnect. */
+  setSessionModel: (sessionId: string, model: string) => void;
+  /** Set a session's reasoning effort (per-pane). */
+  setSessionVariant: (sessionId: string, variant: string | null) => void;
   // The pane/agent setters and turn actions below take an optional `sessionId`
   // so a split pane acts on its OWN session; omitted, they fall back to the
   // focused session (`currentId ?? DRAFT_KEY`) — the single-pane behavior.
@@ -408,6 +420,9 @@ export function turnIsOver(messages: HistoryMessage[]): boolean {
  *  kills any fetch at ~60 s, long before a long agent turn finishes. */
 let sseSeq = 0;
 const sseLast = new Map<string, number>();
+/** When each session's async prompt POST returned, so the event handler can log
+ *  first-token latency (see the multi-pane slow-first-token investigation). */
+const turnPostAt = new Map<string, number>();
 
 /** Coalescing for live bash output: a running tool emits an event per stdout
  *  write (a progress bar redraws dozens of times a second) — fold at most one
@@ -550,7 +565,18 @@ async function performTurn(
           sendingSessions[id!] = sendingSessions[DRAFT_KEY];
           delete sendingSessions[DRAFT_KEY];
         }
-        return { currentId: id, threads, panes, sessionAgents, sendingSessions };
+        // Carry the draft's per-pane model/effort override onto the real session.
+        const sessionModels = { ...s.sessionModels };
+        if (sessionModels[DRAFT_KEY]) {
+          sessionModels[id!] = sessionModels[DRAFT_KEY];
+          delete sessionModels[DRAFT_KEY];
+        }
+        const sessionVariants = { ...s.sessionVariants };
+        if (sessionVariants[DRAFT_KEY] !== undefined) {
+          sessionVariants[id!] = sessionVariants[DRAFT_KEY];
+          delete sessionVariants[DRAFT_KEY];
+        }
+        return { currentId: id, threads, panes, sessionAgents, sendingSessions, sessionModels, sessionVariants };
       });
       lockKey = id;
       moveScrollMemory(`chat:${DRAFT_KEY}`, `chat:${id}`);
@@ -604,7 +630,16 @@ async function performTurn(
         return { runningSessions };
       });
     } else {
+      // Timing probe (concurrent multi-pane first-token investigation): how long
+      // the server takes to ACCEPT the async prompt, and — via turnPostAt, read
+      // in the event handler — how long until the first streamed token. A slow
+      // POST points at a cold/locked directory instance; a fast POST but slow
+      // first token points at model/provider or server turn processing.
+      const t0 = performance.now();
+      void logDebug(`send POST → ${sid} (streams=${streamClients.size})`);
       await post(sid);
+      void logDebug(`send POST ok ${sid} ${Math.round(performance.now() - t0)}ms`);
+      turnPostAt.set(sid, performance.now());
       set((s) => ({ runningSessions: { ...s.runningSessions, [sid]: true } }));
     }
     void logDebug("turn OK");
@@ -689,15 +724,29 @@ export function getClient(): OpenCodeClient | null {
  *  model (OpenAI has "minimal", Anthropic has "max", many models have none), so
  *  switching to a model without the chosen level cleanly sends nothing and lets
  *  OpenCode apply that model's default effort. */
-function activeVariant(state: RuntimeState): string | undefined {
-  const { reasoningVariant, defaultModel, providers } = state;
-  if (!reasoningVariant || !defaultModel) return undefined;
-  const i = defaultModel.indexOf("/");
+function variantExposed(
+  providers: RuntimeState["providers"],
+  model: string | null,
+  variant: string | null | undefined,
+): string | undefined {
+  if (!variant || !model) return undefined;
+  const i = model.indexOf("/");
   if (i <= 0) return undefined;
-  const model = providers
-    .find((p) => p.id === defaultModel.slice(0, i))
-    ?.models.find((m) => m.id === defaultModel.slice(i + 1));
-  return model?.variants?.includes(reasoningVariant) ? reasoningVariant : undefined;
+  const m = providers
+    .find((p) => p.id === model.slice(0, i))
+    ?.models.find((mm) => mm.id === model.slice(i + 1));
+  return m?.variants?.includes(variant) ? variant : undefined;
+}
+/** The model + reasoning effort for a session's turn: its own per-pane override
+ *  if set, else the global default. Lets each split pane run a different model. */
+function modelForSession(state: RuntimeState, key: string): { model: string | null; variant: string | undefined } {
+  const model = state.sessionModels[key] ?? state.defaultModel;
+  const variant = variantExposed(
+    state.providers,
+    model,
+    state.sessionVariants[key] !== undefined ? state.sessionVariants[key] : state.reasoningVariant,
+  );
+  return { model, variant };
 }
 
 export const useRuntimeStore = create<RuntimeState>((set, get) => ({
@@ -729,6 +778,12 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
   sessionParents: {},
   panes: {},
   sessionAgents: {},
+  sessionModels: {},
+  sessionVariants: {},
+  setSessionModel: (sessionId, model) =>
+    set((s) => ({ sessionModels: { ...s.sessionModels, [sessionId]: model } })),
+  setSessionVariant: (sessionId, variant) =>
+    set((s) => ({ sessionVariants: { ...s.sessionVariants, [sessionId]: variant } })),
   setAgentMode: (mode, sessionId) =>
     set((s) => ({ sessionAgents: { ...s.sessionAgents, [sessionId ?? s.currentId ?? DRAFT_KEY]: mode } })),
   projects: [],
@@ -1052,6 +1107,12 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
           const oldest = sseLast.keys().next().value;
           if (oldest === undefined) break;
           sseLast.delete(oldest);
+        }
+        // First streamed token after a send → log latency (multi-pane probe).
+        const posted = turnPostAt.get(event.sessionId);
+        if (posted !== undefined && (event.type === "text.updated" || event.type === "reasoning.updated")) {
+          turnPostAt.delete(event.sessionId);
+          void logDebug(`first token ← ${event.sessionId} ${Math.round(performance.now() - posted)}ms`);
         }
       }
       if (event.type === "error") {
@@ -1698,19 +1759,18 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     // Pin "plan" only when the catalog actually has it — a stale mode against
     // an older/custom sidecar must not fail every send with "Agent not found".
     const s = get();
-    const mode = s.sessionAgents[sessionId ?? s.currentId ?? DRAFT_KEY];
+    const key = sessionId ?? s.currentId ?? DRAFT_KEY;
+    const mode = s.sessionAgents[key];
     const agent =
       mode === "plan" && s.agents.some((a) => a.name === "plan") ? "plan" : undefined;
+    // This pane's own model + effort (falling back to the global default),
+    // captured now so a draft's later graft still sends the pane's choice.
+    const { model, variant } = modelForSession(s, key);
     return performTurn(
       set,
       get,
       text,
-      // Pass the current default model so an old session (which OpenCode bound
-      // to its creation-time model) follows a later model switch, per #8.
-      (sid) =>
-        withRetry(() =>
-          client!.sendPrompt(sid, text, agent, get().defaultModel, activeVariant(get())),
-        ),
+      (sid) => withRetry(() => client!.sendPrompt(sid, text, agent, model, variant)),
       false,
       false,
       sessionId,

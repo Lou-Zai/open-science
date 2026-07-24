@@ -3,6 +3,21 @@
     "title": "Session not found",
     "hint": "Pick a session from the sidebar."
   },
+  "group": {
+    "defaultName": "Screen {{n}}",
+    "newTab": "New screen",
+    "close": "Close screen",
+    "renameHint": "Double-click to rename",
+    "splitRight": "Split right — open a new session beside this one",
+    "splitDown": "Split down — open a new session below this one",
+    "closePane": "Close this pane",
+    "zoom": "Zoom this pane",
+    "empty": {
+      "title": "Empty screen",
+      "hint": "Drag a session from the sidebar here to start, or press ⌘D to split.",
+      "newSession": "New session"
+    }
+  },
   "composer": {
     "placeholder": {
       "default": "Ask anything",

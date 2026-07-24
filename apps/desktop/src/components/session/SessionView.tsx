@@ -1,10 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { FlaskConical, FolderOpen, Loader2, NotebookPen, PanelLeft, PlugZap } from "lucide-react";
+import {
+  FlaskConical,
+  FolderOpen,
+  Loader2,
+  NotebookPen,
+  PanelBottom,
+  PanelLeft,
+  PanelRight,
+  PlugZap,
+  X,
+} from "lucide-react";
 import type { RuntimeStatus } from "@ai4s/shared";
 import { DRAFT_KEY, rootSessionOf, useRuntimeStore } from "@/lib/runtime";
 import { useLayoutStore } from "@/lib/layout";
+import { startPaneDrag } from "@/lib/dragPane";
+import { isGatewayWeb } from "@/lib/webMode";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { queryRuns } from "@/lib/runs";
 import { useOverlayTitlebar, useUiStore } from "@/lib/store";
 import { overlayTitlebarStyle } from "@/lib/titlebar";
@@ -38,11 +51,23 @@ export function SessionView({
    *  expand button (only one pane may — otherwise every header clears the
    *  traffic lights). In single-pane mode this is always the one view. */
   chromeAsTitlebar = true,
+  /** Per-pane content zoom (1 = 100%); scales the conversation + composer. */
+  zoom = 1,
+  /** The only pane in its group. A tiled (non-solo) pane is narrow, so the
+   *  files/artifact inspector fills the pane instead of sitting in a side
+   *  column, and header toggles show icon-only. */
+  solo = true,
+  /** Close this pane (shown as an ✕ in the header). Omitted for the sole pane
+   *  and on web/mobile. */
+  onClose,
 }: {
   sessionId: string | null;
   leafId: string;
   focused: boolean;
   chromeAsTitlebar?: boolean;
+  zoom?: number;
+  solo?: boolean;
+  onClose?: () => void;
 }) {
   const { t } = useTranslation(["session", "common"]);
   // `sid` is what this pane WRITES to (null = draft → create on first send).
@@ -95,7 +120,13 @@ export function SessionView({
   const sessionAgents = useRuntimeStore((s) => s.sessionAgents);
   const setAgentMode = useRuntimeStore((s) => s.setAgentMode);
   const bindSession = useLayoutStore((s) => s.bindSession);
+  const dockSession = useLayoutStore((s) => s.dockSession);
+  const setLeafZoom = useLayoutStore((s) => s.setLeafZoom);
+  const newTiledSession = useRuntimeStore((s) => s.newTiledSession);
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
+  // Split buttons/drag only make sense where tiling works (desktop, not web).
+  const canSplit = !isGatewayWeb && !isMobile;
 
   const connected = status === "ready" || switching;
   const connecting = status === "connecting" && !switching;
@@ -105,6 +136,12 @@ export function SessionView({
   // wrapper then follows it into the URL and opens its folder.
   const bindIfCreated = (created: string | null) => {
     if (created && sid === null) bindSession(leafId, created);
+  };
+  // Split THIS pane: create a fresh session in the same folder and dock it to
+  // the given edge (the visible, no-shortcut-needed entry to tiling).
+  const onSplit = async (edge: "right" | "bottom") => {
+    const id = await newTiledSession();
+    if (id) dockSession(leafId, edge, id);
   };
   const onSend = async (text: string) => bindIfCreated(await sendPrompt(text, sid ?? undefined));
   const onRunShell = async (command: string) =>
@@ -205,6 +242,10 @@ export function SessionView({
   const activeArtifact = pane?.artifact ?? null;
   const showFiles = !activeArtifact && !!pane?.showFiles;
   const showRuns = !activeArtifact && !showFiles && !!pane?.showRuns;
+  const inspectorActive = !!activeArtifact || showFiles || showRuns;
+  // A tiled (non-solo) pane is narrow: fill it with the inspector rather than a
+  // side column that would squeeze the chat or overflow the pane.
+  const inspectorFillsPane = inspectorActive && !solo;
   // The folder shown in the Files toggle: this session's own directory (falling
   // back to the active workspace on a draft that has none yet).
   const sessionDir = sessions.find((s) => s.id === eid)?.directory ?? workspace;
@@ -241,6 +282,21 @@ export function SessionView({
   const asTitlebar = chromeAsTitlebar && overlayTitlebar;
   const showSidebarExpand = chromeAsTitlebar && sidebarCollapsed;
 
+  // The files/artifact/runs inspector content — reused whether it fills a tiled
+  // pane or sits in the solo pane's resizable side column.
+  const inspectorNode = activeArtifact ? (
+    <InspectorShell
+      inspector={fileInspectorFromBlock(activeArtifact)}
+      onClose={() => closeArtifact(sid ?? undefined)}
+      onEvaluate={onEvaluate}
+      controls={<MaximizePaneButton />}
+    />
+  ) : showRuns ? (
+    <RunsPane sessionId={eid!} onClose={() => setShowRuns(false, sid ?? undefined)} controls={<MaximizePaneButton />} />
+  ) : showFiles ? (
+    <SessionFilesPane onClose={() => setShowFiles(false, sid ?? undefined)} controls={<MaximizePaneButton />} />
+  ) : null;
+
   return (
     <div className="flex h-full min-w-0">
       <div className="flex h-full min-w-0 flex-1 flex-col">
@@ -248,9 +304,12 @@ export function SessionView({
           data-tauri-drag-region={asTitlebar || undefined}
           style={sidebarCollapsed && asTitlebar ? overlayTitlebarStyle(true) : undefined}
           className={cn(
-            "flex shrink-0 items-center gap-2 px-6",
-            eid && "border-b border-faint",
-            !(sidebarCollapsed && asTitlebar) && "h-12",
+            "flex shrink-0 items-center border-faint",
+            // Tiled panes get a compact header — h-12 wastes vertical space in
+            // a small pane. Solo/web keeps the full-height titlebar row.
+            solo ? "gap-2 px-6" : "gap-1 px-2.5",
+            eid && "border-b",
+            !(sidebarCollapsed && asTitlebar) && (solo ? "h-12" : "h-8"),
           )}
         >
           {showSidebarExpand && (
@@ -264,7 +323,20 @@ export function SessionView({
             </button>
           )}
           {eid && (
-            <h1 className="min-w-0 truncate text-[13px] font-medium text-text">{title ?? ""}</h1>
+            // The title doubles as a drag handle to re-dock this pane. Opt it
+            // out of the macOS window-drag region so grabbing it moves the pane,
+            // not the window.
+            <h1
+              draggable={false}
+              onDragStart={(e) => e.preventDefault()}
+              // eslint-disable-next-line i18next/no-literal-string -- DragSource kind, not UI copy
+              onPointerDown={(e) => startPaneDrag(e, { kind: "pane", leafId, sessionId: eid }, title ?? "")}
+              // `select-none` stops the title text from being selected while
+              // dragging (the reason a header drag looked like a text selection).
+              className="min-w-0 shrink cursor-grab select-none truncate text-[13px] font-medium text-text active:cursor-grabbing"
+            >
+              {title ?? ""}
+            </h1>
           )}
           {eid && (
             <GoalPill sessionId={eid} onResumed={() => void sendPrompt(GOAL_RESUME_NUDGE, sid ?? undefined)} />
@@ -281,9 +353,12 @@ export function SessionView({
               aria-pressed={showFiles}
             >
               <FolderOpen size={13} />
-              <span className="max-w-[160px] truncate">
-                {sessionDir ? baseName(sessionDir) : t("live.filesToggle.default")}
-              </span>
+              {/* Tiled panes are narrow — show just the icon, not the folder name. */}
+              {solo && (
+                <span className="max-w-[160px] truncate">
+                  {sessionDir ? baseName(sessionDir) : t("live.filesToggle.default")}
+                </span>
+              )}
             </button>
           )}
           {eid && hasRuns && (
@@ -297,10 +372,44 @@ export function SessionView({
               aria-pressed={showRuns}
             >
               <FlaskConical size={13} />
-              <span>{t("live.runsToggle.label")}</span>
+              {solo && <span>{t("live.runsToggle.label")}</span>}
             </button>
           )}
-          <ConnBadge status={displayStatus} />
+          {/* Split this pane — the visible, discoverable way to tile (no
+              keyboard shortcut needed). Right = side-by-side, down = stacked. */}
+          {canSplit && (
+            <>
+              <ZoomMenu zoom={zoom} onPick={(z) => setLeafZoom(leafId, z)} />
+              <button
+                onClick={() => void onSplit("right")}
+                className="rounded-md p-1 text-muted transition-colors hover:bg-surface-2 hover:text-text"
+                title={t("group.splitRight")}
+                aria-label={t("group.splitRight")}
+              >
+                <PanelRight size={13} strokeWidth={1.5} />
+              </button>
+              <button
+                onClick={() => void onSplit("bottom")}
+                className="rounded-md p-1 text-muted transition-colors hover:bg-surface-2 hover:text-text"
+                title={t("group.splitDown")}
+                aria-label={t("group.splitDown")}
+              >
+                <PanelBottom size={13} strokeWidth={1.5} />
+              </button>
+              {onClose && (
+                <button
+                  onClick={onClose}
+                  className="rounded-md p-1 text-muted transition-colors hover:bg-border hover:text-error"
+                  title={t("group.closePane")}
+                  aria-label={t("group.closePane")}
+                >
+                  <X size={13} strokeWidth={1.5} />
+                </button>
+              )}
+            </>
+          )}
+          {/* The green "ready" dot is noise per pane — only surface trouble. */}
+          {displayStatus !== "ready" && <ConnBadge status={displayStatus} />}
           {uniqueNotebooks.map((nb) => (
             <button
               key={nb.path}
@@ -327,7 +436,19 @@ export function SessionView({
           )}
         </div>
 
-        <div ref={chatRef} onScroll={onChatScroll} className="flex-1 overflow-y-auto">
+        {inspectorFillsPane ? (
+          // Tiled pane: the inspector fills the pane (chat/composer hidden), so a
+          // narrow pane isn't squeezed and nothing overflows. Its own header's
+          // close (and the pressed folder/runs toggle) returns to the chat.
+          <div className="min-h-0 flex-1 overflow-hidden">{inspectorNode}</div>
+        ) : (
+          <>
+        <div
+          ref={chatRef}
+          onScroll={onChatScroll}
+          style={zoom !== 1 ? { zoom } : undefined}
+          className="flex-1 overflow-y-auto"
+        >
           <div className="mx-auto flex max-w-[760px] flex-col gap-4 px-8 py-6">
             {!connected && !connecting && (
               <div className="rounded-card border border-border bg-surface p-5 shadow-card">
@@ -397,8 +518,16 @@ export function SessionView({
           </div>
         </div>
 
-        <div className="px-8 pb-5 pt-2">
-          <div className="mx-auto max-w-[760px] space-y-3">
+        {/* `pointer-events-none` on the gutter + `-auto` on the input so the
+            empty area beside the composer never blocks the conversation behind
+            it. Tiled panes use tighter padding and the full width. */}
+        <div
+          style={zoom !== 1 ? { zoom } : undefined}
+          className={cn("pointer-events-none", solo ? "px-8 pb-5 pt-2" : "px-2.5 pb-2.5 pt-1")}
+        >
+          {/* Centered + capped so the input never spans edge-to-edge — full
+              width looked cramped in a tiled pane, especially when zoomed. */}
+          <div className={cn("pointer-events-auto mx-auto space-y-3", solo ? "max-w-[760px]" : "max-w-[560px]")}>
             {activeRequest && (
               <InteractionPrompt
                 question={activeQuestion}
@@ -433,13 +562,18 @@ export function SessionView({
               agentMode={planAvailable ? agentMode : undefined}
               onAgentModeChange={planAvailable ? (mode) => setAgentMode(mode, sid ?? undefined) : undefined}
               showModelPicker={connected && !webReadOnly}
+              modelSessionId={key}
               showWorkspaceChip={eid === null}
             />
           </div>
         </div>
+          </>
+        )}
       </div>
 
-      {(activeArtifact || showFiles || showRuns) && (
+      {/* Solo pane (or web/mobile): the inspector is a resizable side column.
+          Tiled panes fill instead (handled above). */}
+      {inspectorActive && solo && (
         <RightPane
           onClose={
             activeArtifact
@@ -449,28 +583,56 @@ export function SessionView({
                 : () => setShowFiles(false, sid ?? undefined)
           }
         >
-          {activeArtifact ? (
-            <InspectorShell
-              inspector={fileInspectorFromBlock(activeArtifact)}
-              onClose={() => closeArtifact(sid ?? undefined)}
-              onEvaluate={onEvaluate}
-              controls={<MaximizePaneButton />}
-            />
-          ) : showRuns ? (
-            <RunsPane
-              sessionId={eid!}
-              onClose={() => setShowRuns(false, sid ?? undefined)}
-              controls={<MaximizePaneButton />}
-            />
-          ) : (
-            <div className="h-full border-l border-border bg-surface">
-              <SessionFilesPane
-                onClose={() => setShowFiles(false, sid ?? undefined)}
-                controls={<MaximizePaneButton />}
-              />
-            </div>
-          )}
+          {inspectorNode}
         </RightPane>
+      )}
+    </div>
+  );
+}
+
+/** Per-pane zoom control: a compact "NN%" button opening preset levels. Lets a
+ *  narrow tiled pane shrink its content so the text isn't oversized. */
+const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5];
+function ZoomMenu({ zoom, onPick }: { zoom: number; onPick: (z: number) => void }) {
+  const { t } = useTranslation("session");
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="rounded-md px-1 py-1 text-xs tabular-nums text-muted transition-colors hover:bg-surface-2 hover:text-text"
+        title={t("group.zoom")}
+        aria-label={t("group.zoom")}
+      >
+        {Math.round(zoom * 100)}%
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-1 flex flex-col rounded-md border border-border bg-surface p-1 shadow-card">
+          {ZOOM_LEVELS.map((z) => (
+            <button
+              key={z}
+              onClick={() => {
+                onPick(z);
+                setOpen(false);
+              }}
+              className={cn(
+                "rounded px-3 py-1 text-left text-xs tabular-nums hover:bg-surface-2",
+                z === zoom ? "text-text" : "text-muted",
+              )}
+            >
+              {Math.round(z * 100)}%
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );

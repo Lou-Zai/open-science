@@ -1,121 +1,183 @@
-import { useRef } from "react";
-import {
-  RATIO_MAX,
-  RATIO_MIN,
-  leaves,
-  useLayoutStore,
-  type PaneNode,
-  type PaneSplit,
-} from "@/lib/layout";
+import { useRef, useState } from "react";
+import { MIN_SIZE, leaves, useLayoutStore, type DockEdge, type PaneNode, type PaneSplit } from "@/lib/layout";
 import { useDragDivider } from "@/lib/useDragDivider";
+import { useDragPane } from "@/lib/dragPane";
 import { cn } from "@/lib/cn";
 import { SessionView } from "./SessionView";
 
 /**
- * Ghostty-style recursive split renderer. Splits become flex rows/columns with
- * a draggable divider; leaves host a SessionView wrapped in a click-to-focus
- * ring. A zoomed leaf renders alone, full-area, without discarding the tree.
+ * Ghostty-style recursive tiling renderer. A split becomes a flex row/column of
+ * N children with N−1 draggable dividers; leaves host a SessionView wrapped in a
+ * click-to-focus ring. A zoomed leaf renders alone, full-area, without
+ * discarding the tree.
  */
 export function PaneTree() {
   const tree = useLayoutStore((s) => s.tree);
   const focusedLeafId = useLayoutStore((s) => s.focusedLeafId);
   const zoomedLeafId = useLayoutStore((s) => s.zoomedLeafId);
-  // The primary (top-left) leaf carries the titlebar chrome; the rest get a
-  // plain header (only one pane may clear the macOS traffic lights).
-  const primaryLeafId = leaves(tree)[0]?.id;
+  // Rendered only for a non-empty group (LiveSessionPage shows onboarding
+  // otherwise), but guard defensively so the types narrow.
+  if (!tree) return null;
+  const allLeaves = leaves(tree);
+  // A lone pane needs no focus ring / dim (nothing to distinguish it from).
+  const solo = allLeaves.length === 1;
 
   if (zoomedLeafId) {
-    const zoomed = leaves(tree).find((l) => l.id === zoomedLeafId);
+    const zoomed = allLeaves.find((l) => l.id === zoomedLeafId);
     if (zoomed) {
-      return (
-        <Leaf
-          leafId={zoomed.id}
-          sessionId={zoomed.sessionId}
-          focused
-          primary={zoomed.id === primaryLeafId}
-        />
-      );
+      return <Leaf leafId={zoomed.id} sessionId={zoomed.sessionId} zoom={zoomed.zoom ?? 1} focused solo />;
     }
   }
 
-  return <Node node={tree} focusedLeafId={focusedLeafId} primaryLeafId={primaryLeafId} />;
+  return <Node node={tree} focusedLeafId={focusedLeafId ?? ""} solo={solo} />;
 }
 
 function Node({
   node,
   focusedLeafId,
-  primaryLeafId,
+  solo,
 }: {
   node: PaneNode;
   focusedLeafId: string;
-  primaryLeafId: string | undefined;
+  solo: boolean;
 }) {
   if (node.kind === "leaf") {
     return (
       <Leaf
         leafId={node.id}
         sessionId={node.sessionId}
+        // Tiled panes are narrow → default to 75% unless the user set a zoom.
+        zoom={node.zoom ?? (solo ? 1 : 0.75)}
         focused={node.id === focusedLeafId}
-        primary={node.id === primaryLeafId}
+        solo={solo}
       />
     );
   }
-  return <Split node={node} focusedLeafId={focusedLeafId} primaryLeafId={primaryLeafId} />;
+  return <Split node={node} focusedLeafId={focusedLeafId} />;
+}
+
+/** Cumulative boundary after child `i` (fraction 0..1). */
+const boundaryAt = (sizes: number[], i: number): number =>
+  sizes.slice(0, i + 1).reduce((a, b) => a + b, 0);
+
+/** Apply a dragged boundary between children `i`/`i+1`: only that adjacent pair
+ *  changes; their sum is preserved and each stays ≥ MIN_SIZE. */
+function sizesFromBoundary(sizes: number[], i: number, boundary: number): number[] {
+  const pairStart = sizes.slice(0, i).reduce((a, b) => a + b, 0);
+  const pairSum = sizes[i] + sizes[i + 1];
+  const si = Math.max(MIN_SIZE, Math.min(boundary - pairStart, pairSum - MIN_SIZE));
+  const next = [...sizes];
+  next[i] = si;
+  next[i + 1] = pairSum - si;
+  return next;
 }
 
 function Split({
   node,
   focusedLeafId,
-  primaryLeafId,
 }: {
   node: PaneSplit;
   focusedLeafId: string;
-  primaryLeafId: string | undefined;
 }) {
-  const setRatio = useLayoutStore((s) => s.setRatio);
+  const setSplitSizes = useLayoutStore((s) => s.setSplitSizes);
   const containerRef = useRef<HTMLDivElement>(null);
   const row = node.dir === "row";
-
-  const { dragging, dragValue, handleProps } = useDragDivider({
-    value: node.ratio,
-    compute: (p) => {
-      const el = containerRef.current;
-      if (!el) return node.ratio;
-      const r = el.getBoundingClientRect();
-      const f = row ? (p.x - r.left) / r.width : (p.y - r.top) / r.height;
-      return Math.min(RATIO_MAX, Math.max(RATIO_MIN, f));
-    },
-    onCommit: (v) => setRatio(node.id, v),
-  });
-
-  const ratio = dragValue ?? node.ratio;
-  const aBasis = `${(ratio * 100).toFixed(3)}%`;
+  // While a divider drags, the live sizes live here; the store is written on up.
+  const [live, setLive] = useState<{ i: number; sizes: number[] } | null>(null);
+  const sizes = live?.sizes ?? node.sizes;
 
   return (
-    <div ref={containerRef} className={cn("flex h-full min-h-0 w-full min-w-0", row ? "flex-row" : "flex-col")}>
-      <div className="min-h-0 min-w-0 overflow-hidden" style={{ flex: `0 0 ${aBasis}` }}>
-        <Node node={node.a} focusedLeafId={focusedLeafId} primaryLeafId={primaryLeafId} />
+    <div
+      ref={containerRef}
+      className={cn("flex h-full min-h-0 w-full min-w-0", row ? "flex-row" : "flex-col")}
+    >
+      {node.children.map((child, i) => (
+        <FragmentChild
+          key={child.id}
+          size={sizes[i]}
+          divider={
+            i < node.children.length - 1 ? (
+              <Divider
+                row={row}
+                containerRef={containerRef}
+                boundary={boundaryAt(sizes, i)}
+                onLive={(b) => setLive({ i, sizes: sizesFromBoundary(node.sizes, i, b) })}
+                onCommit={(b) => {
+                  setLive(null);
+                  setSplitSizes(node.id, sizesFromBoundary(node.sizes, i, b));
+                }}
+              />
+            ) : null
+          }
+        >
+          <Node node={child} focusedLeafId={focusedLeafId} solo={false} />
+        </FragmentChild>
+      ))}
+    </div>
+  );
+}
+
+/** One child cell (proportional flex) plus the divider that follows it. */
+function FragmentChild({
+  size,
+  children,
+  divider,
+}: {
+  size: number;
+  children: React.ReactNode;
+  divider: React.ReactNode;
+}) {
+  return (
+    <>
+      <div className="min-h-0 min-w-0 overflow-hidden" style={{ flex: `${size} 1 0%` }}>
+        {children}
       </div>
-      {/* Divider: a thin hit strip with a hairline that lights up on hover/drag. */}
+      {divider}
+    </>
+  );
+}
+
+function Divider({
+  row,
+  containerRef,
+  boundary,
+  onLive,
+  onCommit,
+}: {
+  row: boolean;
+  containerRef: React.RefObject<HTMLDivElement>;
+  boundary: number;
+  onLive: (boundary: number) => void;
+  onCommit: (boundary: number) => void;
+}) {
+  const { dragging, handleProps } = useDragDivider({
+    value: boundary,
+    compute: (p) => {
+      const el = containerRef.current;
+      if (!el) return boundary;
+      const r = el.getBoundingClientRect();
+      const f = row ? (p.x - r.left) / r.width : (p.y - r.top) / r.height;
+      const clamped = Math.max(0, Math.min(1, f));
+      onLive(clamped);
+      return clamped;
+    },
+    onCommit,
+  });
+  return (
+    <div
+      {...handleProps}
+      className={cn(
+        "group relative z-10 shrink-0 bg-border",
+        row ? "w-px cursor-col-resize" : "h-px cursor-row-resize",
+      )}
+    >
       <div
-        {...handleProps}
         className={cn(
-          "group relative z-10 shrink-0",
-          row ? "w-px cursor-col-resize" : "h-px cursor-row-resize",
-          "bg-border",
+          "absolute transition-colors",
+          row ? "inset-y-0 -left-[2px] -right-[2px]" : "inset-x-0 -top-[2px] -bottom-[2px]",
+          dragging ? "bg-accent/60" : "group-hover:bg-accent/40",
         )}
-      >
-        <div
-          className={cn(
-            "absolute transition-colors",
-            row ? "inset-y-0 -left-[2px] -right-[2px]" : "inset-x-0 -top-[2px] -bottom-[2px]",
-            dragging ? "bg-accent/60" : "group-hover:bg-accent/40",
-          )}
-        />
-      </div>
-      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-        <Node node={node.b} focusedLeafId={focusedLeafId} primaryLeafId={primaryLeafId} />
-      </div>
+      />
     </div>
   );
 }
@@ -123,34 +185,71 @@ function Split({
 function Leaf({
   leafId,
   sessionId,
+  zoom,
   focused,
-  primary,
+  solo,
 }: {
   leafId: string;
   sessionId: string | null;
+  zoom: number;
   focused: boolean;
-  primary: boolean;
+  solo: boolean;
 }) {
   const focusLeaf = useLayoutStore((s) => s.focusLeaf);
+  const closePane = useLayoutStore((s) => s.closePane);
   return (
-    // Focus follows the click, terminal-style: pointer-down capture wins even
-    // over a button inside, so tapping anywhere in a pane focuses it first.
+    // `data-leaf-id` lets the drag controller hit-test this pane under the
+    // pointer. Focus follows the click, terminal-style: pointer-down capture
+    // wins even over a button inside, so tapping anywhere focuses it first.
     <div
+      data-leaf-id={leafId}
       onPointerDownCapture={() => {
         if (!focused) focusLeaf(leafId);
       }}
       className={cn(
         "relative h-full min-h-0 w-full min-w-0",
         // A soft inset ring marks the focused pane; unfocused panes dim slightly.
-        focused ? "ring-1 ring-inset ring-accent/50" : "opacity-[0.97]",
+        // A lone pane needs neither (nothing to contrast against).
+        solo ? "" : focused ? "ring-1 ring-inset ring-accent/50" : "opacity-[0.97]",
       )}
     >
+      {/* GroupTabs owns the window titlebar on desktop, so panes never do.
+          The sole pane can't be closed (nothing to promote) → no ✕. */}
       <SessionView
         sessionId={sessionId}
         leafId={leafId}
         focused={focused}
-        chromeAsTitlebar={primary}
+        chromeAsTitlebar={false}
+        zoom={zoom}
+        solo={solo}
+        onClose={solo ? undefined : () => closePane(leafId)}
       />
+      <DropOverlay leafId={leafId} />
+    </div>
+  );
+}
+
+/** The half-rectangle the pointer's edge maps to, for the drop highlight. */
+const HALF_CLASS: Record<DockEdge, string> = {
+  top: "inset-x-0 top-0 h-1/2",
+  bottom: "inset-x-0 bottom-0 h-1/2",
+  left: "inset-y-0 left-0 w-1/2",
+  right: "inset-y-0 right-0 w-1/2",
+};
+
+/** During a pane drag, outline every droppable leaf and fill the hovered half
+ *  of the target. Pointer-events:none so the drag hit-test reaches the leaf. */
+function DropOverlay({ leafId }: { leafId: string }) {
+  const active = useDragPane((s) => s.active);
+  if (!active) return null;
+  const t = active.target;
+  const edge = t && "leafId" in t && t.leafId === leafId ? t.edge : null;
+  return (
+    <div className="pointer-events-none absolute inset-0 z-20">
+      <div className="absolute inset-0 ring-1 ring-inset ring-accent/20" />
+      {edge && (
+        <div className={cn("absolute rounded-sm bg-accent/25 ring-1 ring-accent/60", HALF_CLASS[edge])} />
+      )}
     </div>
   );
 }

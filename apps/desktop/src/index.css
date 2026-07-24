@@ -322,3 +322,13 @@ body {
 .fade-in {
   animation: fade-in 150ms ease-out 150ms backwards;
 }
+
+/* While a pane is being dragged (see lib/dragPane), forcefully suppress text
+   selection everywhere — the conversation's message text sets its own
+   `user-select`, which a body-level `user-select:none` can't override. */
+.pane-dragging,
+.pane-dragging * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  cursor: grabbing !important;
+}

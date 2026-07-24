@@ -6,6 +6,8 @@ import { useIsMobile } from "@/lib/useIsMobile";
 import { isGatewayWeb } from "@/lib/webMode";
 import { SessionView } from "@/components/session/SessionView";
 import { PaneTree } from "@/components/session/PaneTree";
+import { GroupTabs } from "@/components/session/GroupTabs";
+import { EmptyGroup } from "@/components/session/EmptyGroup";
 
 /**
  * Live agent surface. Owns the split-layout ↔ runtime plumbing: it keeps the
@@ -24,7 +26,7 @@ export function LiveSessionPage() {
   const tree = useLayoutStore((s) => s.tree);
   const focusedLeafId = useLayoutStore((s) => s.focusedLeafId);
   const pruneSessions = useLayoutStore((s) => s.pruneSessions);
-  const focusedLeaf = findLeaf(tree, focusedLeafId);
+  const focusedLeaf = tree && focusedLeafId ? findLeaf(tree, focusedLeafId) : null;
   const focusedSid = focusedLeaf?.sessionId ?? null;
 
   const status = useRuntimeStore((s) => s.status);
@@ -42,15 +44,17 @@ export function LiveSessionPage() {
 
   const isMobile = useIsMobile();
   // Tiling can't work on a phone or the narrow web client — show the focused
-  // pane alone (the tree is kept, so it returns when there's room again).
-  const single = leaves(tree).length === 1 || isMobile || isGatewayWeb;
+  // pane alone (the tree is kept, so it returns when there's room again). On
+  // desktop we ALWAYS render the tree, even for a lone pane, so it stays a
+  // drop target for docking the first dragged-in session.
+  const webOrMobile = isMobile || isGatewayWeb;
 
   // Every DISTINCT folder shown across the panes — background streams keep the
   // non-foreground ones live so different projects stream concurrently. In the
   // single-pane fallback only the focused pane renders, so no background streams
   // are wanted (the foreground stream covers it).
   const paneDirs = useMemo(() => {
-    if (single) return [];
+    if (webOrMobile || !tree) return [];
     const dirs = new Set<string>();
     for (const l of leaves(tree)) {
       if (!l.sessionId) continue;
@@ -58,7 +62,7 @@ export function LiveSessionPage() {
       if (d) dirs.add(d);
     }
     return [...dirs];
-  }, [single, tree, sessions]);
+  }, [webOrMobile, tree, sessions]);
   const paneDirsKey = paneDirs.join("|");
   useEffect(() => {
     syncPaneStreams(paneDirs);
@@ -74,11 +78,35 @@ export function LiveSessionPage() {
   const urlId = params.sessionId ?? null;
   useEffect(() => {
     const st = useLayoutStore.getState();
-    const leaf = findLeaf(st.tree, st.focusedLeafId);
+    const leaf = st.tree && st.focusedLeafId ? findLeaf(st.tree, st.focusedLeafId) : null;
     if ((leaf?.sessionId ?? null) === urlId) return;
-    const existing = urlId ? leaves(st.tree).find((l) => l.sessionId === urlId) : null;
-    if (existing) st.focusLeaf(existing.id);
-    else st.bindSession(st.focusedLeafId, urlId);
+    // Already shown in the ACTIVE group → just focus that pane.
+    if (urlId && st.tree) {
+      const inActive = leaves(st.tree).find((l) => l.sessionId === urlId);
+      if (inActive) {
+        st.focusLeaf(inActive.id);
+        return;
+      }
+    }
+    // Shown in ANOTHER group (e.g. Back after a group switch) → switch to that
+    // group and focus it, rather than clobbering the active group's pane.
+    if (urlId) {
+      for (const g of st.groups) {
+        if (g.id === st.activeGroupId || !g.tree) continue;
+        const hit = leaves(g.tree).find((l) => l.sessionId === urlId);
+        if (hit) {
+          st.setActiveGroup(g.id);
+          st.focusLeaf(hit.id);
+          return;
+        }
+      }
+    }
+    // Brand-new target: fill an empty group, else bind onto the active focus.
+    if (!st.tree || !st.focusedLeafId) {
+      if (urlId) st.reset(urlId);
+      return;
+    }
+    st.bindSession(st.focusedLeafId, urlId);
   }, [urlId]);
 
   // focus → URL: reflect the focused session in the address bar (switching
@@ -121,15 +149,21 @@ export function LiveSessionPage() {
     pruneSessions(new Set(sessions.map((s) => s.id)));
   }, [sessions, pruneSessions]);
 
-  if (single && focusedLeaf) {
-    return (
-      <SessionView
-        sessionId={focusedLeaf.sessionId}
-        leafId={focusedLeaf.id}
-        focused
-        chromeAsTitlebar
-      />
+  // Web / phone: no tiling — show the focused pane alone (its own titlebar), or
+  // the onboarding if the group is somehow empty.
+  if (webOrMobile) {
+    return focusedLeaf ? (
+      <SessionView sessionId={focusedLeaf.sessionId} leafId={focusedLeaf.id} focused chromeAsTitlebar />
+    ) : (
+      <EmptyGroup />
     );
   }
-  return <PaneTree />;
+  // Desktop: the group tab strip owns the window titlebar; below it, the pane
+  // tree, or the drag-a-session onboarding for an empty group.
+  return (
+    <div className="flex h-full min-w-0 flex-col">
+      <GroupTabs />
+      <div className="min-h-0 flex-1">{tree ? <PaneTree /> : <EmptyGroup />}</div>
+    </div>
+  );
 }

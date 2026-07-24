@@ -3,6 +3,21 @@
     "title": "未找到会话",
     "hint": "从侧边栏选择一个会话。"
   },
+  "group": {
+    "defaultName": "屏幕 {{n}}",
+    "newTab": "新建屏幕",
+    "close": "关闭屏幕",
+    "renameHint": "双击重命名",
+    "splitRight": "向右分屏 — 在右侧打开一个新会话",
+    "splitDown": "向下分屏 — 在下方打开一个新会话",
+    "closePane": "关闭此面板",
+    "zoom": "缩放此面板",
+    "empty": {
+      "title": "空屏幕",
+      "hint": "从左侧栏拖一个会话到这里开始，或按 ⌘D 分屏。",
+      "newSession": "新建会话"
+    }
+  },
   "composer": {
     "placeholder": {
       "default": "尽情提问",

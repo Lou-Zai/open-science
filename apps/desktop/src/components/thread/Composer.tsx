@@ -125,6 +125,7 @@ export function Composer({
   agentMode,
   onAgentModeChange,
   showModelPicker,
+  modelSessionId,
   showWorkspaceChip = true,
 }: {
   onSend?: (text: string) => void;
@@ -148,6 +149,9 @@ export function Composer({
   /** Show the inline model + reasoning-effort switcher (left of send). The live
    *  session opts in; static mock sessions have no runtime to switch. */
   showModelPicker?: boolean;
+  /** Bind the model picker to a session (per-pane model/effort); omit for the
+   *  global default. */
+  modelSessionId?: string;
   /** Show the draft workspace-folder chip. Only the draft pane opts in — in a
    *  split layout the other panes already have a bound session/folder. */
   showWorkspaceChip?: boolean;
@@ -759,7 +763,7 @@ export function Composer({
           </div>
         )}
         <span className="flex-1" />
-        {showModelPicker && <ModelPicker />}
+        {showModelPicker && <ModelPicker sessionId={modelSessionId} />}
         {working && onStop ? (
           // Same spot, same shape, one action: the send button becomes Stop
           // while the agent works — always live, even though the input is not.

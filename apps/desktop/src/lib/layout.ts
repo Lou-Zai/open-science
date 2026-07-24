@@ -1,38 +1,46 @@
 import { create } from "zustand";
 
 /**
- * Ghostty/tmux-style recursive split layout. Each leaf holds one session; a
- * split node divides its area between two children along an axis at a ratio.
+ * Ghostty/tmux-style recursive tiling layout. Each leaf holds one session; a
+ * split node lays its N children out along an axis, each taking a fraction of
+ * the axis (`sizes`, summing to 1). Docking a pane re-equalizes siblings so 2
+ * stacked panes are ½ each, 3 are ⅓ each — a binary+ratio tree can't express
+ * that, which is why splits are N-ary.
  *
  * Draft rule: the runtime has a single global draft slot (DRAFT_KEY), so at
- * most ONE leaf may be an unbound draft (`sessionId: null`). `split()` always
- * binds a real, caller-supplied session to the NEW leaf — only the initial
- * single pane is ever a draft.
+ * most ONE leaf may be an unbound draft (`sessionId: null`).
  */
 export type SplitDir = "row" | "col";
+
+/** Which side of a target pane a dock lands on. left/right → row (side-by-side);
+ *  top/bottom → col (stacked). */
+export type DockEdge = "left" | "right" | "top" | "bottom";
 
 export interface PaneLeaf {
   kind: "leaf";
   id: string;
   /** The bound session, or null for the (at most one) draft pane. */
   sessionId: string | null;
+  /** Per-pane content zoom (CSS zoom on the conversation), 1 = 100%. Undefined
+   *  = 100%. Narrow tiled panes often want smaller text. */
+  zoom?: number;
 }
 
 export interface PaneSplit {
   kind: "split";
   id: string;
-  /** "row" = children sit side-by-side (a | b); "col" = stacked (a / b). */
+  /** "row" = children sit side-by-side (a | b | c); "col" = stacked (a / b / c). */
   dir: SplitDir;
-  /** Fraction of the axis given to child `a`, clamped to [RATIO_MIN, RATIO_MAX]. */
-  ratio: number;
-  a: PaneNode;
-  b: PaneNode;
+  /** ≥2 children in visual order (left→right / top→bottom). */
+  children: PaneNode[];
+  /** Fraction of the axis per child; sums to 1, same length as `children`. */
+  sizes: number[];
 }
 
 export type PaneNode = PaneLeaf | PaneSplit;
 
-export const RATIO_MIN = 0.15;
-export const RATIO_MAX = 0.85;
+/** A child may never be squeezed below this fraction of its split's axis. */
+export const MIN_SIZE = 0.1;
 
 let nodeSeq = 0;
 const genId = (): string => `p${++nodeSeq}`;
@@ -41,90 +49,150 @@ export function makeLeaf(sessionId: string | null): PaneLeaf {
   return { kind: "leaf", id: genId(), sessionId };
 }
 
-const clampRatio = (r: number): number => Math.min(RATIO_MAX, Math.max(RATIO_MIN, r));
+const equalSizes = (n: number): number[] => Array.from({ length: n }, () => 1 / n);
 
-/** All leaves, left-to-right / top-to-bottom (in-order) — the focus-cycle order. */
+/** Scale an arbitrary positive vector to sum 1. */
+function normalizeSizes(sizes: number[]): number[] {
+  const sum = sizes.reduce((a, b) => a + b, 0);
+  return sum > 0 ? sizes.map((s) => s / sum) : equalSizes(sizes.length);
+}
+
+function makeSplit(dir: SplitDir, children: PaneNode[], sizes?: number[]): PaneSplit {
+  return {
+    kind: "split",
+    id: genId(),
+    dir,
+    children,
+    sizes: sizes ? normalizeSizes(sizes) : equalSizes(children.length),
+  };
+}
+
+const edgeAxis = (edge: DockEdge): SplitDir => (edge === "left" || edge === "right" ? "row" : "col");
+const edgeIsBefore = (edge: DockEdge): boolean => edge === "left" || edge === "top";
+
+/** All leaves in visual order (left→right / top→bottom) — the focus-cycle order. */
 export function leaves(node: PaneNode): PaneLeaf[] {
-  if (node.kind === "leaf") return [node];
-  return [...leaves(node.a), ...leaves(node.b)];
+  return node.kind === "leaf" ? [node] : node.children.flatMap(leaves);
 }
 
 export function findLeaf(node: PaneNode, id: string): PaneLeaf | null {
   return leaves(node).find((l) => l.id === id) ?? null;
 }
 
-function mapNode(node: PaneNode, fn: (n: PaneNode) => PaneNode): PaneNode {
-  const mapped = node.kind === "split" ? { ...node, a: mapNode(node.a, fn), b: mapNode(node.b, fn) } : node;
-  return fn(mapped);
-}
-
-/** Replace the leaf `targetId` with `replacement` anywhere in the tree. */
-function replaceLeaf(node: PaneNode, targetId: string, replacement: PaneNode): PaneNode {
-  return mapNode(node, (n) => (n.kind === "leaf" && n.id === targetId ? replacement : n));
+/**
+ * Canonicalize a tree: collapse a split that has fallen to one child into that
+ * child, and merge a child split whose direction matches its parent up into the
+ * parent (splicing children, scaling sizes) so the tree never carries redundant
+ * nesting like row[ row[a,b], c ]. Sizes stay proportional.
+ */
+export function normalize(node: PaneNode): PaneNode {
+  if (node.kind === "leaf") return node;
+  const children = node.children.map(normalize);
+  if (children.length === 1) return children[0];
+  const outChildren: PaneNode[] = [];
+  const outSizes: number[] = [];
+  children.forEach((c, i) => {
+    if (c.kind === "split" && c.dir === node.dir) {
+      c.children.forEach((cc, j) => {
+        outChildren.push(cc);
+        outSizes.push(node.sizes[i] * c.sizes[j]);
+      });
+    } else {
+      outChildren.push(c);
+      outSizes.push(node.sizes[i]);
+    }
+  });
+  return { ...node, children: outChildren, sizes: normalizeSizes(outSizes) };
 }
 
 /**
- * Split the leaf `targetId` along `dir`, putting a new leaf (bound to
- * `sessionId`) after the existing one. Returns the new tree and the new leaf's
- * id (so the caller can focus it).
+ * Dock `leaf` against the leaf `targetId` on `edge`. If the target already sits
+ * in a split on the edge's axis, the new leaf becomes an equal sibling (all
+ * re-equalized to 1/N); otherwise the target is wrapped in a fresh split of that
+ * axis, split evenly. Returns the new tree (unchanged if the target is missing).
  */
-export function splitLeaf(
+export function insertLeaf(
   tree: PaneNode,
   targetId: string,
-  dir: SplitDir,
-  sessionId: string,
-): { tree: PaneNode; newLeafId: string } {
-  const target = findLeaf(tree, targetId);
-  if (!target) return { tree, newLeafId: targetId };
-  const newLeaf = makeLeaf(sessionId);
-  const split: PaneSplit = { kind: "split", id: genId(), dir, ratio: 0.5, a: target, b: newLeaf };
-  return { tree: replaceLeaf(tree, targetId, split), newLeafId: newLeaf.id };
+  edge: DockEdge,
+  leaf: PaneLeaf,
+): PaneNode {
+  if (!findLeaf(tree, targetId)) return tree;
+  const axis = edgeAxis(edge);
+  const before = edgeIsBefore(edge);
+  const pair = (t: PaneNode): PaneNode[] => (before ? [leaf, t] : [t, leaf]);
+
+  // Whole tree is the target leaf → wrap it.
+  if (tree.kind === "leaf") return makeSplit(axis, pair(tree));
+
+  function rec(node: PaneNode): PaneNode {
+    if (node.kind === "leaf") return node;
+    const idx = node.children.findIndex((c) => c.kind === "leaf" && c.id === targetId);
+    if (idx >= 0) {
+      if (node.dir === axis) {
+        // Splice the new leaf beside the target as an equal sibling.
+        const children = [...node.children];
+        children.splice(before ? idx : idx + 1, 0, leaf);
+        return { ...node, children, sizes: equalSizes(children.length) };
+      }
+      // Perpendicular dock: wrap just the target child in a new split.
+      const children = [...node.children];
+      children[idx] = makeSplit(axis, pair(node.children[idx]));
+      return { ...node, children };
+    }
+    return { ...node, children: node.children.map(rec) };
+  }
+  return normalize(rec(tree));
 }
 
 /**
- * Remove the leaf `targetId`, promoting its sibling into the parent's place.
- * Returns null when it is the only leaf (the last pane can't be closed).
- * `nextFocusId` is the first leaf of the promoted sibling.
+ * Remove the leaf `targetId`, re-equalizing its former siblings and collapsing
+ * any split left with a single child. Returns the new tree + the leaf to focus
+ * next (the visually-nearest survivor), or null if it was the only leaf.
  */
-export function closeLeaf(
+export function removeLeaf(
   tree: PaneNode,
   targetId: string,
 ): { tree: PaneNode; nextFocusId: string } | null {
-  if (tree.kind === "leaf") return null;
-  let sibling: PaneNode | null = null;
+  const all = leaves(tree);
+  if (all.length <= 1) return null;
+  // Pick the focus successor before mutating: next sibling in visual order, else previous.
+  const i = all.findIndex((l) => l.id === targetId);
+  if (i < 0) return null;
+  const nextFocusId = (all[i + 1] ?? all[i - 1]).id;
 
-  function walk(node: PaneNode): PaneNode | null {
-    if (node.kind === "leaf") return null;
-    if (node.a.kind === "leaf" && node.a.id === targetId) {
-      sibling = node.b;
-      return node.b;
+  function rec(node: PaneNode): PaneNode {
+    if (node.kind === "leaf") return node;
+    const idx = node.children.findIndex((c) => c.kind === "leaf" && c.id === targetId);
+    if (idx >= 0) {
+      const children = node.children.filter((_, k) => k !== idx);
+      return { ...node, children, sizes: equalSizes(children.length) };
     }
-    if (node.b.kind === "leaf" && node.b.id === targetId) {
-      sibling = node.a;
-      return node.a;
-    }
-    const a = walk(node.a);
-    if (a) return { ...node, a };
-    const b = walk(node.b);
-    if (b) return { ...node, b };
-    return null;
+    return { ...node, children: node.children.map(rec) };
   }
-
-  const next = walk(tree);
-  if (!next || !sibling) return null;
-  // Focus the promoted sibling's first leaf — the pane that visually takes over
-  // the closed one's space.
-  return { tree: next, nextFocusId: leaves(sibling)[0].id };
+  return { tree: normalize(rec(tree)), nextFocusId };
 }
 
-export function setRatio(tree: PaneNode, splitId: string, ratio: number): PaneNode {
-  return mapNode(tree, (n) =>
-    n.kind === "split" && n.id === splitId ? { ...n, ratio: clampRatio(ratio) } : n,
-  );
+/** Replace a split's size vector (divider drag). Clamps each to ≥ MIN_SIZE and
+ *  renormalizes to sum 1. */
+export function setSplitSizes(tree: PaneNode, splitId: string, sizes: number[]): PaneNode {
+  function rec(node: PaneNode): PaneNode {
+    if (node.kind === "leaf") return node;
+    if (node.id === splitId && node.children.length === sizes.length) {
+      const clamped = sizes.map((s) => Math.max(MIN_SIZE, s));
+      return { ...node, sizes: normalizeSizes(clamped) };
+    }
+    return { ...node, children: node.children.map(rec) };
+  }
+  return rec(tree);
 }
 
 export function setLeafSession(tree: PaneNode, leafId: string, sessionId: string | null): PaneNode {
-  return mapNode(tree, (n) => (n.kind === "leaf" && n.id === leafId ? { ...n, sessionId } : n));
+  function rec(node: PaneNode): PaneNode {
+    if (node.kind === "leaf") return node.id === leafId ? { ...node, sessionId } : node;
+    return { ...node, children: node.children.map(rec) };
+  }
+  return rec(tree);
 }
 
 /** The leaf adjacent to `id` in focus-cycle order (wraps around). */
@@ -138,11 +206,6 @@ export function adjacentLeafId(tree: PaneNode, id: string, dir: "next" | "prev")
 
 // ---- Store ----
 
-// The tree is in-memory only (v1): each launch starts as a single pane, exactly
-// like the pre-split app. Persisting a tiled layout across full reloads collides
-// with URL deep-links and sessions deleted between runs — deferred until the
-// reconciliation story is worth the surface.
-
 /** The session id in a deep-linked/reloaded `/live/:id` URL, so the initial
  *  pane is already bound to it — no null-focus transient for the URL↔focus sync
  *  to clobber (which, under StrictMode's double-invoked effects, would loop). */
@@ -152,21 +215,132 @@ function initialSessionId(): string | null {
   return m ? decodeURIComponent(m[1]) : null;
 }
 
+/**
+ * A "group" (screen) is one independent free-form pane arrangement. Multiple
+ * groups switch via the tab strip, like browser tab groups / iTerm windows. An
+ * empty group (`tree === null`) shows the drag-a-session onboarding.
+ */
+export interface LayoutGroup {
+  id: string;
+  /** User label; "" means show the index-based default ("Screen N"). */
+  name: string;
+  tree: PaneNode | null;
+  focusedLeafId: string | null;
+  zoomedLeafId: string | null;
+}
+
+let groupSeq = 0;
+const genGroupId = (): string => `g${++groupSeq}`;
+
+// ---- Persistence ----
+// The full layout (groups, trees, per-leaf session/sizes/zoom, active group) is
+// saved to localStorage so a relaunch restores the workspace. Sessions deleted
+// between runs are reconciled by `pruneSessions` once the session list loads.
+const LAYOUT_KEY = "ai4s.layout.v2";
+
+function isNode(v: unknown): v is PaneNode {
+  if (!v || typeof v !== "object") return false;
+  const n = v as Record<string, unknown>;
+  if (n.kind === "leaf") return typeof n.id === "string";
+  if (n.kind === "split")
+    return (
+      typeof n.id === "string" &&
+      n.dir === (n.dir === "row" ? "row" : "col") &&
+      Array.isArray(n.children) &&
+      n.children.length >= 2 &&
+      n.children.every(isNode) &&
+      Array.isArray(n.sizes) &&
+      (n.sizes as unknown[]).length === n.children.length
+    );
+  return false;
+}
+
+/** Advance the id counters past any restored ids so fresh nodes never collide. */
+function bumpSeqs(groups: LayoutGroup[]): void {
+  const bumpNode = (n: PaneNode) => {
+    const num = Number(n.id.replace(/^p/, ""));
+    if (Number.isFinite(num) && num > nodeSeq) nodeSeq = num;
+    if (n.kind === "split") n.children.forEach(bumpNode);
+  };
+  for (const g of groups) {
+    const num = Number(g.id.replace(/^g/, ""));
+    if (Number.isFinite(num) && num > groupSeq) groupSeq = num;
+    if (g.tree) bumpNode(g.tree);
+  }
+}
+
+interface Persisted {
+  groups: LayoutGroup[];
+  activeGroupId: string;
+}
+
+function loadPersisted(): Persisted | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(LAYOUT_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as Persisted;
+    if (!Array.isArray(p.groups) || p.groups.length === 0) return null;
+    if (typeof p.activeGroupId !== "string") return null;
+    for (const g of p.groups) {
+      if (typeof g.id !== "string" || typeof g.name !== "string") return null;
+      if (g.tree !== null && !isNode(g.tree)) return null;
+      g.zoomedLeafId = null; // zoom is transient — never restore a maximized pane
+    }
+    if (!p.groups.some((g) => g.id === p.activeGroupId)) p.activeGroupId = p.groups[0].id;
+    bumpSeqs(p.groups);
+    return p;
+  } catch {
+    return null;
+  }
+}
+
+function persist(groups: LayoutGroup[], activeGroupId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(LAYOUT_KEY, JSON.stringify({ groups, activeGroupId }));
+  } catch {
+    /* storage full/unavailable never blocks layout changes */
+  }
+}
+
 interface LayoutState {
-  tree: PaneNode;
-  focusedLeafId: string;
+  /** All groups, in tab order. Always ≥1. */
+  groups: LayoutGroup[];
+  activeGroupId: string;
+  // Mirrors of the ACTIVE group, kept in sync on every mutation so existing
+  // selectors (`s.tree`, `s.focusedLeafId`) keep working unchanged. `tree` is
+  // null when the active group is empty (onboarding).
+  tree: PaneNode | null;
+  focusedLeafId: string | null;
   /** A transiently maximized leaf (Cmd+Shift+Enter); not persisted. */
   zoomedLeafId: string | null;
-  /** Split the focused leaf, binding `sessionId` to the new pane; focuses it. */
+  /** Add a new empty group and activate it; returns its id. */
+  addGroup: () => string;
+  /** Close a group; never drops below one (the last group is emptied instead). */
+  closeGroup: (groupId: string) => void;
+  renameGroup: (groupId: string, name: string) => void;
+  setActiveGroup: (groupId: string) => void;
+  /** Split the focused leaf toward `dir` (row → new pane on the right, col →
+   *  below), binding `sessionId` to it and focusing it. */
   split: (dir: SplitDir, sessionId: string) => void;
+  /** Dock a NEW pane (bound to `sessionId`, or a draft when null) against
+   *  `targetLeafId` on `edge`; focuses it. The drag-to-dock entry for a session
+   *  coming from the sidebar. */
+  dockSession: (targetLeafId: string, edge: DockEdge, sessionId: string | null) => string;
+  /** Move an existing leaf to dock against `targetLeafId` on `edge` (re-dock via
+   *  dragging a pane header). No-op if target === moved or target is missing. */
+  moveLeaf: (leafId: string, targetLeafId: string, edge: DockEdge) => void;
   /** Close the focused leaf (no-op on the last pane). */
   closeFocused: () => void;
   closePane: (leafId: string) => void;
   focusLeaf: (leafId: string) => void;
   focusAdjacent: (dir: "next" | "prev") => void;
-  setRatio: (splitId: string, ratio: number) => void;
+  setSplitSizes: (splitId: string, sizes: number[]) => void;
   /** Bind (or clear, with null) the session shown in a leaf. */
   bindSession: (leafId: string, sessionId: string | null) => void;
+  /** Set a leaf's per-pane content zoom (1 = 100%). */
+  setLeafZoom: (leafId: string, zoom: number) => void;
   toggleZoom: (leafId?: string) => void;
   /** Collapse to a single pane bound to `sessionId`. */
   reset: (sessionId: string | null) => void;
@@ -176,60 +350,216 @@ interface LayoutState {
 }
 
 export const useLayoutStore = create<LayoutState>((set, get) => {
-  const root = makeLeaf(initialSessionId());
-  const commit = (tree: PaneNode, focusedLeafId: string, zoomedLeafId: string | null = get().zoomedLeafId) => {
-    set({ tree, focusedLeafId, zoomedLeafId });
-  };
+  // Restore the saved workspace, else start as a single pane seeded from the URL.
+  const restored = loadPersisted();
+  const root = restored ? null : makeLeaf(initialSessionId());
+  const initGroups: LayoutGroup[] = restored
+    ? restored.groups
+    : [{ id: genGroupId(), name: "", tree: root, focusedLeafId: root!.id, zoomedLeafId: null }];
+  const initActiveId = restored ? restored.activeGroupId : initGroups[0].id;
+  const initActive = initGroups.find((g) => g.id === initActiveId)!;
+
+  /** Write a patch into the ACTIVE group and re-mirror the top-level fields. */
+  const commitActive = (patch: Partial<Omit<LayoutGroup, "id" | "name">>) =>
+    set((s) => {
+      const groups = s.groups.map((g) => (g.id === s.activeGroupId ? { ...g, ...patch } : g));
+      const active = groups.find((g) => g.id === s.activeGroupId)!;
+      persist(groups, s.activeGroupId);
+      return {
+        groups,
+        tree: active.tree,
+        focusedLeafId: active.focusedLeafId,
+        zoomedLeafId: active.zoomedLeafId,
+      };
+    });
+
   return {
-    tree: root,
-    focusedLeafId: root.id,
+    groups: initGroups,
+    activeGroupId: initActiveId,
+    tree: initActive.tree,
+    focusedLeafId: initActive.focusedLeafId,
     zoomedLeafId: null,
+
+    addGroup: () => {
+      const g: LayoutGroup = { id: genGroupId(), name: "", tree: null, focusedLeafId: null, zoomedLeafId: null };
+      set((s) => ({
+        groups: [...s.groups, g],
+        activeGroupId: g.id,
+        tree: null,
+        focusedLeafId: null,
+        zoomedLeafId: null,
+      }));
+      persist(get().groups, get().activeGroupId);
+      return g.id;
+    },
+    closeGroup: (groupId) => {
+      set((s) => {
+        if (s.groups.length <= 1) {
+          // Never zero groups — empty the sole group instead of removing it.
+          const only: LayoutGroup = { ...s.groups[0], tree: null, focusedLeafId: null, zoomedLeafId: null };
+          return { groups: [only], activeGroupId: only.id, tree: null, focusedLeafId: null, zoomedLeafId: null };
+        }
+        const idx = s.groups.findIndex((g) => g.id === groupId);
+        if (idx < 0) return {};
+        const groups = s.groups.filter((g) => g.id !== groupId);
+        // If the active group closed, activate its neighbor.
+        const active =
+          s.activeGroupId === groupId ? groups[Math.min(idx, groups.length - 1)] : groups.find((g) => g.id === s.activeGroupId)!;
+        return {
+          groups,
+          activeGroupId: active.id,
+          tree: active.tree,
+          focusedLeafId: active.focusedLeafId,
+          zoomedLeafId: active.zoomedLeafId,
+        };
+      });
+      persist(get().groups, get().activeGroupId);
+    },
+    renameGroup: (groupId, name) => {
+      set((s) => ({ groups: s.groups.map((g) => (g.id === groupId ? { ...g, name } : g)) }));
+      persist(get().groups, get().activeGroupId);
+    },
+    setActiveGroup: (groupId) =>
+      set((s) => {
+        const g = s.groups.find((x) => x.id === groupId);
+        if (!g) return {};
+        persist(s.groups, groupId);
+        return { activeGroupId: groupId, tree: g.tree, focusedLeafId: g.focusedLeafId, zoomedLeafId: g.zoomedLeafId };
+      }),
+
     split: (dir, sessionId) => {
       const { tree, focusedLeafId } = get();
-      const { tree: next, newLeafId } = splitLeaf(tree, focusedLeafId, dir, sessionId);
-      commit(next, newLeafId, null); // splitting exits zoom
+      if (!tree || !focusedLeafId) return;
+      const leaf = makeLeaf(sessionId);
+      const edge: DockEdge = dir === "row" ? "right" : "bottom";
+      commitActive({ tree: insertLeaf(tree, focusedLeafId, edge, leaf), focusedLeafId: leaf.id, zoomedLeafId: null });
     },
-    closeFocused: () => get().closePane(get().focusedLeafId),
+    dockSession: (targetLeafId, edge, sessionId) => {
+      const { tree } = get();
+      const leaf = makeLeaf(sessionId);
+      // No target (empty group) → the dragged session fills the group.
+      if (!tree) {
+        commitActive({ tree: leaf, focusedLeafId: leaf.id, zoomedLeafId: null });
+        return leaf.id;
+      }
+      // Target vanished between the last hover and the drop (e.g. a prune fired
+      // mid-drag): insertLeaf would no-op but we'd still focus a phantom leaf.
+      if (!findLeaf(tree, targetLeafId)) return get().focusedLeafId ?? leaf.id;
+      commitActive({ tree: insertLeaf(tree, targetLeafId, edge, leaf), focusedLeafId: leaf.id, zoomedLeafId: null });
+      return leaf.id;
+    },
+    moveLeaf: (leafId, targetLeafId, edge) => {
+      if (leafId === targetLeafId) return;
+      const { tree, focusedLeafId } = get();
+      if (!tree) return;
+      const moved = findLeaf(tree, leafId);
+      if (!moved || !findLeaf(tree, targetLeafId)) return;
+      // Insert a copy at the destination, then remove the original. A fresh id
+      // keeps the two operations from colliding on one id mid-tree.
+      const clone = makeLeaf(moved.sessionId);
+      const inserted = insertLeaf(tree, targetLeafId, edge, clone);
+      const removed = removeLeaf(inserted, leafId);
+      const nextTree = removed ? removed.tree : inserted;
+      const nextFocus = focusedLeafId === leafId ? clone.id : focusedLeafId;
+      commitActive({
+        tree: nextTree,
+        focusedLeafId: nextFocus && findLeaf(nextTree, nextFocus) ? nextFocus : clone.id,
+        zoomedLeafId: null,
+      });
+    },
+    closeFocused: () => {
+      const f = get().focusedLeafId;
+      if (f) get().closePane(f);
+    },
     closePane: (leafId) => {
       const { tree, focusedLeafId } = get();
-      const res = closeLeaf(tree, leafId);
+      if (!tree) return;
+      // Closing the last pane empties the group (shows onboarding) rather than
+      // being disallowed — a group is allowed to be empty.
+      if (leaves(tree).length <= 1) {
+        commitActive({ tree: null, focusedLeafId: null, zoomedLeafId: null });
+        return;
+      }
+      const res = removeLeaf(tree, leafId);
       if (!res) return;
       const nextFocus = leafId === focusedLeafId ? res.nextFocusId : focusedLeafId;
-      commit(res.tree, nextFocus, null);
+      commitActive({ tree: res.tree, focusedLeafId: nextFocus, zoomedLeafId: null });
     },
     focusLeaf: (leafId) => {
-      if (!findLeaf(get().tree, leafId)) return;
-      set({ focusedLeafId: leafId });
+      const { tree } = get();
+      if (!tree || !findLeaf(tree, leafId)) return;
+      commitActive({ focusedLeafId: leafId });
     },
-    focusAdjacent: (dir) => get().focusLeaf(adjacentLeafId(get().tree, get().focusedLeafId, dir)),
-    setRatio: (splitId, ratio) => {
-      const next = setRatio(get().tree, splitId, ratio);
-      commit(next, get().focusedLeafId);
+    focusAdjacent: (dir) => {
+      const { tree, focusedLeafId } = get();
+      if (!tree || !focusedLeafId) return;
+      get().focusLeaf(adjacentLeafId(tree, focusedLeafId, dir));
+    },
+    setSplitSizes: (splitId, sizes) => {
+      const { tree } = get();
+      if (!tree) return;
+      commitActive({ tree: setSplitSizes(tree, splitId, sizes) });
     },
     bindSession: (leafId, sessionId) => {
-      const next = setLeafSession(get().tree, leafId, sessionId);
-      commit(next, get().focusedLeafId);
+      const { tree } = get();
+      if (!tree) return;
+      commitActive({ tree: setLeafSession(tree, leafId, sessionId) });
+    },
+    setLeafZoom: (leafId, zoom) => {
+      const { tree } = get();
+      if (!tree) return;
+      const rec = (n: PaneNode): PaneNode =>
+        n.kind === "leaf"
+          ? n.id === leafId
+            ? { ...n, zoom }
+            : n
+          : { ...n, children: n.children.map(rec) };
+      commitActive({ tree: rec(tree) });
     },
     toggleZoom: (leafId) => {
       const target = leafId ?? get().focusedLeafId;
-      set({ zoomedLeafId: get().zoomedLeafId === target ? null : target });
+      if (!target) return;
+      commitActive({ zoomedLeafId: get().zoomedLeafId === target ? null : target });
     },
     reset: (sessionId) => {
-      const root = makeLeaf(sessionId);
-      commit(root, root.id, null);
+      const r = makeLeaf(sessionId);
+      commitActive({ tree: r, focusedLeafId: r.id, zoomedLeafId: null });
     },
-    pruneSessions: (valid) => {
-      const { tree, focusedLeafId } = get();
-      let next = tree;
-      for (const l of leaves(tree)) {
-        if (l.sessionId !== null && !valid.has(l.sessionId)) {
-          const res = closeLeaf(next, l.id);
-          if (res) next = res.tree;
-        }
-      }
-      if (next === tree) return;
-      const focus = findLeaf(next, focusedLeafId) ? focusedLeafId : leaves(next)[0].id;
-      commit(next, focus, null);
-    },
+    pruneSessions: (valid) =>
+      // Prune EVERY group, not just the active one — a deleted session must not
+      // linger in a background group's pane. A still-valid zoomed/focused leaf
+      // is preserved; only removed leaves reset those.
+      set((s) => {
+        const live = (l: { sessionId: string | null }) => l.sessionId === null || valid.has(l.sessionId);
+        let changed = false;
+        const groups = s.groups.map((g) => {
+          if (!g.tree) return g;
+          const ls = leaves(g.tree);
+          if (ls.every(live)) return g;
+          changed = true;
+          if (!ls.some(live)) return { ...g, tree: null, focusedLeafId: null, zoomedLeafId: null };
+          let next: PaneNode | null = g.tree;
+          for (const l of ls) {
+            if (!live(l) && next) {
+              const res = removeLeaf(next, l.id);
+              if (res) next = res.tree;
+            }
+          }
+          if (!next) return { ...g, tree: null, focusedLeafId: null, zoomedLeafId: null };
+          const focusedLeafId =
+            g.focusedLeafId && findLeaf(next, g.focusedLeafId) ? g.focusedLeafId : leaves(next)[0].id;
+          const zoomedLeafId = g.zoomedLeafId && findLeaf(next, g.zoomedLeafId) ? g.zoomedLeafId : null;
+          return { ...g, tree: next, focusedLeafId, zoomedLeafId };
+        });
+        if (!changed) return {};
+        const active = groups.find((g) => g.id === s.activeGroupId)!;
+        persist(groups, s.activeGroupId);
+        return { groups, tree: active.tree, focusedLeafId: active.focusedLeafId, zoomedLeafId: active.zoomedLeafId };
+      }),
   };
 });
+
+/** Display label for a group tab: its name, or an index-based default. */
+export function groupLabel(group: LayoutGroup, index: number, fallback: (n: number) => string): string {
+  return group.name.trim() || fallback(index + 1);
+}

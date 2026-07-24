@@ -5,6 +5,7 @@ import { PanelLeft } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { CommandPalette } from "@/components/command-palette/CommandPalette";
+import { PaneDragGhost } from "@/components/session/PaneDragGhost";
 import { Toaster } from "@/components/ui/Toaster";
 import { mockProject } from "@/lib/mock";
 import { useRuntimeStore } from "@/lib/runtime";
@@ -49,7 +50,11 @@ export function AppShell() {
     if (splitDisabled) return;
     const doSplit = async (dir: SplitDir) => {
       const id = await useRuntimeStore.getState().newTiledSession();
-      if (id) useLayoutStore.getState().split(dir, id);
+      if (!id) return;
+      const layout = useLayoutStore.getState();
+      // Empty group → the new session fills it; otherwise split the focused pane.
+      if (!layout.tree) layout.dockSession("", dir === "row" ? "right" : "bottom", id);
+      else layout.split(dir, id);
     };
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
@@ -60,13 +65,24 @@ export function AppShell() {
         // Cmd+D splits side-by-side; Cmd+Shift+D stacks.
         e.preventDefault();
         void doSplit(e.shiftKey ? "col" : "row");
+      } else if (key === "t") {
+        // Cmd+T opens a new (empty) group.
+        e.preventDefault();
+        layout.addGroup();
+      } else if (e.shiftKey && (key === "]" || key === "[")) {
+        // Cmd+Shift+] / [ cycles groups.
+        e.preventDefault();
+        const i = layout.groups.findIndex((g) => g.id === layout.activeGroupId);
+        const n = layout.groups.length;
+        const j = key === "]" ? (i + 1) % n : (i - 1 + n) % n;
+        layout.setActiveGroup(layout.groups[j].id);
       } else if (e.shiftKey && key === "enter") {
         e.preventDefault();
         layout.toggleZoom();
       } else if (key === "w") {
         // Close the focused pane — but only while tiled; a lone pane lets
         // Cmd+W fall through to its usual window-close.
-        if (leaves(layout.tree).length > 1) {
+        if (layout.tree && leaves(layout.tree).length > 1) {
           e.preventDefault();
           layout.closeFocused();
         }
@@ -216,6 +232,7 @@ export function AppShell() {
       </main>
       <CommandPalette />
       <Toaster />
+      <PaneDragGhost />
     </div>
   );
 }

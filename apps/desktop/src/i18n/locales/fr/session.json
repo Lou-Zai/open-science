@@ -3,6 +3,21 @@
     "title": "Session introuvable",
     "hint": "Choisissez une session dans la barre latérale."
   },
+  "group": {
+    "defaultName": "Écran {{n}}",
+    "newTab": "Nouvel écran",
+    "close": "Fermer l'écran",
+    "renameHint": "Double-cliquez pour renommer",
+    "splitRight": "Diviser à droite — ouvrir une nouvelle session à côté",
+    "splitDown": "Diviser en bas — ouvrir une nouvelle session en dessous",
+    "closePane": "Fermer ce volet",
+    "zoom": "Zoom de ce volet",
+    "empty": {
+      "title": "Écran vide",
+      "hint": "Faites glisser une session depuis la barre latérale ici pour commencer, ou appuyez sur ⌘D pour diviser.",
+      "newSession": "Nouvelle session"
+    }
+  },
   "composer": {
     "placeholder": {
       "default": "Posez n'importe quelle question",
