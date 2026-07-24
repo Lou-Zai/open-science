@@ -118,6 +118,8 @@
     "removeTitle": "移除该供应商的凭据/配置",
     "searchPlaceholder": "连接供应商 — 搜索 {{count}} 个（anthropic、openrouter、deepseek…）",
     "apiKeyLabel": "API 密钥",
+    "bedrockRegionLabel": "Amazon Bedrock 区域",
+    "bedrockRegionPlaceholder": "AWS 区域——例如 us-east-1",
     "completeLogin": "完成登录",
     "waitingForBrowser": "等待您在浏览器中完成操作…",
     "pasteCode": "粘贴浏览器中的代码",

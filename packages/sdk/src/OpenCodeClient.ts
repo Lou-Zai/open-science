@@ -667,6 +667,29 @@ export class OpenCodeClient extends BaseAgentRuntime implements AgentRuntime {
     await this.disposeInstance();
   }
 
+  /** Read a provider's configured AWS-style region, when present. */
+  async getProviderRegion(providerID: string): Promise<string | null> {
+    const res = await this.fetchImpl(`${this.baseUrl}/global/config`, { headers: this.headers() });
+    if (!res.ok) throw await this.apiError(res, "Failed to read provider region");
+    const cfg = (await res.json()) as {
+      provider?: Record<string, { options?: { region?: unknown } }>;
+    };
+    const region = cfg.provider?.[providerID]?.options?.region;
+    return typeof region === "string" && region ? region : null;
+  }
+
+  /** Set a provider's AWS-style region in the global config. Applies live. */
+  async setProviderRegion(providerID: string, region: string): Promise<void> {
+    const res = await this.fetchImpl(`${this.baseUrl}/global/config`, {
+      method: "PATCH",
+      headers: this.headers(true),
+      body: JSON.stringify({
+        provider: { [providerID]: { options: { region } } },
+      }),
+    });
+    if (!res.ok) throw await this.apiError(res, "Failed to set provider region");
+  }
+
   /** Remove a provider's stored credentials. */
   async removeProviderAuth(providerID: string): Promise<void> {
     const res = await this.fetchImpl(`${this.baseUrl}/auth/${encodeURIComponent(providerID)}`, {

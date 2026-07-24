@@ -119,6 +119,8 @@
     "removeTitle": "Anmeldedaten/Konfiguration dieses Anbieters entfernen",
     "searchPlaceholder": "Anbieter verbinden — {{count}} durchsuchen (anthropic, openrouter, deepseek…)",
     "apiKeyLabel": "API-Schlüssel",
+    "bedrockRegionLabel": "Amazon-Bedrock-Region",
+    "bedrockRegionPlaceholder": "AWS-Region — z. B. eu-central-1",
     "completeLogin": "Anmeldung abschließen",
     "waitingForBrowser": "Warte, bis Sie im Browser fertig sind…",
     "pasteCode": "Den Code aus dem Browser einfügen",

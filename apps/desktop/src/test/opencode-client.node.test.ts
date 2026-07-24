@@ -359,6 +359,51 @@ describe("per-prompt agent pinning", () => {
   });
 });
 
+describe("provider region config", () => {
+  it("reads and writes a provider region through the global config", async () => {
+    const requests: Array<{ method: string; body?: unknown }> = [];
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      const method = init?.method ?? "GET";
+      requests.push({
+        method,
+        body: init?.body ? JSON.parse(init.body as string) : undefined,
+      });
+      return new Response(
+        JSON.stringify({
+          provider: {
+            "amazon-bedrock": { options: { region: "eu-west-1", profile: "research" } },
+          },
+        }),
+        { status: 200 },
+      );
+    };
+    const client = new OpenCodeClient({ baseUrl: "http://127.0.0.1:1", fetchImpl });
+
+    await expect(client.getProviderRegion("amazon-bedrock")).resolves.toBe("eu-west-1");
+    await client.setProviderRegion("amazon-bedrock", "ap-northeast-1");
+
+    expect(requests).toEqual([
+      { method: "GET", body: undefined },
+      {
+        method: "PATCH",
+        body: {
+          provider: {
+            "amazon-bedrock": { options: { region: "ap-northeast-1" } },
+          },
+        },
+      },
+    ]);
+  });
+
+  it("returns null when a provider has no configured region", async () => {
+    const fetchImpl: typeof fetch = async () =>
+      new Response(JSON.stringify({ provider: { openai: { options: {} } } }), { status: 200 });
+    const client = new OpenCodeClient({ baseUrl: "http://127.0.0.1:1", fetchImpl });
+
+    await expect(client.getProviderRegion("amazon-bedrock")).resolves.toBeNull();
+  });
+});
+
 describe("custom-model context limits (#52: never pin a guessed window)", () => {
   // Mock only /global/config: a GET returns the current provider map, a PATCH
   // deep-merges into it (mirroring OpenCode's remeda mergeDeep) and is recorded.

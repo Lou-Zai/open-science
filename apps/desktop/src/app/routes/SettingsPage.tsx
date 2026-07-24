@@ -198,6 +198,8 @@ export function SettingsPage() {
   const [providerManagerOpen, setProviderManagerOpen] = useState(false);
   const [connectQuery, setConnectQuery] = useState("");
   const [keyInput, setKeyInput] = useState("");
+  const [bedrockRegion, setBedrockRegion] = useState("");
+  const [bedrockRegionLoading, setBedrockRegionLoading] = useState(false);
   const [promptInputs, setPromptInputs] = useState<Record<string, string>>({});
   const [oauth, setOauth] = useState<
     (OAuthAuthorization & { providerID: string; methodIndex: number }) | null
@@ -437,6 +439,9 @@ export function SettingsPage() {
 
   const saveKey = (providerID: string) =>
     run(t("toast.couldNotSaveKey"), async () => {
+      if (providerID === "amazon-bedrock") {
+        await getClient()!.setProviderRegion(providerID, bedrockRegion.trim());
+      }
       await getClient()!.setProviderApiKey(providerID, keyInput.trim());
       cancelOAuth(); // a pending browser login for this panel is now moot
       setKeyInput("");
@@ -762,6 +767,30 @@ export function SettingsPage() {
   const q = connectQuery.trim().toLowerCase();
   const selected =
     catalog.find((p) => p.id === q) ?? catalog.find((p) => p.name.toLowerCase() === q) ?? null;
+  const validBedrockRegion =
+    selected?.id !== "amazon-bedrock" ||
+    /^[a-z]{2}(?:-gov)?-[a-z]+-\d+$/.test(bedrockRegion.trim());
+  useEffect(() => {
+    if (selected?.id !== "amazon-bedrock") return;
+    const client = getClient();
+    if (!client) return;
+    let active = true;
+    setBedrockRegionLoading(true);
+    void client
+      .getProviderRegion(selected.id)
+      .then((region) => {
+        if (active) setBedrockRegion(region ?? "");
+      })
+      .catch(() => {
+        if (active) setBedrockRegion("");
+      })
+      .finally(() => {
+        if (active) setBedrockRegionLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [selected?.id]);
   // Every provider takes an API key via PUT /auth; special flows (OAuth) add to
   // that. Keep each method's index in the provider's FULL upstream list — the
   // authorize call is by that index, and filtering re-numbers positions (a
@@ -1047,6 +1076,17 @@ export function SettingsPage() {
                         ) : null,
                       )}
 
+                      {selected.id === "amazon-bedrock" && (
+                        <input
+                          value={bedrockRegion}
+                          onChange={(e) => setBedrockRegion(e.target.value)}
+                          aria-label={t("providers.bedrockRegionLabel")}
+                          placeholder={t("providers.bedrockRegionPlaceholder")}
+                          className={inputCls("w-full font-mono")}
+                          disabled={bedrockRegionLoading}
+                        />
+                      )}
+
                       <div className="flex items-center gap-2">
                         <input
                           type="password"
@@ -1058,7 +1098,12 @@ export function SettingsPage() {
                         <button
                           className={btnAccent()}
                           onClick={() => void saveKey(selected.id)}
-                          disabled={busy || !keyInput.trim()}
+                          disabled={
+                            busy ||
+                            bedrockRegionLoading ||
+                            !keyInput.trim() ||
+                            !validBedrockRegion
+                          }
                         >
                           <Check size={13} /> {t("common:actions.save")}
                         </button>

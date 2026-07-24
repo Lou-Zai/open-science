@@ -2,7 +2,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ProviderInfo } from "@ai4s/sdk";
+import type { ProviderCatalogEntry, ProviderInfo } from "@ai4s/sdk";
 import i18n from "@/i18n";
 import * as runtime from "@/lib/runtime";
 import { useRuntimeStore } from "@/lib/runtime";
@@ -25,13 +25,19 @@ const providers: ProviderInfo[] = [
 
 let activeView: ReturnType<typeof render> | undefined;
 
-function catalogClient(listProviders = vi.fn().mockResolvedValue(providers)) {
+function catalogClient(
+  listProviders = vi.fn().mockResolvedValue(providers),
+  catalog: ProviderCatalogEntry[] = [],
+) {
   return {
     listProviders,
     listAuthMethods: vi.fn().mockResolvedValue({}),
-    listProviderCatalog: vi.fn().mockResolvedValue({ all: [] }),
+    listProviderCatalog: vi.fn().mockResolvedValue({ all: catalog }),
     listCustomProviderIds: vi.fn().mockResolvedValue([]),
     listMcpServers: vi.fn().mockResolvedValue([]),
+    getProviderRegion: vi.fn().mockResolvedValue(null),
+    setProviderRegion: vi.fn().mockResolvedValue(undefined),
+    setProviderApiKey: vi.fn().mockResolvedValue(undefined),
   } as unknown as NonNullable<ReturnType<typeof runtime.getClient>>;
 }
 
@@ -138,6 +144,49 @@ describe("Settings model browser integration", () => {
 
     expect(await screen.findByRole("button", { name: /^o3/ })).toBeInTheDocument();
     expect(screen.queryByText("The model catalog is currently unavailable.")).not.toBeInTheDocument();
+  });
+
+  it("saves the Amazon Bedrock region before its API key", async () => {
+    const client = catalogClient(vi.fn().mockResolvedValue([]), [
+      {
+        id: "amazon-bedrock",
+        name: "Amazon Bedrock",
+        env: ["AWS_BEARER_TOKEN_BEDROCK"],
+      },
+    ]);
+    vi.mocked(client.getProviderRegion).mockResolvedValue("eu-west-1");
+    vi.spyOn(runtime, "getClient").mockReturnValue(client);
+    await renderSettings();
+
+    await userEvent.click(screen.getByRole("button", { name: "Manage" }));
+    await userEvent.type(
+      screen.getByPlaceholderText(/Connect a provider/),
+      "amazon-bedrock",
+    );
+
+    const region = await screen.findByRole("textbox", { name: "Amazon Bedrock region" });
+    await waitFor(() => expect(region).toHaveValue("eu-west-1"));
+    await userEvent.clear(region);
+    await userEvent.type(region, "invalid");
+    await userEvent.type(
+      screen.getByPlaceholderText(/Amazon Bedrock API key/),
+      "bedrock-key",
+    );
+    const save = screen.getByRole("button", { name: "Save" });
+    expect(save).toBeDisabled();
+
+    await userEvent.clear(region);
+    await userEvent.type(region, "eu-central-1");
+    expect(save).toBeEnabled();
+    await userEvent.click(save);
+
+    await waitFor(() => {
+      expect(client.setProviderRegion).toHaveBeenCalledWith("amazon-bedrock", "eu-central-1");
+      expect(client.setProviderApiKey).toHaveBeenCalledWith("amazon-bedrock", "bedrock-key");
+    });
+    expect(
+      vi.mocked(client.setProviderRegion).mock.invocationCallOrder[0],
+    ).toBeLessThan(vi.mocked(client.setProviderApiKey).mock.invocationCallOrder[0]);
   });
 
   it("drops the cached catalog when the server URL changes (no stale models from the old runtime)", async () => {
