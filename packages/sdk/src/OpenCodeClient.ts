@@ -22,10 +22,12 @@ import { DEFAULT_OPENCODE_URL } from "./types";
 import type { AgentRuntime } from "./runtime";
 import { BaseAgentRuntime } from "./base-runtime";
 
-/** Assumed context window for custom-endpoint models whose real limit is
- *  unknown. Conservative enough for modern local/self-hosted models; if the
- *  real window is smaller the model may still truncate before compaction. */
-const DEFAULT_CUSTOM_MODEL_CONTEXT = 128_000;
+/** The blind context window earlier versions wrote for custom-endpoint models
+ *  whose real limit was unknown. We no longer write it (a wrong guess is worse
+ *  than none — see addCustomProvider), and clearDefaultCustomModelContextLimits
+ *  resets configs still carrying it. Match the exact shape we used to write so
+ *  cleanup never touches a probed or hand-set limit. */
+const LEGACY_BLIND_CONTEXT = 128_000;
 
 /** The slice of OpenCode's global config we read and write for custom
  *  providers. Extra keys in an entry are preserved via spread on write. */
@@ -504,21 +506,22 @@ export class OpenCodeClient extends BaseAgentRuntime implements AgentRuntime {
       contexts?: Record<string, number>;
     },
   ): Promise<void> {
-    // Custom models are unknown to models.dev, so OpenCode sees limit.context=0
-    // and never auto-compacts — long chats silently overflow the model's real
-    // window (#49). Every model gets a context limit: a caller-provided one
-    // (probed or typed — the user saw it in the form) wins, then a limit
-    // already in the config, then a 128k default. output=0 keeps OpenCode's
-    // default output cap (min(0, MAX) || MAX falls through).
+    // Only pin model.limit.context when we actually know it: a caller-provided
+    // value (probed from the endpoint or typed by the user) wins, else a real
+    // limit already in the config is kept, else we write nothing (context stays
+    // 0). A guessed default is worse than none — OpenCode's overflow accounting
+    // treats our number as the hard window: too low manufactures a context-
+    // overflow and aborts turns on models with a larger real window (#52); too
+    // high never helps a smaller one. Known values come from the probe
+    // (Ollama/vLLM/LM Studio report their window) or the user; when both are
+    // absent, leaving context 0 makes OpenCode skip the accounting entirely.
     const existing = await this.customProviderModelLimits(id);
     const models = Object.fromEntries(
       opts.models.map((m) => {
         const context = opts.contexts?.[m];
         const limit =
-          context && context > 0
-            ? { context, output: existing[m]?.output ?? 0 }
-            : (existing[m] ?? { context: DEFAULT_CUSTOM_MODEL_CONTEXT, output: 0 });
-        return [m, { name: m, limit }];
+          context && context > 0 ? { context, output: existing[m]?.output ?? 0 } : existing[m];
+        return [m, limit ? { name: m, limit } : { name: m }];
       }),
     );
     const provider = {
@@ -558,28 +561,31 @@ export class OpenCodeClient extends BaseAgentRuntime implements AgentRuntime {
   }
 
   /**
-   * Backfill the default context limit for custom-provider models that predate
-   * the default in addCustomProvider (#49) — without one OpenCode never
-   * auto-compacts them. Only models with no configured limit are touched; each
-   * patched provider entry is sent back whole so nothing else is lost.
-   * Idempotent and best-effort: call it after connecting.
+   * Undo the blind context limit older versions wrote for custom models whose
+   * real window was unknown (#52). That guessed ceiling sits below large models'
+   * real window, so OpenCode's overflow accounting manufactured a context-
+   * overflow and aborted turns that used to work. We reset only limits matching
+   * the exact default we used to write — {context:128000, output:0} — back to
+   * context 0, which makes OpenCode skip overflow accounting (the pre-guess
+   * behavior); probed or hand-set limits are left untouched. We write context 0
+   * rather than dropping the key because OpenCode merges config patches (remeda
+   * mergeDeep), so an omitted key would keep the stale value. Idempotent (a
+   * reset entry no longer matches) and best-effort: call it after connecting.
    */
-  async ensureCustomModelContextLimits(): Promise<void> {
+  async clearDefaultCustomModelContextLimits(): Promise<void> {
+    const isBlindDefault = (limit?: { context: number; output: number }) =>
+      limit != null && limit.context === LEGACY_BLIND_CONTEXT && limit.output === 0;
     const cfg = await this.customProviderConfig();
     const patch: CustomProviderConfig = {};
     for (const [pid, entry] of Object.entries(cfg)) {
       const models = entry.models ?? {};
-      const missing = Object.values(models).some((m) => !m.limit || !(m.limit.context > 0));
-      if (!missing) continue;
+      if (!Object.values(models).some((m) => isBlindDefault(m.limit))) continue;
       patch[pid] = {
         ...entry,
         models: Object.fromEntries(
-          Object.entries(models).map(([mid, m]) => [
-            mid,
-            m.limit && m.limit.context > 0
-              ? m
-              : { ...m, limit: { context: DEFAULT_CUSTOM_MODEL_CONTEXT, output: m.limit?.output ?? 0 } },
-          ]),
+          Object.entries(models).map(([mid, m]) =>
+            isBlindDefault(m.limit) ? [mid, { ...m, limit: { context: 0, output: 0 } }] : [mid, m],
+          ),
         ),
       };
     }
@@ -589,7 +595,7 @@ export class OpenCodeClient extends BaseAgentRuntime implements AgentRuntime {
       headers: this.headers(true),
       body: JSON.stringify({ provider: patch }),
     });
-    if (!res.ok) throw await this.apiError(res, "Failed to backfill model context limits");
+    if (!res.ok) throw await this.apiError(res, "Failed to reset default model context limits");
   }
 
   /** Ids of custom providers defined in the global config (removable via the app). */

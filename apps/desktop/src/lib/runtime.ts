@@ -267,9 +267,9 @@ let bootstrapInFlight: Promise<void> | null = null;
  *  created or deleted a session so the sidebar re-lists (no OpenCode event for
  *  session create/delete). See docs/rfc/remote-access-gateway.md. */
 let gatewayListenerBound = false;
-/** Custom-model context-limit backfill (#49) runs once per app run — every
+/** Custom-model context-limit cleanup (#52) runs once per app run — every
  *  reconnect re-enters connect(), and the check is a config round-trip. */
-let contextLimitsBackfilled = false;
+let contextLimitsCleaned = false;
 /** Unhook the current client's status listener BEFORE closing it — teardown
  *  emits "offline", and a reconnect attempt must not flash that at the user. */
 let clientStatusUnsub: (() => void) | null = null;
@@ -1239,17 +1239,19 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       // (the event stream is directory-scoped and torn down on purpose) —
       // check any session still holding a running lock against the server.
       void get().reconcileRunning();
-      // Custom-endpoint models saved without a context limit never auto-compact
-      // (#49) — backfill the default once per run. Desktop only: a gateway web
-      // client may hold a read-only token, and the host app does this anyway.
-      if (!isGatewayWeb && !contextLimitsBackfilled) {
-        contextLimitsBackfilled = true;
+      // Older versions wrote a blind 128k context limit for custom-endpoint
+      // models with an unknown window; on models whose real window is larger
+      // that guess made OpenCode manufacture a context-overflow and abort (#52).
+      // Reset those once per run. Desktop only: a gateway web client may hold a
+      // read-only token, and the host app does this anyway.
+      if (!isGatewayWeb && !contextLimitsCleaned) {
+        contextLimitsCleaned = true;
         // Best-effort: deferred into a promise chain so no failure — even a
         // synchronous throw — can flip an otherwise successful connect.
         void Promise.resolve()
-          .then(() => c.ensureCustomModelContextLimits())
+          .then(() => c.clearDefaultCustomModelContextLimits())
           .catch((err) =>
-            logDebug(`context-limit backfill skipped: ${err instanceof Error ? err.message : String(err)}`),
+            logDebug(`context-limit cleanup skipped: ${err instanceof Error ? err.message : String(err)}`),
           );
       }
     } catch (err) {

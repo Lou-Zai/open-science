@@ -359,6 +359,107 @@ describe("per-prompt agent pinning", () => {
   });
 });
 
+describe("custom-model context limits (#52: never pin a guessed window)", () => {
+  // Mock only /global/config: a GET returns the current provider map, a PATCH
+  // deep-merges into it (mirroring OpenCode's remeda mergeDeep) and is recorded.
+  function mockGlobalConfig(initialProviders: Record<string, unknown> = {}) {
+    const store = structuredClone(initialProviders) as Record<string, Record<string, unknown>>;
+    const patches: Array<{ provider: Record<string, { models?: Record<string, unknown> }> }> = [];
+    const mergeDeep = (target: Record<string, unknown>, source: Record<string, unknown>) => {
+      for (const key of Object.keys(source)) {
+        const s = source[key];
+        const t = target[key];
+        if (s && typeof s === "object" && !Array.isArray(s) && t && typeof t === "object") {
+          mergeDeep(t as Record<string, unknown>, s as Record<string, unknown>);
+        } else {
+          target[key] = s;
+        }
+      }
+      return target;
+    };
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (!url.endsWith("/global/config")) return new Response("not found", { status: 404 });
+      if ((init?.method ?? "GET").toUpperCase() === "PATCH") {
+        const body = JSON.parse(init!.body as string);
+        patches.push(body);
+        mergeDeep(store, body.provider ?? {});
+      }
+      return new Response(JSON.stringify({ provider: store }), { status: 200 });
+    };
+    return { fetchImpl, patches, store };
+  }
+
+  it("writes no context limit when the model window is unknown", async () => {
+    const { fetchImpl, patches } = mockGlobalConfig();
+    const client = new OpenCodeClient({ baseUrl: "http://127.0.0.1:1", fetchImpl });
+    await client.addCustomProvider("custom", {
+      name: "Custom",
+      npm: "@ai-sdk/openai-compatible",
+      baseURL: "https://example.test/v1",
+      models: ["sol"],
+    });
+    expect(patches[patches.length - 1].provider.custom.models!.sol).toEqual({ name: "sol" });
+  });
+
+  it("pins a probed/typed context window exactly", async () => {
+    const { fetchImpl, patches } = mockGlobalConfig();
+    const client = new OpenCodeClient({ baseUrl: "http://127.0.0.1:1", fetchImpl });
+    await client.addCustomProvider("custom", {
+      name: "Custom",
+      npm: "@ai-sdk/openai-compatible",
+      baseURL: "https://example.test/v1",
+      models: ["sol"],
+      contexts: { sol: 1_500_000 },
+    });
+    expect(patches[patches.length - 1].provider.custom.models!.sol).toEqual({
+      name: "sol",
+      limit: { context: 1_500_000, output: 0 },
+    });
+  });
+
+  it("keeps a hand-set limit when no window is provided", async () => {
+    const { fetchImpl, patches } = mockGlobalConfig({
+      custom: { name: "Custom", models: { sol: { name: "sol", limit: { context: 64_000, output: 0 } } } },
+    });
+    const client = new OpenCodeClient({ baseUrl: "http://127.0.0.1:1", fetchImpl });
+    await client.addCustomProvider("custom", {
+      name: "Custom",
+      npm: "@ai-sdk/openai-compatible",
+      baseURL: "https://example.test/v1",
+      models: ["sol"],
+    });
+    expect(patches[patches.length - 1].provider.custom.models!.sol).toEqual({
+      name: "sol",
+      limit: { context: 64_000, output: 0 },
+    });
+  });
+
+  it("resets the blind 128k default to 0, leaves real limits alone, and is idempotent", async () => {
+    const { fetchImpl, patches, store } = mockGlobalConfig({
+      custom: {
+        name: "Custom",
+        models: {
+          sol: { name: "sol", limit: { context: 128_000, output: 0 } }, // blind default → reset
+          local: { name: "local", limit: { context: 131_072, output: 0 } }, // probed → keep
+          bare: { name: "bare" }, // no limit → untouched
+        },
+      },
+    });
+    const client = new OpenCodeClient({ baseUrl: "http://127.0.0.1:1", fetchImpl });
+    await client.clearDefaultCustomModelContextLimits();
+
+    const models = (store.custom.models as Record<string, { limit?: unknown }>);
+    expect(models.sol.limit).toEqual({ context: 0, output: 0 });
+    expect(models.local.limit).toEqual({ context: 131_072, output: 0 });
+    expect(models.bare.limit).toBeUndefined();
+    expect(patches).toHaveLength(1);
+
+    await client.clearDefaultCustomModelContextLimits();
+    expect(patches).toHaveLength(1); // nothing left matching the default → no second PATCH
+  });
+});
+
 describe("per-prompt model pinning (#8: old sessions follow the current default)", () => {
   it("sends model as {providerID, modelID} when a default is passed, omits it otherwise", async () => {
     const client = new OpenCodeClient({ baseUrl: `http://127.0.0.1:${server.port}` });
