@@ -32,6 +32,9 @@ import { useUpdateStore } from "@/lib/update";
 import { overlayTitlebarStyle } from "@/lib/titlebar";
 import { visibleSections, resolveSection } from "@/components/settings/sections";
 import { useIsMobile } from "@/lib/useIsMobile";
+import { useDragDivider } from "@/lib/useDragDivider";
+import { useLayoutStore } from "@/lib/layout";
+import { startPaneDrag } from "@/lib/dragPane";
 import { isGatewayWeb } from "@/lib/webMode";
 import { StatusPills } from "./StatusPills";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -99,36 +102,32 @@ export function Sidebar({ project }: { project: Project }) {
     setSidebarWidth,
     toggleSidebar,
   } = useUiStore();
-  // While dragging, the live width lives here; the store (and localStorage)
-  // are only written on pointer-up.
-  const [dragWidth, setDragWidth] = useState<number | null>(null);
-  const dragging = dragWidth !== null;
-
-  const onDividerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setDragWidth(sidebarWidth);
-  };
-
-  const onDividerPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragging) return;
-    // The sidebar starts at the window's left edge, so clientX is the width.
-    const x = e.clientX;
-    if (x < COLLAPSE_BELOW && !inSettings) {
+  // The sidebar starts at the window's left edge, so clientX is the width;
+  // dragging left of COLLAPSE_BELOW snaps it collapsed but keeps the drag alive
+  // (unless in Settings, which never collapses) so dragging back out re-opens it.
+  const { dragging, dragValue: dragWidth, handleProps } = useDragDivider({
+    value: sidebarWidth,
+    compute: ({ x }) => {
+      if (x < COLLAPSE_BELOW && !inSettings) return null;
+      return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, x));
+    },
+    onCommit: setSidebarWidth,
+    onCollapse: () => {
       if (!sidebarCollapsed) setSidebarCollapsed(true);
-      return;
-    }
-    if (sidebarCollapsed) setSidebarCollapsed(false);
-    setDragWidth(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, x)));
-  };
-
-  const onDividerPointerUp = () => {
-    if (!dragging) return;
-    setSidebarWidth(dragWidth);
-    setDragWidth(null);
-  };
+    },
+    onExpand: () => {
+      if (sidebarCollapsed) setSidebarCollapsed(false);
+    },
+  });
 
   const startNew = () => {
+    // Desktop: "New" acts on the active group — the focused pane becomes a fresh
+    // draft, and an EMPTY group gets a draft pane (so New always shows one).
+    if (!isMobile && !isGatewayWeb) {
+      const layout = useLayoutStore.getState();
+      if (layout.tree && layout.focusedLeafId) layout.bindSession(layout.focusedLeafId, null);
+      else layout.reset(null);
+    }
     startDraft();
     navigate("/live");
   };
@@ -288,6 +287,36 @@ export function Sidebar({ project }: { project: Project }) {
     <div key={row.to} className="group relative">
       <NavLink
         to={row.to}
+        // An <a> is natively draggable; that native drag hijacks the pointer
+        // stream (selecting text instead) and defeats our pointer-based dock
+        // drag. Disable it so startPaneDrag's window listeners see the moves.
+        draggable={false}
+        onDragStart={(e) => e.preventDefault()}
+        onPointerDown={(e) => {
+          // Drag a session row into the pane area to dock it (desktop only).
+          if (row.kind === "session" && !isMobile && !isGatewayWeb) {
+            // eslint-disable-next-line i18next/no-literal-string -- DragSource kind, not UI copy
+            startPaneDrag(e, { kind: "session", sessionId: row.id }, row.title);
+          }
+        }}
+        onClick={(e) => {
+          // A trailing click right after a drag is swallowed by the drag
+          // controller's one-shot capture listener, so it never reaches here.
+          // Desktop tiling: a session click never clobbers the focused pane —
+          // a modifier-click opens the session in a NEW split pane; a plain
+          // click opens it full-screen in the tentative "preview" screen (#3).
+          // Web/phone (single-pane) fall through to the NavLink as before.
+          if (row.kind === "session" && !isMobile && !isGatewayWeb) {
+            e.preventDefault();
+            const layout = useLayoutStore.getState();
+            if (e.metaKey || e.ctrlKey || e.altKey) {
+              // eslint-disable-next-line i18next/no-literal-string -- SplitDir enum, not UI copy
+              layout.split("row", row.id);
+            } else {
+              layout.openSessionEphemeral(row.id);
+            }
+          }
+        }}
         className={cn(
           "flex items-center gap-2 rounded-input py-1 pl-2 pr-8 text-[13px] hover:bg-surface-2",
           location.pathname === row.to
@@ -708,10 +737,7 @@ export function Sidebar({ project }: { project: Project }) {
           left snaps the sidebar closed. Kept mounted while collapsed so an
           in-flight drag (pointer capture) can re-open it. */}
       <div
-        onPointerDown={onDividerPointerDown}
-        onPointerMove={onDividerPointerMove}
-        onPointerUp={onDividerPointerUp}
-        onPointerCancel={onDividerPointerUp}
+        {...handleProps}
         className={cn(
           "group absolute inset-y-0 right-0 z-10 w-[5px] cursor-col-resize",
           sidebarCollapsed && !dragging && "pointer-events-none",

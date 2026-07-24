@@ -16,7 +16,7 @@
         "transparent": true,
         "windowEffects": {
           "effects": ["sidebar"],
-          "state": "followsWindowActiveState"
+          "state": "inactive"
         }
       }
     ]

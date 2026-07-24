@@ -125,6 +125,9 @@ export function Composer({
   agentMode,
   onAgentModeChange,
   showModelPicker,
+  modelSessionId,
+  showWorkspaceChip = true,
+  onInteract,
 }: {
   onSend?: (text: string) => void;
   onRunShell?: (command: string) => void;
@@ -147,6 +150,15 @@ export function Composer({
   /** Show the inline model + reasoning-effort switcher (left of send). The live
    *  session opts in; static mock sessions have no runtime to switch. */
   showModelPicker?: boolean;
+  /** Bind the model picker to a session (per-pane model/effort); omit for the
+   *  global default. */
+  modelSessionId?: string;
+  /** Show the draft workspace-folder chip. Only the draft pane opts in — in a
+   *  split layout the other panes already have a bound session/folder. */
+  showWorkspaceChip?: boolean;
+  /** Fired when the user edits the input — used to pin a tentative screen (#3)
+   *  the moment they start typing, so it isn't reused/lost on the next click. */
+  onInteract?: () => void;
 }) {
   const { t } = useTranslation(["session", "common"]);
   const resolvedPlaceholder = placeholder ?? t("composer.placeholder.default");
@@ -247,6 +259,7 @@ export function Composer({
   };
 
   const onChange = (v: string) => {
+    onInteract?.(); // typing pins a tentative preview screen (#3)
     setHist(null); // an edit leaves history navigation
     // A full known command name followed by whitespace commits it, same as a
     // pick — whether typed ("/init ") or pasted whole ("/init focus\n…"); the
@@ -609,8 +622,10 @@ export function Composer({
         )}
         aria-label={t("composer.placeholder.default")}
       />
-      {/* Codex-style action row: mode controls bottom-left, send bottom-right. */}
-      <div className="flex items-center gap-1.5 pt-1">
+      {/* Codex-style action row: mode controls bottom-left, send bottom-right.
+          `flex-wrap` so a narrow (tiled) pane wraps the controls to a second
+          line instead of overflowing outside the box. */}
+      <div className="flex flex-wrap items-center gap-1.5 pt-1">
         {command ? (
           <span
             className="flex h-7 shrink-0 items-center gap-1 rounded-input bg-accent/15 pl-2 pr-1 font-mono text-xs text-accent"
@@ -648,7 +663,7 @@ export function Composer({
         )}
         {/* Folder picker for a fresh draft — renders nothing once the session
             exists (its folder then shows in the header's Files toggle). */}
-        <WorkspaceChip />
+        {showWorkspaceChip && <WorkspaceChip />}
         {agentMode && onAgentModeChange && (
           <div className="relative shrink-0" ref={agentRef}>
             {agentOpen && (
@@ -754,29 +769,32 @@ export function Composer({
             </button>
           </div>
         )}
-        <span className="flex-1" />
-        {showModelPicker && <ModelPicker />}
-        {working && onStop ? (
-          // Same spot, same shape, one action: the send button becomes Stop
-          // while the agent works — always live, even though the input is not.
-          <button
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-input bg-accent text-accent-fg hover:opacity-90"
-            aria-label={t("composer.stop.aria")}
-            title={t("composer.stop.title")}
-            onClick={onStop}
-          >
-            <Square size={11} fill="currentColor" />
-          </button>
-        ) : (
-          <button
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-input bg-accent text-accent-fg hover:opacity-90 disabled:opacity-40"
-            aria-label={t("composer.send.aria")}
-            onClick={submit}
-            disabled={!canSend}
-          >
-            <ArrowUp size={15} />
-          </button>
-        )}
+        {/* Model picker + send kept together, pushed right (and wrapping as a
+            unit) so the send button is always reachable on a narrow pane. */}
+        <div className="ml-auto flex min-w-0 items-center gap-1.5">
+          {showModelPicker && <ModelPicker sessionId={modelSessionId} />}
+          {working && onStop ? (
+            // Same spot, same shape, one action: the send button becomes Stop
+            // while the agent works — always live, even though the input is not.
+            <button
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-input bg-accent text-accent-fg hover:opacity-90"
+              aria-label={t("composer.stop.aria")}
+              title={t("composer.stop.title")}
+              onClick={onStop}
+            >
+              <Square size={11} fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-input bg-accent text-accent-fg hover:opacity-90 disabled:opacity-40"
+              aria-label={t("composer.send.aria")}
+              onClick={submit}
+              disabled={!canSend}
+            >
+              <ArrowUp size={15} />
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

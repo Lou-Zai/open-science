@@ -200,7 +200,7 @@ function ReasoningSlider({
  * One picker body renders in two shells: an anchored popover on desktop/wide
  * web, a bottom sheet on phone-width viewports (`useIsMobile`).
  */
-export function ModelPicker() {
+export function ModelPicker({ sessionId }: { sessionId?: string } = {}) {
   const { t } = useTranslation(["session", "common"]);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -210,7 +210,25 @@ export function ModelPicker() {
   const reasoningVariant = useRuntimeStore((s) => s.reasoningVariant);
   const setDefaultModel = useRuntimeStore((s) => s.setDefaultModel);
   const setReasoningVariant = useRuntimeStore((s) => s.setReasoningVariant);
+  const sessionModels = useRuntimeStore((s) => s.sessionModels);
+  const sessionVariants = useRuntimeStore((s) => s.sessionVariants);
+  const setSessionModel = useRuntimeStore((s) => s.setSessionModel);
+  const setSessionVariant = useRuntimeStore((s) => s.setSessionVariant);
   const switching = useRuntimeStore((s) => s.switching);
+
+  // When bound to a session (a split pane), the picker sets THAT pane's model /
+  // effort — no global sidecar config PATCH, so other panes are untouched.
+  // Without a sessionId it drives the global default (unchanged behavior).
+  const model = sessionId ? (sessionModels[sessionId] ?? defaultModel) : defaultModel;
+  const variantChoice = sessionId
+    ? sessionVariants[sessionId] !== undefined
+      ? sessionVariants[sessionId]
+      : reasoningVariant
+    : reasoningVariant;
+  const pickModel = (key: string): Promise<void> | void =>
+    sessionId ? setSessionModel(sessionId, key) : setDefaultModel(key);
+  const pickVariant = (v: string | null) =>
+    sessionId ? setSessionVariant(sessionId, v) : setReasoningVariant(v);
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -231,13 +249,13 @@ export function ModelPicker() {
     return map;
   }, [providers]);
 
-  const current = options.find((o) => o.key === defaultModel);
-  const currentVariants = (defaultModel && variantsByKey.get(defaultModel)) || [];
+  const current = options.find((o) => o.key === model);
+  const currentVariants = (model && variantsByKey.get(model)) || [];
   // The effort actually in force: the user's pick, but only when the current
   // model exposes it (else the model falls back to its own default — mirrors the
   // store's `activeVariant`, so the chip never claims an effort that won't send).
   const activeVariant =
-    reasoningVariant && currentVariants.includes(reasoningVariant) ? reasoningVariant : null;
+    variantChoice && currentVariants.includes(variantChoice) ? variantChoice : null;
 
   const visible = filterModelOptions(options, filter, query, prefs.favorites, prefs.recent);
 
@@ -291,9 +309,9 @@ export function ModelPicker() {
     } else {
       setOpen(false);
     }
-    if (key !== defaultModel) {
+    if (key !== model) {
       try {
-        await setDefaultModel(key);
+        await pickModel(key);
       } catch {
         // setDefaultModel records modelSwitchError / toasts on its own.
       }
@@ -378,7 +396,7 @@ export function ModelPicker() {
           </div>
         ) : (
           visible.map((o) => {
-            const isCurrent = o.key === defaultModel;
+            const isCurrent = o.key === model;
             const isFavorite = prefs.favorites.includes(o.key);
             const hasReasoning = (variantsByKey.get(o.key) ?? []).length > 0;
             return (
@@ -446,7 +464,7 @@ export function ModelPicker() {
               <ReasoningSlider
                 variants={currentVariants}
                 value={activeVariant}
-                onChange={setReasoningVariant}
+                onChange={pickVariant}
                 label={t("composer.model.reasoning")}
                 minLabel={t("composer.model.faster")}
                 maxLabel={t("composer.model.smarter")}

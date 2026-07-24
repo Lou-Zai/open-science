@@ -3,6 +3,21 @@
     "title": "Sitzung nicht gefunden",
     "hint": "Wählen Sie eine Sitzung aus der Seitenleiste."
   },
+  "group": {
+    "defaultName": "Bildschirm {{n}}",
+    "newTab": "Neuer Bildschirm",
+    "close": "Bildschirm schließen",
+    "renameHint": "Zum Umbenennen doppelklicken",
+    "splitRight": "Nach rechts teilen — eine neue Sitzung daneben öffnen",
+    "splitDown": "Nach unten teilen — eine neue Sitzung darunter öffnen",
+    "closePane": "Dieses Bereich schließen",
+    "zoom": "Dieses Bereich zoomen",
+    "empty": {
+      "title": "Leerer Bildschirm",
+      "hint": "Ziehen Sie eine Sitzung aus der Seitenleiste hierher, um zu beginnen, oder drücken Sie ⌘D zum Teilen.",
+      "newSession": "Neue Sitzung"
+    }
+  },
   "composer": {
     "placeholder": {
       "default": "Fragen Sie irgendetwas",
