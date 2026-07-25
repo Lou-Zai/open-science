@@ -119,6 +119,8 @@
     "removeTitle": "Quitar las credenciales/configuración de este proveedor",
     "searchPlaceholder": "Conecta un proveedor — busca entre {{count}} (anthropic, openrouter, deepseek…)",
     "apiKeyLabel": "Clave de API",
+    "bedrockRegionLabel": "Región de Amazon Bedrock",
+    "bedrockRegionPlaceholder": "Región de AWS — p. ej., eu-west-1",
     "completeLogin": "Completar inicio de sesión",
     "waitingForBrowser": "Esperando a que termines en el navegador…",
     "pasteCode": "Pega el código del navegador",

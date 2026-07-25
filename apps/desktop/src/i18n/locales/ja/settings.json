@@ -118,6 +118,8 @@
     "removeTitle": "このプロバイダーの認証情報/設定を削除",
     "searchPlaceholder": "プロバイダーを接続 — {{count}} 件を検索（anthropic、openrouter、deepseek…）",
     "apiKeyLabel": "API キー",
+    "bedrockRegionLabel": "Amazon Bedrock リージョン",
+    "bedrockRegionPlaceholder": "AWS リージョン — 例: ap-northeast-1",
     "completeLogin": "ログインを完了",
     "waitingForBrowser": "ブラウザでの操作完了をお待ちしています…",
     "pasteCode": "ブラウザからコードを貼り付け",

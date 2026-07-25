@@ -119,6 +119,8 @@
     "removeTitle": "Remove this provider's credentials/config",
     "searchPlaceholder": "Connect a provider — search {{count}} (anthropic, openrouter, deepseek…)",
     "apiKeyLabel": "API key",
+    "bedrockRegionLabel": "Amazon Bedrock region",
+    "bedrockRegionPlaceholder": "AWS Region — e.g. us-east-1",
     "completeLogin": "Complete login",
     "waitingForBrowser": "Waiting for you to finish in the browser…",
     "pasteCode": "Paste the code from the browser",
