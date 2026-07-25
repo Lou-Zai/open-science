@@ -139,7 +139,7 @@ export const UserMessage = memo(function UserMessage({
       <div className="w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-card bg-surface-2 px-4 py-2.5 text-[15px] leading-relaxed text-text">
         {block.text}
       </div>
-      <div className="flex items-center gap-0.5 pr-0.5 pt-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      <div className="flex items-center gap-0.5 pr-0.5 pt-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
         <button
           onClick={copy}
           title={copied ? t("message.copied") : t("message.copy")}
@@ -182,6 +182,7 @@ export const AgentMessage = memo(function AgentMessage({
   onOpenArtifact?: (a: ArtifactBlock) => void;
 }) {
   const { t } = useTranslation(["session", "common"]);
+  const [copied, setCopied] = useState(false);
   // While the agent streams, `markdown` grows on every token and re-parsing the
   // whole message (react-markdown + KaTeX) each time is the main live CPU cost
   // (#50). Throttle to the trailing value so the parse runs a bounded number of
@@ -210,8 +211,19 @@ export const AgentMessage = memo(function AgentMessage({
       cancelled = true;
     };
   }, [mentionedKey]);
+
+  const copy = async () => {
+    try {
+      await copyText(markdown);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error(t("message.copyFailed"));
+    }
+  };
+
   return (
-    <div>
+    <div className="group">
       <MarkdownViewer>{shown}</MarkdownViewer>
       {refs.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">
@@ -228,6 +240,16 @@ export const AgentMessage = memo(function AgentMessage({
           ))}
         </div>
       )}
+      <div className="flex items-center gap-0.5 pt-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
+        <button
+          onClick={copy}
+          title={copied ? t("message.copied") : t("message.copy")}
+          aria-label={t("message.copy")}
+          className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text"
+        >
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+        </button>
+      </div>
     </div>
   );
 });

@@ -1,9 +1,15 @@
 // Scroll memory: a container comes back to where the user left it — per key,
 // only once the content is ready, and a draft's offset follows its session id.
 import { beforeEach, describe, expect, it } from "vitest";
-import { renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import { useRef, type UIEvent } from "react";
-import { clearScrollMemory, moveScrollMemory, useScrollMemory } from "./scrollMemory";
+import {
+  clearScrollMemory,
+  isNearBottom,
+  moveScrollMemory,
+  useChatScroll,
+  useScrollMemory,
+} from "./scrollMemory";
 
 function mount(key: string, ready: boolean, el: HTMLElement) {
   return renderHook(
@@ -77,5 +83,103 @@ describe("useScrollMemory", () => {
     const b = document.createElement("div");
     mount("chat:ses_new", true, b);
     expect(b.scrollTop).toBe(80);
+  });
+
+  it("can default an unseen key to the bottom without changing other consumers", () => {
+    const el = document.createElement("div");
+    Object.defineProperty(el, "scrollHeight", { value: 900, configurable: true });
+    renderHook(() => {
+      const ref = useRef<HTMLElement | null>(el);
+      return useScrollMemory(ref, "chat:ses_new", true, "bottom");
+    });
+    expect(el.scrollTop).toBe(900);
+  });
+});
+
+describe("useChatScroll", () => {
+  it("shows that older messages are being read and jumps back to the latest", () => {
+    const el = document.createElement("div");
+    Object.defineProperties(el, {
+      scrollHeight: { value: 1_000, configurable: true },
+      clientHeight: { value: 200, configurable: true },
+    });
+    const hook = renderHook(() => {
+      const ref = useRef<HTMLElement | null>(el);
+      return useChatScroll(ref, "chat:ses_1");
+    });
+
+    act(() => {
+      el.scrollTop = 300;
+      hook.result.current.onScroll({ currentTarget: el } as unknown as UIEvent<HTMLElement>);
+    });
+    expect(hook.result.current.atLatest).toBe(false);
+
+    act(() => hook.result.current.jumpToLatest());
+    expect(el.scrollTop).toBe(1_000);
+    expect(hook.result.current.atLatest).toBe(true);
+  });
+
+  it("uses a tolerance when deciding whether the reader is at the latest messages", () => {
+    const el = document.createElement("div");
+    Object.defineProperties(el, {
+      scrollHeight: { value: 1_000, configurable: true },
+      clientHeight: { value: 200, configurable: true },
+    });
+    el.scrollTop = 730;
+    expect(isNearBottom(el)).toBe(true);
+    el.scrollTop = 700;
+    expect(isNearBottom(el)).toBe(false);
+  });
+
+  it("follows growing content only while the reader is already at the bottom", () => {
+    const OriginalResizeObserver = globalThis.ResizeObserver;
+    let notifyResize: ResizeObserverCallback | undefined;
+    class TestResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        notifyResize = callback;
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    globalThis.ResizeObserver = TestResizeObserver as unknown as typeof ResizeObserver;
+
+    let height = 1_000;
+    const el = document.createElement("div");
+    Object.defineProperties(el, {
+      scrollHeight: { get: () => height, configurable: true },
+      clientHeight: { value: 200, configurable: true },
+    });
+    const hook = renderHook(
+      ({ ready }) => {
+        const ref = useRef<HTMLElement | null>(el);
+        return useChatScroll(ref, "chat:ses_stream", ready);
+      },
+      { initialProps: { ready: true } },
+    );
+
+    try {
+      (
+        hook.result.current.contentRef as unknown as { current: HTMLDivElement | null }
+      ).current = document.createElement("div");
+      hook.rerender({ ready: false });
+      hook.rerender({ ready: true });
+
+      act(() => {
+        el.scrollTop = 300;
+        hook.result.current.onScroll({ currentTarget: el } as unknown as UIEvent<HTMLElement>);
+      });
+      height = 1_200;
+      act(() => notifyResize?.([], {} as ResizeObserver));
+      expect(el.scrollTop).toBe(300);
+
+      act(() => hook.result.current.jumpToLatest());
+      height = 1_400;
+      act(() => notifyResize?.([], {} as ResizeObserver));
+      expect(el.scrollTop).toBe(1_400);
+    } finally {
+      hook.unmount();
+      globalThis.ResizeObserver = OriginalResizeObserver;
+    }
   });
 });

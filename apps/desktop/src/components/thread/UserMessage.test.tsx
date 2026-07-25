@@ -1,11 +1,14 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { UserMessage } from "./atoms";
+import { AgentMessage, UserMessage } from "./atoms";
 
 // copyText hits the OS clipboard — stub it so the copy button is observable.
-const { copyTextMock } = vi.hoisted(() => ({ copyTextMock: vi.fn(async () => {}) }));
+const { copyTextMock, toastErrorMock } = vi.hoisted(() => ({
+  copyTextMock: vi.fn(async () => {}),
+  toastErrorMock: vi.fn(),
+}));
 vi.mock("@/lib/clipboard", () => ({ copyText: copyTextMock }));
-vi.mock("@/lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock("@/lib/toast", () => ({ toast: { error: toastErrorMock, success: vi.fn() } }));
 
 const dialog = () => screen.getByRole("alertdialog");
 
@@ -91,5 +94,25 @@ describe("UserMessage", () => {
     render(<UserMessage block={{ kind: "user", text: "部署" }} />);
     fireEvent.click(screen.getByLabelText("Copy"));
     expect(copyTextMock).toHaveBeenCalledWith("部署");
+  });
+});
+
+describe("AgentMessage", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("copies the complete markdown answer and shows success feedback", async () => {
+    render(<AgentMessage markdown={"Answer with **detail**"} />);
+    fireEvent.click(screen.getByLabelText("Copy"));
+
+    await waitFor(() => expect(copyTextMock).toHaveBeenCalledWith("Answer with **detail**"));
+    expect(screen.getByTitle("Copied")).toBeInTheDocument();
+  });
+
+  it("shows an error when the clipboard write fails", async () => {
+    copyTextMock.mockRejectedValueOnce(new Error("clipboard unavailable"));
+    render(<AgentMessage markdown="Answer" />);
+    fireEvent.click(screen.getByLabelText("Copy"));
+
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith("Could not copy to the clipboard."));
   });
 });

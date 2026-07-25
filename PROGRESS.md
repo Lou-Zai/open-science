@@ -1,5 +1,7 @@
 # Progress
 
+2026-07-25 04:22 · feat(session): agent answers now expose one-click copy feedback, existing sessions open at the latest messages with a non-yanking ↓ Latest control, and global/session file browsers persist their last directory with safe root fallback; 634 tests, typecheck, lint, production build, and a verified 77 MB Apple Silicon DMG pass (`85a64967dcb79b2b84672ed779831548dc83700c00ecbdd1e19c86c927a9fe4e`).
+
 2026-07-24 20:53 · test build: packaged the notebook-header responsive fix as a verified 77 MB Apple Silicon DMG (`Open Science_0.3.0_aarch64.dmg`, SHA-256 `ee91e080500828c50a45ae6790ba323c075b0926c0da2039844a89e46a33dfa5`).
 
 2026-07-24 20:45 · fix(notebook): removed the redundant cell-shortcut hint from the notebook editor header so narrow inspectors retain their close control, and collapsed notebook filename chips into one icon on tiled/mobile panes (one notebook opens directly; multiple notebooks use an accessible localized dropdown); 626 tests, typecheck, lint, and production build pass.

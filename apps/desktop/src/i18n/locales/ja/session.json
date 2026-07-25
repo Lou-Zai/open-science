@@ -141,6 +141,7 @@
       "bodySuffix": " で起動して接続してください。"
     },
     "connect": "接続",
+    "latest": "最新",
     "subagentFallback": "サブエージェント",
     "header": {
       "expandSidebarAria": "サイドバーを展開する",

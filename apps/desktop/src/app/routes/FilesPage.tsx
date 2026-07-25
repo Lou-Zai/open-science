@@ -31,6 +31,42 @@ const EXT_LANG: Record<string, string> = {
   py: "python", r: "r", jl: "julia", sh: "bash", tex: "latex", md: "markdown",
 };
 
+const FILE_LOCATIONS_KEY = "openscience.files.locations.v1";
+const GLOBAL_FILES_LOCATION = "base";
+
+function safeDirectory(value: unknown): string {
+  if (typeof value !== "string" || value.startsWith("/") || value.includes("\\")) return "";
+  return value.split("/").some((part) => part === "..") ? "" : value;
+}
+
+function fileLocations(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const value = JSON.parse(window.localStorage.getItem(FILE_LOCATIONS_KEY) ?? "{}") as unknown;
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    return Object.fromEntries(
+      Object.entries(value).map(([key, dir]) => [key, safeDirectory(dir)]),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function rememberedDirectory(key: string): string {
+  return fileLocations()[key] ?? "";
+}
+
+function rememberDirectory(key: string, dir: string): void {
+  if (typeof window === "undefined") return;
+  const locations = fileLocations();
+  locations[key] = safeDirectory(dir);
+  try {
+    window.localStorage.setItem(FILE_LOCATIONS_KEY, JSON.stringify(locations));
+  } catch {
+    // Browsing still works when storage is unavailable or full.
+  }
+}
+
 function iconFor(entry: DirEntry) {
   if (entry.isDir) return <Folder size={15} className="text-accent" />;
   const kind = previewKindForName(entry.name);
@@ -61,7 +97,9 @@ function humanSize(n: number): string {
 export function FilesPage() {
   const { t } = useTranslation(["pages", "common"]);
   const isMobile = useIsMobile();
-  const [dir, setDir] = useState(""); // base-relative; "" = the base folder
+  // Base-relative; "" = the base folder. Persisted client-side so returning to
+  // Files continues from the directory the user was browsing.
+  const [dir, setDirState] = useState(() => rememberedDirectory(GLOBAL_FILES_LOCATION));
   const [entries, setEntries] = useState<DirEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<DirEntry | null>(null);
@@ -71,12 +109,22 @@ export function FilesPage() {
     void workspaceBase().then(setBasePath).catch(() => {});
   }, []);
 
+  const setDir = (next: string) => {
+    rememberDirectory(GLOBAL_FILES_LOCATION, next);
+    setDirState(next);
+  };
+
   const load = useCallback(async (rel: string) => {
     setEntries(null);
     setError(null);
     try {
       setEntries(await listDir(rel, "base"));
     } catch (e) {
+      if (rel) {
+        rememberDirectory(GLOBAL_FILES_LOCATION, "");
+        setDirState("");
+        return;
+      }
       setError(e instanceof Error ? e.message : String(e));
       setEntries([]);
     }
@@ -215,30 +263,30 @@ function FilePreview({
  * preview; closing the preview returns to the list.
  */
 export function SessionFilesPane({
+  sessionId,
+  sessionDir,
   onClose,
   controls,
 }: {
+  sessionId: string;
+  sessionDir?: string;
   onClose: () => void;
   /** Pane-level header buttons (e.g. maximize), rendered before Close. */
   controls?: React.ReactNode;
 }) {
   const { t } = useTranslation(["pages", "common"]);
   const workspace = useRuntimeStore((s) => s.workspace);
-  // Web client: list the VIEWED session's folder (from SessionMeta), which over
-  // the network is not necessarily the host's active workspace.
-  const sessionDir = useRuntimeStore(
-    (s) => s.sessions.find((x) => x.id === s.currentId)?.directory ?? s.workspace ?? undefined,
-  );
-  const [dir, setDir] = useState("");
+  const locationKey = `session:${sessionId}`;
+  const [dir, setDirState] = useState(() => rememberedDirectory(locationKey));
   const [entries, setEntries] = useState<DirEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<DirEntry | null>(null);
 
-  // A session switch moves the active folder — restart at its root.
-  useEffect(() => {
+  const setDir = (next: string) => {
     setSelected(null);
-    setDir("");
-  }, [workspace]);
+    rememberDirectory(locationKey, next);
+    setDirState(next);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -250,6 +298,11 @@ export function SessionFilesPane({
       })
       .catch((e) => {
         if (!cancelled) {
+          if (dir) {
+            rememberDirectory(locationKey, "");
+            setDirState("");
+            return;
+          }
           setError(e instanceof Error ? e.message : String(e));
           setEntries([]);
         }
@@ -257,7 +310,7 @@ export function SessionFilesPane({
     return () => {
       cancelled = true;
     };
-  }, [dir, workspace, sessionDir]);
+  }, [dir, locationKey, sessionDir]);
 
   if (selected) {
     return (
@@ -276,8 +329,8 @@ export function SessionFilesPane({
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
         <PaneTitlebarInset />
         <Folder size={14} strokeWidth={1.5} className="shrink-0 text-text" />
-        <span className="truncate text-sm font-medium text-text" title={workspace ?? undefined}>
-          {baseName(workspace)}
+        <span className="truncate text-sm font-medium text-text" title={sessionDir ?? workspace ?? undefined}>
+          {baseName(sessionDir ?? workspace)}
         </span>
         <span className="text-xs text-muted">{t("files.pane.subtitle")}</span>
         <div className="flex-1" />
@@ -289,7 +342,7 @@ export function SessionFilesPane({
       {crumbs.length > 0 && (
         <div className="flex flex-wrap items-center gap-0.5 border-b border-border px-3 py-2 text-[12px]">
           <button className="rounded px-1 text-link hover:bg-surface-2" onClick={() => setDir("")}>
-            {baseName(workspace)}
+            {baseName(sessionDir ?? workspace)}
           </button>
           {crumbs.map((part, i) => {
             const to = crumbs.slice(0, i + 1).join("/");
