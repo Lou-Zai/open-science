@@ -1,5 +1,9 @@
 # Progress
 
+2026-07-24 20:53 · test build: packaged the notebook-header responsive fix as a verified 77 MB Apple Silicon DMG (`Open Science_0.3.0_aarch64.dmg`, SHA-256 `ee91e080500828c50a45ae6790ba323c075b0926c0da2039844a89e46a33dfa5`).
+
+2026-07-24 20:45 · fix(notebook): removed the redundant cell-shortcut hint from the notebook editor header so narrow inspectors retain their close control, and collapsed notebook filename chips into one icon on tiled/mobile panes (one notebook opens directly; multiple notebooks use an accessible localized dropdown); 626 tests, typecheck, lint, and production build pass.
+
 2026-07-24 09:18 · fix(#53): Amazon Bedrock provider setup now requires and persists the key's AWS Region before saving its bearer API key, reloads any existing region, validates region syntax, and ships the field in all seven locales; 626 vitest tests, typecheck, lint, and production build pass.
 
 2026-07-24 07:30 · release: v0.3.0 published — `feat/split-pane` merged to master, version bumped in 13 files, tag `v0.3.0` built all 4 platforms via CI (8 installers: mac aarch64/x64 dmg, Windows exe/msi, Linux deb/rpm, 2 .app.tar.gz), draft published as Latest. Headline: N-ary split-pane tiling (drag-to-dock, screens/groups, per-pane model) + round-8 UX (focus-independent vibrancy, deferred session creation with per-pane drafts, tentative preview screens, cross-screen drag). Synced the new Zenodo version DOI 10.5281/zenodo.21535396 into CITATION.cff + 7 README BibTeX blocks (concept DOI 10.5281/zenodo.21351225 stays in the badge).

@@ -24,7 +24,6 @@
       "languagePython": "Python",
       "saved": "Guardado",
       "unsaved": "Sin guardar",
-      "shortcutHint": "Mayús/⌘+Intro ejecuta una celda · compartido con el agente",
       "openJupyterLabAria": "Abrir en JupyterLab",
       "historyAria": "Historial",
       "historyTitle": "Historial — cada versión registrada con su código y conversación",

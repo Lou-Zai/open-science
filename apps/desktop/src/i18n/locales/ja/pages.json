@@ -24,7 +24,6 @@
       "languagePython": "Python",
       "saved": "保存済み",
       "unsaved": "未保存",
-      "shortcutHint": "Shift/⌘+Enter でセルを実行 · エージェントと共有",
       "openJupyterLabAria": "JupyterLab で開く",
       "historyAria": "履歴",
       "historyTitle": "履歴 — 記録された各バージョンのコードと会話",

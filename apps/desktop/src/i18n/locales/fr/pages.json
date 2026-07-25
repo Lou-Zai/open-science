@@ -24,7 +24,6 @@
       "languagePython": "Python",
       "saved": "Enregistré",
       "unsaved": "Non enregistré",
-      "shortcutHint": "Maj/⌘+Entrée exécute une cellule · partagé avec l'agent",
       "openJupyterLabAria": "Ouvrir dans JupyterLab",
       "historyAria": "Historique",
       "historyTitle": "Historique — chaque version enregistrée avec son code et sa conversation",

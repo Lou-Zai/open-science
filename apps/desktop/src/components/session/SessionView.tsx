@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   FlaskConical,
   FolderOpen,
@@ -257,6 +258,11 @@ export function SessionView({
   const showFiles = !activeArtifact && !!pane?.showFiles;
   const showRuns = !activeArtifact && !showFiles && !!pane?.showRuns;
   const inspectorActive = !!activeArtifact || showFiles || showRuns;
+  const compactNotebooks = !solo || isMobile;
+  const openNotebook = (notebook: (typeof uniqueNotebooks)[number]) => {
+    pinEphemeral();
+    openArtifact(notebook, sid ?? undefined);
+  };
   // A tiled (non-solo) pane is narrow: fill it with the inspector rather than a
   // side column that would squeeze the chat or overflow the pane.
   const inspectorFillsPane = inspectorActive && !solo;
@@ -447,13 +453,10 @@ export function SessionView({
           )}
           {/* The green "ready" dot is noise per pane — only surface trouble. */}
           {displayStatus !== "ready" && <ConnBadge status={displayStatus} />}
-          {uniqueNotebooks.map((nb) => (
+          {!compactNotebooks && uniqueNotebooks.map((nb) => (
             <button
               key={nb.path}
-              onClick={() => {
-                pinEphemeral();
-                openArtifact(nb, sid ?? undefined);
-              }}
+              onClick={() => openNotebook(nb)}
               className={cn(
                 "flex items-center gap-1 rounded-md px-1.5 py-1 font-mono text-xs transition-colors hover:bg-surface-2",
                 activeArtifact?.path === nb.path ? "bg-surface-2 text-text" : "text-muted",
@@ -464,6 +467,59 @@ export function SessionView({
               <span className="max-w-[180px] truncate">{nb.filename}</span>
             </button>
           ))}
+          {compactNotebooks && uniqueNotebooks.length === 1 && (
+            <button
+              onClick={() => openNotebook(uniqueNotebooks[0])}
+              className={cn(
+                "rounded-md p-1 text-muted transition-colors hover:bg-surface-2 hover:text-text",
+                activeArtifact?.path === uniqueNotebooks[0].path && "bg-surface-2 text-text",
+              )}
+              title={t("live.notebook.openTitle", { path: uniqueNotebooks[0].path })}
+              aria-label={t("live.notebook.openTitle", { path: uniqueNotebooks[0].path })}
+            >
+              <NotebookPen size={13} />
+            </button>
+          )}
+          {compactNotebooks && uniqueNotebooks.length > 1 && (
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <button
+                  className={cn(
+                    "rounded-md p-1 text-muted outline-none transition-colors hover:bg-surface-2 hover:text-text",
+                    activeArtifact?.path &&
+                      uniqueNotebooks.some((notebook) => notebook.path === activeArtifact.path) &&
+                      "bg-surface-2 text-text",
+                  )}
+                  title={t("live.notebook.chooseTitle")}
+                  aria-label={t("live.notebook.chooseTitle")}
+                >
+                  <NotebookPen size={13} />
+                </button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  align="end"
+                  sideOffset={4}
+                  className="z-50 min-w-[220px] max-w-[min(320px,calc(100vw-16px))] rounded-card border border-border bg-surface p-1 text-xs text-text shadow-pop"
+                >
+                  {uniqueNotebooks.map((notebook) => (
+                    <DropdownMenu.Item
+                      key={notebook.path}
+                      onSelect={() => openNotebook(notebook)}
+                      className={cn(
+                        "flex cursor-pointer items-center gap-2 rounded-input px-2 py-1.5 font-mono outline-none data-[highlighted]:bg-surface-2",
+                        activeArtifact?.path === notebook.path && "bg-surface-2",
+                      )}
+                      title={notebook.path}
+                    >
+                      <NotebookPen size={12} className="shrink-0 text-muted" />
+                      <span className="truncate">{notebook.filename}</span>
+                    </DropdownMenu.Item>
+                  ))}
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
+          )}
           {!connected && (
             <button
               onClick={connect}
