@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DirEntry } from "@/lib/artifactFile";
-import { FilesPage } from "./FilesPage";
+import { FilesPage, SessionFilesPane } from "./FilesPage";
 
 const listDir = vi.fn();
 vi.mock("@/lib/artifactFile", () => ({
@@ -26,6 +26,7 @@ const sub: DirEntry[] = [{ path: "data/genes.bed", name: "genes.bed", isDir: fal
 
 describe("FilesPage", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     listDir.mockReset();
     listDir.mockImplementation((rel: string) => Promise.resolve(rel === "data" ? sub : root));
   });
@@ -54,5 +55,39 @@ describe("FilesPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Workspace" }));
     await waitFor(() => expect(screen.getByText("figure.png")).toBeInTheDocument());
+  });
+
+  it("restores the last open directory when the global Files page is reopened", async () => {
+    const first = render(<FilesPage />);
+    await userEvent.click(await screen.findByText("data"));
+    expect(await screen.findByText("genes.bed")).toBeInTheDocument();
+    first.unmount();
+
+    render(<FilesPage />);
+    expect(await screen.findByText("genes.bed")).toBeInTheDocument();
+    expect(listDir).toHaveBeenLastCalledWith("data", "base");
+  });
+
+  it("restores each session file pane to its own last open directory", async () => {
+    const first = render(
+      <SessionFilesPane
+        sessionId="ses_1"
+        sessionDir="/workspace/session-1"
+        onClose={() => {}}
+      />,
+    );
+    await userEvent.click(await screen.findByText("data"));
+    expect(await screen.findByText("genes.bed")).toBeInTheDocument();
+    first.unmount();
+
+    render(
+      <SessionFilesPane
+        sessionId="ses_1"
+        sessionDir="/workspace/session-1"
+        onClose={() => {}}
+      />,
+    );
+    expect(await screen.findByText("genes.bed")).toBeInTheDocument();
+    expect(listDir).toHaveBeenLastCalledWith("data", "workspace");
   });
 });

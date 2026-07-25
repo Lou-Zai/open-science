@@ -141,6 +141,7 @@
       "bodySuffix": " and connect."
     },
     "connect": "Connect",
+    "latest": "Latest",
     "subagentFallback": "a subagent",
     "header": {
       "expandSidebarAria": "Expand sidebar",

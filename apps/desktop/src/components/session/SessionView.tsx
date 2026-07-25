@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
+  ArrowDown,
   FlaskConical,
   FolderOpen,
   Loader2,
@@ -23,7 +24,7 @@ import { queryRuns } from "@/lib/runs";
 import { useOverlayTitlebar, useUiStore } from "@/lib/store";
 import { overlayTitlebarStyle } from "@/lib/titlebar";
 import { fileInspectorFromBlock } from "@/lib/artifacts";
-import { useScrollMemory } from "@/lib/scrollMemory";
+import { useChatScroll } from "@/lib/scrollMemory";
 import { BlockList, type BlockHandlers } from "@/components/thread/BlockList";
 import { Elapsed } from "@/components/thread/ToolGroup";
 import { Composer } from "@/components/thread/Composer";
@@ -281,7 +282,12 @@ export function SessionView({
   }, [eid]);
 
   const chatRef = useRef<HTMLDivElement>(null);
-  const onChatScroll = useScrollMemory(chatRef, `chat:${key}`, !historyLoading);
+  const {
+    contentRef: chatContentRef,
+    onScroll: onChatScroll,
+    atLatest,
+    jumpToLatest,
+  } = useChatScroll(chatRef, `chat:${key}`, !historyLoading && !inspectorFillsPane);
 
   // Measure the floating composer so the conversation can pad its bottom by
   // exactly that height (in real px, outside the chat zoom) — the last message
@@ -330,7 +336,13 @@ export function SessionView({
   ) : showRuns ? (
     <RunsPane sessionId={eid!} onClose={() => setShowRuns(false, sid ?? undefined)} controls={<MaximizePaneButton />} />
   ) : showFiles ? (
-    <SessionFilesPane onClose={() => setShowFiles(false, sid ?? undefined)} controls={<MaximizePaneButton />} />
+    <SessionFilesPane
+      key={`files:${eid}`}
+      sessionId={eid!}
+      sessionDir={sessionDir ?? undefined}
+      onClose={() => setShowFiles(false, sid ?? undefined)}
+      controls={<MaximizePaneButton />}
+    />
   ) : null;
 
   return (
@@ -549,6 +561,7 @@ export function SessionView({
         >
           {/* Zoom the CHAT content (not the scroll box or the composer). */}
           <div
+            ref={chatContentRef}
             style={zoom !== 1 ? { zoom } : undefined}
             className="mx-auto flex max-w-[760px] flex-col gap-4 px-8 pt-6"
           >
@@ -619,6 +632,23 @@ export function SessionView({
             )}
           </div>
         </div>
+
+        {!atLatest && (
+          <div
+            className="pointer-events-none absolute inset-x-0 z-20 flex justify-center"
+            style={{ bottom: composerH + 18 }}
+          >
+            <button
+              onClick={jumpToLatest}
+              className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border bg-surface/95 px-3 py-1.5 text-xs font-medium text-text shadow-card backdrop-blur-sm transition-colors hover:bg-surface-2"
+              aria-label={t("live.latest")}
+              title={t("live.latest")}
+            >
+              <ArrowDown size={13} strokeWidth={1.75} />
+              <span>{t("live.latest")}</span>
+            </button>
+          </div>
+        )}
 
         {/* Floating composer: absolute over the conversation's bottom, with a
             `pointer-events-none` transparent gutter so the conversation stays

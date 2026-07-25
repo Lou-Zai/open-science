@@ -141,6 +141,7 @@
       "bodySuffix": " 그리고 연결하세요."
     },
     "connect": "연결",
+    "latest": "최신",
     "subagentFallback": "서브 에이전트",
     "header": {
       "expandSidebarAria": "사이드바 펼치기",

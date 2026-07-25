@@ -141,6 +141,7 @@
       "bodySuffix": "并连接。"
     },
     "connect": "连接",
+    "latest": "最新消息",
     "subagentFallback": "一个子代理",
     "header": {
       "expandSidebarAria": "展开侧边栏",
