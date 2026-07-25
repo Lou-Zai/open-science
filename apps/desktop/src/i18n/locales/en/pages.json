@@ -24,7 +24,6 @@
       "languagePython": "Python",
       "saved": "Saved",
       "unsaved": "Unsaved",
-      "shortcutHint": "Shift/⌘+Enter runs a cell · shared with the agent",
       "openJupyterLabAria": "Open in JupyterLab",
       "historyAria": "History",
       "historyTitle": "History — every recorded version with its code and conversation",

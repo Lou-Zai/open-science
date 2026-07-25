@@ -155,6 +155,7 @@
       "title": "이 세션의 실험 실행 — 대화 옆에 표시"
     },
     "notebook": {
+      "chooseTitle": "노트북 선택",
       "openTitle": "{{path}} 열기 — 에이전트가 이 세션에서 이 노트북을 작업합니다"
     },
     "connBadge": {

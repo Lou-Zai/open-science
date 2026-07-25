@@ -155,6 +155,7 @@
       "title": "This session's experiment runs — beside the chat"
     },
     "notebook": {
+      "chooseTitle": "Choose a notebook",
       "openTitle": "Open {{path}} — the agent works on this notebook in this session"
     },
     "connBadge": {

@@ -155,6 +155,7 @@
       "title": "此会话的实验运行——在聊天旁显示"
     },
     "notebook": {
+      "chooseTitle": "选择笔记本",
       "openTitle": "打开 {{path}} — 代理在此会话中处理此笔记本"
     },
     "connBadge": {

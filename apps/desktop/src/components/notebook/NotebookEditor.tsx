@@ -295,7 +295,6 @@ export function NotebookEditor({
           {saved ? t("notebooks.editor.saved") : t("notebooks.editor.unsaved")}
         </span>
         <div className="flex-1" />
-        <span className="hidden shrink-0 text-xs text-muted xl:inline">{t("notebooks.editor.shortcutHint")}</span>
         {isTauri && jupyterInstalled && (
           <button
             className="flex items-center gap-1 text-text hover:opacity-60 disabled:opacity-40"
