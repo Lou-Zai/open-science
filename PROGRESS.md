@@ -1,5 +1,7 @@
 # Progress
 
+2026-07-26 20:28 · build(release): built and read-only mounted `Open Science_0.3.0_aarch64.dmg` from desktop `master@6a1dea3`; verified the 0.3.0 app, `tools/present_artifact.ts`, all 7 scientific skills, and bundled `ai4s-skills@2519e8d` (77 MB, SHA-256 `103a02ef8d84378ed775ca90f752b2fbc34e7002d79e22f2a68174ce507e5dc4`).
+
 2026-07-26 20:26 · chore(skills): desktop packaging now pins `ai4s-research/ai4s-skills@2519e8d`, including ordered citations, flexible figure/table placement, publication-layout QA, and recency-profile checks; the exact GitHub archive was fetched and its bundled revision verified.
 
 2026-07-26 20:14 · fix(session): Stop now always reaches the server (#59) — the interrupt is no longer gated on this app's in-memory running lock, a failed abort keeps the lock and surfaces the error instead of claiming "Interrupted", streamed activity and server history re-seed a lock the app lost (reload), and an interrupt drops the pending approval the stopped turn was blocked on, which OpenCode deletes without publishing any resolved event; 656 frontend tests (8 new, each verified to fail without its fix), typecheck, lint, production build, and mounted DMG verification pass (`ae5fd94000a6e0396abc29dbdd06532bffbe7b20c5013eaa52750b0b95c9a776`).
