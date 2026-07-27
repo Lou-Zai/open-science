@@ -238,19 +238,117 @@ fn deploy_bundled_skills(app: &AppHandle) {
     }
 }
 
-/// Ship the bundled goal plugin (one self-contained JS file, see
-/// scripts/dev/fetch-goal-plugin.sh) into the app-private OpenCode profile and
-/// return its absolute path for the config's `plugin` array. OpenCode 1.17
-/// cannot install npm plugin specs itself (silently ignored), so the file is
-/// referenced by absolute path. None in dev runs without the fetch script.
+const OPENCODE_PLUGIN_PACKAGE: &str = "@opencode-ai/plugin";
+
+fn package_dependency_version(path: &Path, package: &str) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str::<serde_json::Value>(&text)
+        .ok()?
+        .get("dependencies")?
+        .get(package)?
+        .as_str()
+        .map(str::to_owned)
+}
+
+fn installed_package_version(node_modules: &Path, package: &str) -> Option<String> {
+    let package_json = package
+        .split('/')
+        .fold(node_modules.to_path_buf(), |path, part| path.join(part))
+        .join("package.json");
+    let text = std::fs::read_to_string(package_json).ok()?;
+    serde_json::from_str::<serde_json::Value>(&text)
+        .ok()?
+        .get("version")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+/// Deploy OpenCode's plugin SDK before registering the bundled goal plugin.
+/// OpenCode waits for this dependency before opening `/event`; without a local
+/// copy, a fresh install performs a live npm install and an unreachable
+/// registry leaves the desktop on "Connecting" for minutes.
+fn deploy_goal_plugin_dependencies(src: &Path, dst: &Path) -> Result<(), String> {
+    let expected = std::fs::read_to_string(src.join(".opencode-plugin-version"))
+        .map_err(|_| "bundled goal plugin dependencies are missing".to_string())?;
+    let expected = expected.trim();
+    if expected.is_empty() {
+        return Err("bundled OpenCode plugin version is empty".into());
+    }
+
+    let marker = dst.join(".opencode-plugin-version");
+    let package_json = dst.join("package.json");
+    let package_lock = dst.join("package-lock.json");
+    let node_modules = dst.join("node_modules");
+    let dependency_ready =
+        package_dependency_version(&package_json, OPENCODE_PLUGIN_PACKAGE).as_deref()
+            == Some(expected)
+        && installed_package_version(&node_modules, OPENCODE_PLUGIN_PACKAGE).as_deref()
+            == Some(expected)
+        && package_lock.is_file();
+    let ready = dependency_ready
+        && std::fs::read_to_string(&marker)
+            .ok()
+            .is_some_and(|v| v.trim() == expected);
+    if ready {
+        return Ok(());
+    }
+    // Existing app profiles may predate the marker but already have the exact
+    // dependency from OpenCode's old live install. Adopt it without copying the
+    // bundled 60 MB tree over the user's profile.
+    if dependency_ready {
+        return std::fs::write(marker, format!("{expected}\n")).map_err(|e| e.to_string());
+    }
+
+    let src_package = src.join("package.json");
+    let src_lock = src.join("package-lock.json");
+    let src_modules = src.join("node_modules");
+    if !src_package.is_file() || !src_lock.is_file() || !src_modules.is_dir() {
+        return Err("bundled OpenCode plugin dependency tree is incomplete".into());
+    }
+
+    std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
+    copy_dir(&src_modules, &node_modules).map_err(|e| e.to_string())?;
+
+    // A fresh app profile has neither file. Existing profiles created by
+    // OpenCode already carry the same dependency; never overwrite a user's
+    // additional plugin dependencies or lockfile.
+    if !package_json.exists() {
+        std::fs::copy(&src_package, &package_json).map_err(|e| e.to_string())?;
+    }
+    if !package_lock.exists() {
+        std::fs::copy(&src_lock, &package_lock).map_err(|e| e.to_string())?;
+    }
+
+    if package_dependency_version(&package_json, OPENCODE_PLUGIN_PACKAGE).as_deref()
+        != Some(expected)
+        || installed_package_version(&node_modules, OPENCODE_PLUGIN_PACKAGE).as_deref()
+            != Some(expected)
+    {
+        return Err("OpenCode plugin dependency version does not match the bundled runtime".into());
+    }
+    std::fs::write(marker, format!("{expected}\n")).map_err(|e| e.to_string())
+}
+
+/// Ship the bundled goal plugin and its already-resolved OpenCode dependency
+/// tree into the app-private profile, then return the plugin's absolute path.
+/// None in dev runs without the fetch script.
 fn deploy_goal_plugin(app: &AppHandle) -> Option<PathBuf> {
-    let src = app
+    let resource = app
         .path()
-        .resolve("goal-plugin/goal-plugin.server.js", tauri::path::BaseDirectory::Resource)
+        .resolve("goal-plugin", tauri::path::BaseDirectory::Resource)
         .ok()
-        .filter(|p| p.is_file())?;
-    let dst = xdg_config_home(app).ok()?.join("opencode").join("goal-plugin.server.js");
-    std::fs::create_dir_all(dst.parent()?).ok()?;
+        .filter(|p| p.is_dir())?;
+    let src = resource.join("goal-plugin.server.js");
+    if !src.is_file() {
+        return None;
+    }
+    let config_dir = xdg_config_home(app).ok()?.join("opencode");
+    if let Err(e) = deploy_goal_plugin_dependencies(&resource, &config_dir) {
+        eprintln!("failed to deploy goal plugin dependencies: {e}");
+        return None;
+    }
+    let dst = config_dir.join("goal-plugin.server.js");
+    std::fs::create_dir_all(&config_dir).ok()?;
     // Refresh on every start so app upgrades replace the plugin in place.
     if let Err(e) = std::fs::copy(&src, &dst) {
         eprintln!("failed to deploy goal plugin: {e}");
@@ -1017,8 +1115,9 @@ pub fn kill_child(state: &RuntimeState) {
 #[cfg(test)]
 mod tests {
     use super::{
-        auth_has_provider, parse_scutil_proxy, prune_stale_skills, random_hex,
-        remove_key_from_config, resolve_proxy_env, sync_skill_pack, validate_proxy_url,
+        auth_has_provider, deploy_goal_plugin_dependencies, parse_scutil_proxy,
+        prune_stale_skills, random_hex, remove_key_from_config, resolve_proxy_env,
+        sync_skill_pack, validate_proxy_url,
     };
     use std::fs;
 
@@ -1137,6 +1236,72 @@ mod tests {
     fn write(path: &std::path::Path, content: &str) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, content).unwrap();
+    }
+
+    #[test]
+    fn deploys_goal_plugin_dependencies_without_network() {
+        let tmp = std::env::temp_dir().join(format!("goal-deps-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let src = tmp.join("src");
+        let dst = tmp.join("dst");
+        write(&src.join(".opencode-plugin-version"), "1.17.13\n");
+        write(
+            &src.join("package.json"),
+            r#"{"dependencies":{"@opencode-ai/plugin":"1.17.13"}}"#,
+        );
+        write(&src.join("package-lock.json"), "{}");
+        write(
+            &src.join("node_modules/@opencode-ai/plugin/package.json"),
+            r#"{"name":"@opencode-ai/plugin","version":"1.17.13"}"#,
+        );
+        write(
+            &src.join("node_modules/@opencode-ai/plugin/dist/tool.js"),
+            "export const tool = (x) => x;",
+        );
+
+        deploy_goal_plugin_dependencies(&src, &dst).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dst.join(".opencode-plugin-version")).unwrap(),
+            "1.17.13\n"
+        );
+        assert!(dst
+            .join("node_modules/@opencode-ai/plugin/dist/tool.js")
+            .is_file());
+        assert!(dst.join("package-lock.json").is_file());
+        fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn adopts_existing_goal_plugin_dependencies_without_recopying() {
+        let tmp =
+            std::env::temp_dir().join(format!("goal-deps-existing-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let src = tmp.join("src");
+        let dst = tmp.join("dst");
+        write(&src.join(".opencode-plugin-version"), "1.17.13\n");
+        write(
+            &dst.join("package.json"),
+            r#"{"dependencies":{"@opencode-ai/plugin":"1.17.13","user-plugin":"2.0.0"}}"#,
+        );
+        write(&dst.join("package-lock.json"), "{}");
+        write(
+            &dst.join("node_modules/@opencode-ai/plugin/package.json"),
+            r#"{"name":"@opencode-ai/plugin","version":"1.17.13"}"#,
+        );
+        write(&dst.join("node_modules/user-plugin/keep.txt"), "keep");
+
+        deploy_goal_plugin_dependencies(&src, &dst).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dst.join(".opencode-plugin-version")).unwrap(),
+            "1.17.13\n"
+        );
+        assert_eq!(
+            fs::read_to_string(dst.join("node_modules/user-plugin/keep.txt")).unwrap(),
+            "keep"
+        );
+        fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]

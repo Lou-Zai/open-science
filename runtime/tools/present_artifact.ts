@@ -3,7 +3,7 @@ import { stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 
 type DisplayMode = "inline" | "panel";
-type Placement = "right" | "bottom" | "bottom-right";
+type Placement = "right" | "bottom";
 type Target = "current-screen" | "new-screen" | "new-session";
 
 function workspacePath(directory: string, requestedPath: string): string {
@@ -31,9 +31,11 @@ export default tool({
       .enum(["inline", "panel"])
       .describe("inline renders at this point in the conversation; panel creates a dedicated artifact panel."),
     placement: tool.schema
-      .enum(["right", "bottom", "bottom-right"])
+      .enum(["right", "bottom"])
       .optional()
-      .describe("Preferred panel placement. Ignored for inline display. Defaults to right."),
+      .describe(
+        "Where the panel goes relative to the conversation: right (side by side) or bottom (below it). Pass bottom whenever the user asks for the artifact below, underneath, or in a bottom panel; an already open panel moves to the side you pass. Ignored for inline display. Defaults to right.",
+      ),
     target: tool.schema
       .enum(["current-screen", "new-screen", "new-session"])
       .optional()

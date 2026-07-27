@@ -210,8 +210,7 @@ describe("layout store — groups", () => {
     expect(asSplit(S().tree!).dir).toBe("row");
   });
 
-  it("bottom-right nests below the visually rightmost pane", () => {
-    S().split("row", "B");
+  it("bottom stacks the artifact below its conversation", () => {
     const artifact = {
       kind: "artifact" as const,
       path: "results/table.csv",
@@ -220,18 +219,16 @@ describe("layout store — groups", () => {
       tool: "present_artifact",
       presentation: { mode: "panel" as const },
     };
-    S().presentArtifact("A", artifact, "bottom-right");
+    S().presentArtifact("A", artifact, "bottom");
     const root = asSplit(S().tree!);
-    expect(root.dir).toBe("row");
-    expect(root.children[1].kind).toBe("split");
-    expect(asSplit(root.children[1]).dir).toBe("col");
-    expect(leaves(root.children[1]).map((leaf) => leaf.artifact?.path ?? leaf.sessionId)).toEqual([
-      "B",
+    expect(root.dir).toBe("col");
+    expect(leaves(root).map((leaf) => leaf.artifact?.path ?? leaf.sessionId)).toEqual([
+      "A",
       "results/table.csv",
     ]);
   });
 
-  it("reuses and refreshes an existing panel for the same artifact path", () => {
+  it("refreshes an existing panel in place when the placement still holds", () => {
     const first = {
       kind: "artifact" as const,
       path: "figures/result.png",
@@ -241,14 +238,39 @@ describe("layout store — groups", () => {
       presentation: { mode: "panel" as const, requestId: "call-1" },
     };
     const firstId = S().presentArtifact("A", first, "right");
-    const second = {
-      ...first,
-      presentation: { mode: "panel" as const, requestId: "call-2" },
-    };
-    const secondId = S().presentArtifact("A", second, "bottom");
-    expect(secondId).toBe(firstId);
+    const second = { ...first, presentation: { mode: "panel" as const, requestId: "call-2" } };
+    // Same side, then no side at all: both keep the pane (and its divider) put.
+    expect(S().presentArtifact("A", second, "right")).toBe(firstId);
+    expect(S().presentArtifact("A", second)).toBe(firstId);
     expect(leaves(S().tree!)).toHaveLength(2);
     expect(findLeaf(S().tree!, firstId!)?.artifact?.presentation?.requestId).toBe("call-2");
+    expect(asSplit(S().tree!).dir).toBe("row");
+  });
+
+  it("moves an open panel when a later call asks for the other side", () => {
+    const artifact = {
+      kind: "artifact" as const,
+      path: "figures/result.png",
+      filename: "result.png",
+      artifact: "figure" as const,
+      tool: "present_artifact",
+      presentation: { mode: "panel" as const },
+    };
+    const rightId = S().presentArtifact("A", artifact, "right");
+    const bottomId = S().presentArtifact("A", artifact, "bottom");
+    expect(bottomId).not.toBe(rightId);
+    expect(findLeaf(S().tree!, rightId!)).toBeNull();
+    const root = asSplit(S().tree!);
+    expect(root.dir).toBe("col");
+    expect(leaves(root).map((leaf) => leaf.artifact?.path ?? leaf.sessionId)).toEqual([
+      "A",
+      "figures/result.png",
+    ]);
+    expect(S().focusedLeafId).toBe(bottomId);
+    // And back again, without leaving a stale pane behind.
+    S().presentArtifact("A", artifact, "right");
+    expect(leaves(S().tree!)).toHaveLength(2);
+    expect(asSplit(S().tree!).dir).toBe("row");
   });
 
   it("creates a named Screen with the source conversation beside the artifact", () => {

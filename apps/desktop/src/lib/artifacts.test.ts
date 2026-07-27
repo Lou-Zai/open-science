@@ -76,7 +76,6 @@ describe("deriveArtifactPresentation", () => {
     );
     expect(result).toMatchObject({
       display: "inline",
-      placement: "right",
       target: "current-screen",
       artifact: {
         path: "figures/embedding.png",
@@ -90,16 +89,30 @@ describe("deriveArtifactPresentation", () => {
     expect(
       deriveArtifactPresentation(
         write(
-          { path: "results/summary.csv", display: "panel", placement: "bottom-right" },
+          { path: "results/summary.csv", display: "panel", placement: "bottom" },
           { tool: "present_artifact" },
         ),
       ),
     ).toMatchObject({
       display: "panel",
-      placement: "bottom-right",
+      placement: "bottom",
       target: "current-screen",
       artifact: { presentation: { mode: "panel" } },
     });
+    // An unknown or absent placement leaves the choice to the layout store.
+    expect(
+      deriveArtifactPresentation(
+        write(
+          { path: "results/summary.csv", display: "panel", placement: "bottom-right" },
+          { tool: "present_artifact" },
+        ),
+      )?.placement,
+    ).toBeUndefined();
+    expect(
+      deriveArtifactPresentation(
+        write({ path: "results/summary.csv", display: "panel" }, { tool: "present_artifact" }),
+      )?.placement,
+    ).toBeUndefined();
     expect(
       deriveArtifactPresentation(
         write({ path: "a.png", display: "panel" }, { tool: "present_artifact", status: "failed" }),

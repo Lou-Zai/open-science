@@ -1,5 +1,9 @@
 # Progress
 
+2026-07-27 07:31 · fix(runtime): fresh desktop profiles now receive the pinned OpenCode plugin SDK from the installer before the goal plugin is registered, removing the blocking first-run npm install from `/event`; 12 runtime tests pass and a clean plugin-enabled event stream reaches first byte in 142 ms with the offline dependency tree.
+
+2026-07-27 01:07 · fix(artifacts): AI panel placement now honors `bottom` — a repeat `present_artifact` call for an open panel moves it to the requested side instead of silently refreshing it in place (unrequested placements still leave the pane where the user put it) — and the `bottom-right` placement is gone from the tool, types, and layout; 657 frontend tests, typecheck, lint, real sidecar tool-schema check (`enum ["right","bottom"]`), and a mounted 77 MB DMG resource check pass (SHA-256 `89cc5c8523ed93ca61198629deebcce2a2edb2a89b796e68e6045e31fcdb1ff9`).
+
 2026-07-26 20:28 · build(release): built and read-only mounted `Open Science_0.3.0_aarch64.dmg` from desktop `master@6a1dea3`; verified the 0.3.0 app, `tools/present_artifact.ts`, all 7 scientific skills, and bundled `ai4s-skills@2519e8d` (77 MB, SHA-256 `103a02ef8d84378ed775ca90f752b2fbc34e7002d79e22f2a68174ce507e5dc4`).
 
 2026-07-26 20:26 · chore(skills): desktop packaging now pins `ai4s-research/ai4s-skills@2519e8d`, including ordered citations, flexible figure/table placement, publication-layout QA, and recency-profile checks; the exact GitHub archive was fetched and its bundled revision verified.

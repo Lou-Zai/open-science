@@ -217,6 +217,44 @@ export function setLeafSession(tree: PaneNode, leafId: string, sessionId: string
   return rec(tree);
 }
 
+/** The child indices leading from `node` down to the leaf `id` ([] when `node`
+ *  IS that leaf), or null when the leaf is absent. */
+function indexPath(node: PaneNode, id: string): number[] | null {
+  if (node.kind === "leaf") return node.id === id ? [] : null;
+  for (let i = 0; i < node.children.length; i++) {
+    const rest = indexPath(node.children[i], id);
+    if (rest) return [i, ...rest];
+  }
+  return null;
+}
+
+/**
+ * True when `leafId` already sits on `edge` of `anchorId`: the split where their
+ * paths diverge runs along the edge's axis, and the leaf's branch comes after
+ * the anchor's (before it, for left/top). Used to leave an already correctly
+ * placed pane — and the divider the user dragged — untouched.
+ */
+export function isDockedOn(
+  tree: PaneNode,
+  anchorId: string,
+  leafId: string,
+  edge: DockEdge,
+): boolean {
+  const anchor = indexPath(tree, anchorId);
+  const leaf = indexPath(tree, leafId);
+  if (!anchor || !leaf) return false;
+  let i = 0;
+  while (i < anchor.length && i < leaf.length && anchor[i] === leaf[i]) i++;
+  if (i >= anchor.length || i >= leaf.length) return false;
+  let split: PaneNode = tree;
+  for (const k of anchor.slice(0, i)) {
+    if (split.kind !== "split") return false;
+    split = split.children[k];
+  }
+  if (split.kind !== "split" || split.dir !== edgeAxis(edge)) return false;
+  return edgeIsBefore(edge) ? leaf[i] < anchor[i] : leaf[i] > anchor[i];
+}
+
 /** The leaf adjacent to `id` in focus-cycle order (wraps around). */
 export function adjacentLeafId(tree: PaneNode, id: string, dir: "next" | "prev"): string {
   const order = leaves(tree);
@@ -375,12 +413,14 @@ interface LayoutState {
    *  `targetLeafId` on `edge`; focuses it. The drag-to-dock entry for a session
    *  coming from the sidebar. */
   dockSession: (targetLeafId: string, edge: DockEdge, sessionId: string | null) => string;
-  /** Present an artifact beside its owning conversation in the current Screen
-   *  or a newly created Screen. Returns the artifact leaf id. */
+  /** Present an artifact beside (`right`) or below (`bottom`) its owning
+   *  conversation in the current Screen or a newly created Screen. An omitted
+   *  placement means "wherever it already is", defaulting to `right` for a panel
+   *  that is not open yet. Returns the artifact leaf id. */
   presentArtifact: (
     sessionId: string,
     artifact: ArtifactBlock,
-    placement: ArtifactPanelPlacement,
+    placement?: ArtifactPanelPlacement,
     target?: ArtifactPanelTarget,
   ) => string | null;
   /** Move an existing leaf to dock against `targetLeafId` on `edge` (re-dock via
@@ -591,23 +631,6 @@ export const useLayoutStore = create<LayoutState>((set, get) => {
       }
       const { tree, focusedLeafId } = get();
       if (!tree) return null;
-      const existing = leaves(tree).find(
-        (leaf) => leaf.sessionId === sessionId && leaf.artifact?.path === artifact.path,
-      );
-      if (existing) {
-        const replace = (node: PaneNode): PaneNode =>
-          node.kind === "leaf"
-            ? node.id === existing.id
-              ? { ...node, artifact }
-              : node
-            : { ...node, children: node.children.map(replace) };
-        commitActive({
-          tree: replace(tree),
-          focusedLeafId: existing.id,
-          zoomedLeafId: null,
-        });
-        return existing.id;
-      }
       // Anchor to the conversation that invoked the tool. A background event
       // that is not represented in this screen falls back to the focused pane,
       // keeping the request visible without inventing a new Screen.
@@ -616,21 +639,43 @@ export const useLayoutStore = create<LayoutState>((set, get) => {
         (focusedLeafId ? findLeaf(tree, focusedLeafId) : null) ??
         leaves(tree)[0];
       if (!owner) return null;
-
-      let target = owner;
-      let edge: DockEdge = placement === "bottom" ? "bottom" : "right";
-      if (placement === "bottom-right" && tree.kind === "split") {
-        // Use the visually last cell as the lower-right anchor. On a row,
-        // stack below the rightmost cell; on a column, dock right of the
-        // bottommost cell. A single-pane screen gracefully becomes a right
-        // split because there is no meaningful empty upper-right quadrant.
-        const orderedLeaves = leaves(tree);
-        target = orderedLeaves[orderedLeaves.length - 1] ?? owner;
-        edge = tree.dir === "row" ? "bottom" : "right";
+      const edge: DockEdge = placement === "bottom" ? "bottom" : "right";
+      const existing = leaves(tree).find(
+        (leaf) => leaf.sessionId === sessionId && leaf.artifact?.path === artifact.path,
+      );
+      if (existing) {
+        // A repeat call for the same file refreshes the open panel in place —
+        // unless it explicitly asks for a side the panel is not on, which is a
+        // request to move it there.
+        const stays =
+          !placement || existing.id === owner.id || isDockedOn(tree, owner.id, existing.id, edge);
+        if (stays) {
+          const replace = (node: PaneNode): PaneNode =>
+            node.kind === "leaf"
+              ? node.id === existing.id
+                ? { ...node, artifact }
+                : node
+              : { ...node, children: node.children.map(replace) };
+          commitActive({
+            tree: replace(tree),
+            focusedLeafId: existing.id,
+            zoomedLeafId: null,
+          });
+          return existing.id;
+        }
+        const removed = removeLeaf(tree, existing.id);
+        const withoutPanel = removed ? removed.tree : tree;
+        const moved = makeArtifactLeaf(sessionId, artifact);
+        commitActive({
+          tree: insertLeaf(withoutPanel, owner.id, edge, moved),
+          focusedLeafId: moved.id,
+          zoomedLeafId: null,
+        });
+        return moved.id;
       }
       const leaf = makeArtifactLeaf(sessionId, artifact);
       commitActive({
-        tree: insertLeaf(tree, target.id, edge, leaf),
+        tree: insertLeaf(tree, owner.id, edge, leaf),
         focusedLeafId: leaf.id,
         zoomedLeafId: null,
       });

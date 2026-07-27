@@ -38,13 +38,15 @@ const PATH_KEYS = ["filePath", "path", "file", "filename", "file_path"];
 /** Input keys that carry the written text content. */
 const CONTENT_KEYS = ["content", "new_str", "text"];
 
-export type ArtifactPanelPlacement = "right" | "bottom" | "bottom-right";
+export type ArtifactPanelPlacement = "right" | "bottom";
 export type ArtifactPanelTarget = "current-screen" | "new-screen" | "new-session";
 
 export interface ArtifactPresentation {
   artifact: ArtifactBlock;
   display: "inline" | "panel";
-  placement: ArtifactPanelPlacement;
+  /** Undefined when the call named no placement — the host then keeps an already
+   *  open panel where it is instead of yanking it back to the default side. */
+  placement?: ArtifactPanelPlacement;
   target: ArtifactPanelTarget;
 }
 
@@ -261,10 +263,10 @@ export function deriveArtifactPresentation(event: ToolUpdatedEvent): ArtifactPre
   const filename = path.split(/[\\/]/).pop() || path;
   const title = firstString(event.input ?? {}, ["title"]);
   const requestedPlacement = firstString(event.input ?? {}, ["placement"]);
-  const placement: ArtifactPanelPlacement =
-    requestedPlacement === "bottom" || requestedPlacement === "bottom-right"
+  const placement: ArtifactPanelPlacement | undefined =
+    requestedPlacement === "bottom" || requestedPlacement === "right"
       ? requestedPlacement
-      : "right";
+      : undefined;
   const requestedTarget = firstString(event.input ?? {}, ["target"]);
   const target: ArtifactPanelTarget =
     requestedTarget === "new-screen" || requestedTarget === "new-session"
@@ -285,7 +287,7 @@ export function deriveArtifactPresentation(event: ToolUpdatedEvent): ArtifactPre
       },
     },
     display,
-    placement,
+    ...(placement ? { placement } : {}),
     target,
   };
 }
