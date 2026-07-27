@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 # ---- ai4s-skills: the default scientific pack ----
-AI4S_SKILLS_COMMIT="${AI4S_SKILLS_COMMIT:-8fa2ab0523082c135598909b227ed8feb48263ad}"
+AI4S_SKILLS_COMMIT="${AI4S_SKILLS_COMMIT:-2519e8d11fd49429fb41d39c2f35b7d453814b11}"
 OUT_DIR="$ROOT/runtime/skills/external/ai4s-skills"
 
 URL="https://github.com/ai4s-research/ai4s-skills/archive/${AI4S_SKILLS_COMMIT}.tar.gz"
