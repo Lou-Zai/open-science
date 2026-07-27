@@ -448,6 +448,29 @@ export function turnIsOver(messages: HistoryMessage[]): boolean {
   return !!last && last.role === "assistant" && !!last.completed;
 }
 
+/** Server truth that a session is mid-answer RIGHT NOW: its last message is an
+ *  assistant message that has not finished streaming. Deliberately narrower
+ *  than `!turnIsOver` — that also reads a trailing USER message as running, a
+ *  shape a crashed or never-answered turn leaves behind for good, which would
+ *  strand a permanent "Working…" on any session that reloads it (#59). */
+export function turnStillStreaming(messages: HistoryMessage[]): boolean {
+  const last = messages[messages.length - 1];
+  return !!last && last.role === "assistant" && !last.completed && !last.error;
+}
+
+/** Streamed events that prove a session's turn is still in flight. Any of them
+ *  re-locks a session whose local running flag is missing — see the handler. */
+const ACTIVITY_EVENTS: ReadonlySet<OpenCodeEvent["type"]> = new Set([
+  "text.updated",
+  "reasoning.updated",
+  "step.updated",
+  "tool.updated",
+  "message.agent",
+  "session.retry",
+  "question.asked",
+  "permission.asked",
+]);
+
 /** Last SSE arrival per session (monotonic sequence, not wall time). Lets a
  *  failed sync POST tell "the connection died but the turn is alive" (events
  *  kept arriving after the POST began) from "the send never took" — WKWebView
@@ -486,6 +509,13 @@ export function rootSessionOf(parents: Record<string, string>, sessionId: string
   let cur = sessionId;
   for (let hop = 0; parents[cur] && hop < 10; hop++) cur = parents[cur];
   return cur;
+}
+
+/** Does an interactive ask belong to the subtree an interrupt just stopped?
+ *  Aborting a session takes its subagent sessions down with it — OpenCode's
+ *  cancel walks the subtree — so their asks die with the parent's. */
+function stoppedAsk(parents: Record<string, string>, stopped: string, askSession: string): boolean {
+  return askSession === stopped || rootSessionOf(parents, askSession) === stopped;
 }
 
 type StoreSet = {
@@ -1173,6 +1203,22 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         if (posted !== undefined && (event.type === "text.updated" || event.type === "reasoning.updated")) {
           turnPostAt.delete(event.sessionId);
           void logDebug(`first token ← ${event.sessionId} ${Math.round(performance.now() - posted)}ms`);
+        }
+        // A streamed sign of life re-locks the session even when THIS app never
+        // started its turn — after a reload the locks are gone (in-memory only)
+        // while the server keeps working. Without this the Stop affordance never
+        // comes back and a live turn can no longer be interrupted (#59). A
+        // session the user just interrupted is exempt: the abort's own trailing
+        // events must not resurrect its lock.
+        // A stale re-lock (an SSE replay of a finished turn) is self-healing —
+        // reconcileRunning checks the server and unlocks within one poll.
+        const active = event.sessionId;
+        if (
+          ACTIVITY_EVENTS.has(event.type) &&
+          !interruptedSessions.has(active) &&
+          !get().runningSessions[active]
+        ) {
+          set((s) => ({ runningSessions: { ...s.runningSessions, [active]: true } }));
         }
       }
       if (event.type === "error") {
@@ -1878,6 +1924,13 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         // the app closed (or whose plan_exit flip fell into an SSE gap) must
         // reopen in the mode the server is actually in.
         sessionAgents: { ...s.sessionAgents, [id]: lastAgentMode(messages) },
+        // …and seed the running lock the same way. The locks are in-memory, so
+        // a session still mid-answer would otherwise reopen with no "Working…"
+        // and no way to stop it — a silent long tool call streams no event to
+        // re-lock it either (#59).
+        ...(turnStillStreaming(messages)
+          ? { runningSessions: { ...s.runningSessions, [id]: true as const } }
+          : {}),
       }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1907,6 +1960,11 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       set((s) => ({
         threads: { ...s.threads, [id]: { ...historyToThread(messages, s.commands), loaded: true } },
         sessionAgents: { ...s.sessionAgents, [id]: lastAgentMode(messages) },
+        // Same server-truth seeding as openSession — a background pane must not
+        // adopt a still-running session as idle (#59).
+        ...(turnStillStreaming(messages)
+          ? { runningSessions: { ...s.runningSessions, [id]: true as const } }
+          : {}),
       }));
     } catch {
       /* best-effort; the pane keeps its skeleton and loads on focus */
@@ -1975,28 +2033,57 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
 
   interrupt: async (sessionId) => {
     const sid = sessionId ?? get().currentId;
-    if (!sid || !client || !get().runningSessions[sid]) return;
+    // Deliberately NOT gated on the local running lock: that lock is this app's
+    // guess, and a turn the app has lost track of — after a reload, or after an
+    // earlier Stop cleared the lock without the turn actually dying — is exactly
+    // the one the user is trying to stop (#59). Aborting an idle session is a
+    // no-op server-side: the handler cancels whatever it finds (nothing) and
+    // answers true, so there is nothing to protect against here.
+    if (!sid || !client) return;
     // Arm the guard BEFORE the abort POST: the server answers an abort with its
     // own SSE burst (an "aborted" error and one or more session.idle events)
     // that streams back WHILE this POST is still awaited. If we armed it after
     // the await, those events would race in ahead and litter the thread with
     // "Aborted" / "done" lines before "Interrupted".
-    interruptedSessions.add(sid);
+    remember(interruptedSessions, sid);
+    // Descendant subagent sessions stream their own events; the abort takes the
+    // whole subtree down server-side, so their trailing events need the same
+    // guard — otherwise they re-lock the pane the user just stopped.
+    const descendants = Object.keys(get().sessionParents).filter(
+      (id) => rootSessionOf(get().sessionParents, id) === sid,
+    );
+    for (const id of descendants) remember(interruptedSessions, id);
     try {
       await client.abortSession(sid);
-    } catch {
-      // The abort POST failing usually means the turn is already dead —
-      // fall through: unlock locally either way so the user is never stuck.
+    } catch (err) {
+      // The abort did NOT land. Saying "Interrupted" here would be a lie that
+      // also hides the Stop button (the lock is what renders it), leaving a
+      // live turn with no way to stop it. Keep the lock, un-arm the guard so
+      // the session's events fold normally again, and surface the failure.
+      interruptedSessions.delete(sid);
+      for (const id of descendants) interruptedSessions.delete(id);
+      set({ error: err instanceof Error ? err.message : String(err) });
+      return;
     }
     set((s) => {
       const runningSessions = { ...s.runningSessions };
       const shellTurns = { ...s.shellTurns };
-      delete runningSessions[sid];
-      delete shellTurns[sid];
+      for (const id of [sid, ...descendants]) {
+        delete runningSessions[id];
+        delete shellTurns[id];
+      }
       const cur = s.threads[sid] ?? emptyThread();
       return {
         runningSessions,
         shellTurns,
+        // Drop the asks the stopped turn was blocked on. The server deletes its
+        // pending permission/question on interrupt but publishes NO resolved
+        // event for it (Permission.ask only clears its own map in `ensuring`),
+        // so nothing else would ever retire the card — it would sit there
+        // forever, still clickable, answering into a request that no longer
+        // exists (#59). Subagent asks go too: the abort took that subtree down.
+        questions: s.questions.filter((q) => !stoppedAsk(s.sessionParents, sid, q.sessionId)),
+        permissions: s.permissions.filter((p) => !stoppedAsk(s.sessionParents, sid, p.sessionId)),
         threads: {
           ...s.threads,
           [sid]: {

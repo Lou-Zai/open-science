@@ -851,9 +851,123 @@ describe("stale running locks and interrupt", () => {
     expect(s.threads["ses_new"].blocks.slice(-1)[0]).toMatchObject({ kind: "status-line", tone: "done" });
   });
 
-  it("interrupt does nothing when no turn is running", async () => {
+  it("interrupt does nothing when there is no session at all", async () => {
     await useRuntimeStore.getState().interrupt();
     expect(mocks.abortSession).not.toHaveBeenCalled();
+  });
+
+  // #59: "the agent can't stop". Every path below used to leave a live turn with
+  // no way to stop it, because Stop was gated on a lock this app sets only when
+  // IT starts a turn — and clears unconditionally, even on a failed abort.
+  it("still aborts when the local running lock is gone (a turn this app lost track of)", async () => {
+    const id = await useRuntimeStore.getState().sendPrompt("hi");
+    await useRuntimeStore.getState().interrupt();
+    mocks.abortSession.mockClear();
+    await useRuntimeStore.getState().interrupt(id!);
+    expect(mocks.abortSession).toHaveBeenCalledWith(id); // a second Stop reaches the server
+  });
+
+  it("a failed abort keeps the lock, reports the error and does NOT claim 'Interrupted'", async () => {
+    const id = await useRuntimeStore.getState().sendPrompt("hi");
+    mocks.abortSession.mockImplementationOnce(() => {
+      throw new Error("Failed to interrupt the session");
+    });
+    await useRuntimeStore.getState().interrupt();
+    const s = useRuntimeStore.getState();
+    expect(s.runningSessions[id!]).toBe(true); // Stop stays available
+    expect(s.error).toBe("Failed to interrupt the session");
+    expect(s.threads[id!].blocks.some((b) => b.kind === "status-line" && b.text === "Interrupted")).toBe(false);
+    // …and the session's events fold normally again (the guard was un-armed).
+    mocks.fireEvent({ type: "session.idle", sessionId: id! });
+    expect(useRuntimeStore.getState().threads[id!].blocks.slice(-1)[0]).toMatchObject({
+      kind: "status-line",
+      tone: "done",
+    });
+  });
+
+  it("a streamed event re-locks a session whose in-memory lock was lost (reload)", async () => {
+    const id = await useRuntimeStore.getState().sendPrompt("hi");
+    // Simulate the reload: locks are in-memory only, the server keeps working.
+    useRuntimeStore.setState({ runningSessions: {} });
+    mocks.fireEvent({
+      type: "tool.updated",
+      sessionId: id!,
+      callId: "c1",
+      tool: "bash",
+      status: "running",
+      title: "ls /project",
+    });
+    expect(useRuntimeStore.getState().runningSessions[id!]).toBe(true);
+  });
+
+  it("an interrupted session's trailing events do not re-lock it", async () => {
+    const id = await useRuntimeStore.getState().sendPrompt("hi");
+    await useRuntimeStore.getState().interrupt();
+    mocks.fireEvent({
+      type: "tool.updated",
+      sessionId: id!,
+      callId: "c1",
+      tool: "bash",
+      status: "running",
+      title: "ls /project",
+    });
+    expect(useRuntimeStore.getState().runningSessions[id!]).toBeUndefined();
+  });
+
+  it("history seeds the lock for a session still mid-answer, but not for a finished one", async () => {
+    mocks.messages = [
+      { role: "user", parts: [{ type: "text", text: "hi" }] },
+      { role: "assistant", parts: [{ type: "text", text: "thinking…" }] }, // no `completed`
+    ];
+    await useRuntimeStore.getState().openSession("ses_live");
+    expect(useRuntimeStore.getState().runningSessions["ses_live"]).toBe(true);
+    mocks.messages = doneHistory;
+    await useRuntimeStore.getState().openSession("ses_done");
+    expect(useRuntimeStore.getState().runningSessions["ses_done"]).toBeUndefined();
+  });
+
+  it("a trailing USER message does not seed a lock (a never-answered turn stays idle)", async () => {
+    mocks.messages = [{ role: "user", parts: [{ type: "text", text: "hi" }] }];
+    await useRuntimeStore.getState().openSession("ses_stale");
+    expect(useRuntimeStore.getState().runningSessions["ses_stale"]).toBeUndefined();
+  });
+
+  // The server deletes a pending permission when the turn it blocks is aborted,
+  // but publishes no resolved event for it — nothing else retires the card.
+  it("drops the approval the stopped turn was blocked on", async () => {
+    const id = await useRuntimeStore.getState().sendPrompt("read the folder");
+    mocks.fireEvent({
+      type: "permission.asked", sessionId: id!, requestId: "per_1",
+      action: "bash", resources: ["ls /project"],
+    });
+    expect(useRuntimeStore.getState().permissions).toHaveLength(1);
+    await useRuntimeStore.getState().interrupt();
+    expect(useRuntimeStore.getState().permissions).toEqual([]);
+  });
+
+  it("drops a stopped subagent's asks too, and keeps its trailing events quiet", async () => {
+    const id = await useRuntimeStore.getState().sendPrompt("set up the project");
+    mocks.fireEvent({
+      type: "tool.updated", sessionId: id!, callId: "c1", tool: "task",
+      status: "running", title: "Set up", childSessionId: "ses_child",
+    });
+    mocks.fireEvent({
+      type: "permission.asked", sessionId: "ses_child", requestId: "per_9",
+      action: "bash", resources: ["ls /project"],
+    });
+    expect(useRuntimeStore.getState().permissions).toHaveLength(1);
+    await useRuntimeStore.getState().interrupt(id!);
+    let s = useRuntimeStore.getState();
+    expect(s.permissions).toEqual([]); // the child's ask died with the subtree
+    expect(s.runningSessions["ses_child"]).toBeUndefined();
+    // A late event from the stopped child must not re-lock anything.
+    mocks.fireEvent({
+      type: "tool.updated", sessionId: "ses_child", callId: "c2", tool: "bash",
+      status: "running", title: "ls /project",
+    });
+    s = useRuntimeStore.getState();
+    expect(s.runningSessions["ses_child"]).toBeUndefined();
+    expect(s.runningSessions[id!]).toBeUndefined();
   });
 });
 
