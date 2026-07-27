@@ -189,6 +189,16 @@ export interface ArtifactBlock {
   /** Text content when the producing tool carried it (write/edit); absent for binary. */
   content?: string;
   language?: string;
+  /** Explicit host presentation requested by the agent. Ordinary write/edit
+   *  artifacts omit this and keep the compact file card. */
+  presentation?: {
+    mode: "inline" | "panel";
+    /** Optional user-facing title supplied to the presentation tool. */
+    title?: string;
+    /** Tool-call identity; a repeated panel request for the same path replaces
+     *  the leaf content and forces the native preview to reload from disk. */
+    requestId?: string;
+  };
 }
 
 export interface RunningJob {

@@ -38,6 +38,16 @@ const PATH_KEYS = ["filePath", "path", "file", "filename", "file_path"];
 /** Input keys that carry the written text content. */
 const CONTENT_KEYS = ["content", "new_str", "text"];
 
+export type ArtifactPanelPlacement = "right" | "bottom" | "bottom-right";
+export type ArtifactPanelTarget = "current-screen" | "new-screen" | "new-session";
+
+export interface ArtifactPresentation {
+  artifact: ArtifactBlock;
+  display: "inline" | "panel";
+  placement: ArtifactPanelPlacement;
+  target: ArtifactPanelTarget;
+}
+
 export function extToKind(ext: string): ArtifactKind {
   return EXT_KIND[ext.toLowerCase()] ?? "data";
 }
@@ -237,6 +247,46 @@ export function deriveArtifact(event: ToolUpdatedEvent): ArtifactBlock | null {
     tool: event.tool,
     content: firstString(input, CONTENT_KEYS),
     language: EXT_LANG[ext.toLowerCase()],
+  };
+}
+
+/** Parse the app-owned `present_artifact` tool call into a host presentation
+ *  request. The tool validates file existence and workspace containment before
+ *  a success event can reach this function. */
+export function deriveArtifactPresentation(event: ToolUpdatedEvent): ArtifactPresentation | null {
+  if (event.tool !== "present_artifact" || event.status !== "success") return null;
+  const path = firstString(event.input ?? {}, ["path"]);
+  const display = firstString(event.input ?? {}, ["display"]);
+  if (!path || (display !== "inline" && display !== "panel")) return null;
+  const filename = path.split(/[\\/]/).pop() || path;
+  const title = firstString(event.input ?? {}, ["title"]);
+  const requestedPlacement = firstString(event.input ?? {}, ["placement"]);
+  const placement: ArtifactPanelPlacement =
+    requestedPlacement === "bottom" || requestedPlacement === "bottom-right"
+      ? requestedPlacement
+      : "right";
+  const requestedTarget = firstString(event.input ?? {}, ["target"]);
+  const target: ArtifactPanelTarget =
+    requestedTarget === "new-screen" || requestedTarget === "new-session"
+      ? requestedTarget
+      : "current-screen";
+  return {
+    artifact: {
+      kind: "artifact",
+      path,
+      filename,
+      artifact: extToKind(extOf(filename)),
+      tool: event.tool,
+      language: EXT_LANG[extOf(filename)],
+      presentation: {
+        mode: display,
+        requestId: event.callId,
+        ...(title ? { title } : {}),
+      },
+    },
+    display,
+    placement,
+    target,
   };
 }
 

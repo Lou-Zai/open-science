@@ -37,7 +37,8 @@ export interface AgentRuntime {
   onEvent(listener: (event: OpenCodeEvent) => void): () => void;
 
   // ---- sessions (a conversation) ----
-  createSession(): Promise<string>;
+  /** Create a session, optionally giving the runtime a concise initial title. */
+  createSession(title?: string): Promise<string>;
   listSessions(): Promise<SessionMeta[]>;
   deleteSession(sessionId: string): Promise<void>;
   getMessages(sessionId: string): Promise<HistoryMessage[]>;

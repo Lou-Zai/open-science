@@ -11,6 +11,11 @@
     "splitRight": "Nach rechts teilen — eine neue Sitzung daneben öffnen",
     "splitDown": "Nach unten teilen — eine neue Sitzung darunter öffnen",
     "closePane": "Dieses Bereich schließen",
+    "confirmClose": {
+      "title": "Dieses Panel schließen?",
+      "body": "Dadurch wird nur das Panel von diesem Bildschirm entfernt. Sitzung, Gesprächsverlauf und Arbeitsbereichsdateien bleiben erhalten.",
+      "action": "Panel schließen"
+    },
     "zoom": "Dieses Bereich zoomen",
     "empty": {
       "title": "Leerer Bildschirm",

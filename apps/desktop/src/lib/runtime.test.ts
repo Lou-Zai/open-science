@@ -126,6 +126,29 @@ describe("foldEvent", () => {
     expect(s.blocks[0]).toMatchObject({ kind: "tool-call", status: "success", title: "search (done)" });
   });
 
+  it("places an inline presentation immediately after its completed tool call", () => {
+    const event: OpenCodeEvent = {
+      type: "tool.updated",
+      sessionId: S,
+      callId: "present-1",
+      tool: "present_artifact",
+      status: "success",
+      input: {
+        path: "figures/result.png",
+        display: "inline",
+        title: "Result",
+      },
+    };
+    const once = foldEvent(empty, event);
+    const twice = foldEvent(once, event);
+    expect(twice.blocks).toHaveLength(2);
+    expect(twice.blocks[1]).toMatchObject({
+      kind: "artifact",
+      path: "figures/result.png",
+      presentation: { mode: "inline", title: "Result" },
+    });
+  });
+
   it("does not render interactive question/permission tools as thread rows", () => {
     // These are surfaced by InteractionPrompt (answerable), not as blank rows.
     const s = foldAll([

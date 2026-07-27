@@ -259,6 +259,45 @@ fn deploy_goal_plugin(app: &AppHandle) -> Option<PathBuf> {
     Some(dst)
 }
 
+/// Ship app-owned custom tools into OpenCode's global tools directory. These
+/// tools expose safe, declarative host capabilities (for example, asking the
+/// UI to present an existing workspace artifact); they never hand the model a
+/// raw window handle or filesystem access outside the active workspace.
+fn deploy_workbench_tools(app: &AppHandle) {
+    let Ok(src) = app
+        .path()
+        .resolve("tools", tauri::path::BaseDirectory::Resource)
+    else {
+        return;
+    };
+    if !src.is_dir() {
+        return;
+    }
+    let Ok(config_home) = xdg_config_home(app) else {
+        return;
+    };
+    let dst = config_home.join("opencode").join("tools");
+    if let Err(e) = std::fs::create_dir_all(&dst) {
+        eprintln!("failed to create workbench tools directory: {e}");
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(&src) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name() else {
+            continue;
+        };
+        if let Err(e) = std::fs::copy(&path, dst.join(name)) {
+            eprintln!("failed to deploy workbench tool {}: {e}", path.display());
+        }
+    }
+}
+
 /// Remove every SKILL.md-bearing directory in `dst` whose name is not in
 /// `bundled` (the set just deployed). Non-skill directories are left untouched.
 fn prune_stale_skills(dst: &Path, bundled: &std::collections::HashSet<std::ffi::OsString>) {
@@ -674,6 +713,9 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<CommandChild, String> {
     }
     // Ship the bundled scientific skills into the app-private OpenCode profile.
     deploy_bundled_skills(app);
+    // Host presentation tools are global to the app-owned OpenCode profile and
+    // available in every session workspace.
+    deploy_workbench_tools(app);
     // Safety default (AGENTS.md non-negotiable): on first run, seed the
     // "approve" permission mode so dangerous shell commands prompt for
     // approval. A mode the user chose (approve or full) is never overridden.

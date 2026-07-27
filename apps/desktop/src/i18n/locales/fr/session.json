@@ -11,6 +11,11 @@
     "splitRight": "Diviser à droite — ouvrir une nouvelle session à côté",
     "splitDown": "Diviser en bas — ouvrir une nouvelle session en dessous",
     "closePane": "Fermer ce volet",
+    "confirmClose": {
+      "title": "Fermer ce volet ?",
+      "body": "Cela retire uniquement le volet de cet écran. La session, l’historique de conversation et les fichiers de l’espace de travail sont conservés.",
+      "action": "Fermer le volet"
+    },
     "zoom": "Zoom de ce volet",
     "empty": {
       "title": "Écran vide",

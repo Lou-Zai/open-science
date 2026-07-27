@@ -43,7 +43,8 @@ import {
 import { isGatewayWeb, gatewayToken, gatewayOrigin } from "./webMode";
 import { kernelReset } from "./kernel";
 import { moveScrollMemory } from "./scrollMemory";
-import { deriveArtifact } from "./artifacts";
+import { deriveArtifact, deriveArtifactPresentation } from "./artifacts";
+import { useLayoutStore } from "./layout";
 import { provenanceInputsFromEvent, recordProvenance } from "./provenance";
 import { recordRun, runInputFromEvent } from "./runs";
 import { splitReview } from "./review";
@@ -429,6 +430,9 @@ const recordedProvenance = new Set<string>();
 /** Bash calls already written to the run store — terminal events can repeat per callId. */
 const recordedRuns = new Set<string>();
 const notifiedPermissions = new Set<string>();
+/** A completed presentation tool can be repeated by SSE reconciliation. Layout
+ *  mutations are not idempotent, so handle each call exactly once. */
+const handledPresentations = new Set<string>();
 
 /** Sessions the user just interrupted: the thread already shows "Interrupted",
  *  so the abort's own trailing events (an "aborted" error and one or more
@@ -1413,6 +1417,87 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         }
       }
       applyFold(event);
+      const presentationEventKey =
+        event.type === "tool.updated" ? `${sid}:${event.callId}` : null;
+      if (
+        event.type === "tool.updated" &&
+        presentationEventKey &&
+        !handledPresentations.has(presentationEventKey)
+      ) {
+        const presentation = deriveArtifactPresentation(event);
+        if (presentation?.display === "panel") {
+          remember(handledPresentations, presentationEventKey);
+          if (presentation.target === "new-session") {
+            void (async () => {
+              const sourceDirectory =
+                get().sessions.find((session) => session.id === sid)?.directory ?? get().workspace;
+              let presentationClient: AgentRuntime | null = client;
+              let temporaryClient: OpenCodeClient | null = null;
+              try {
+                if (sourceDirectory && sourceDirectory !== get().workspace) {
+                  presentationClient = streamClients.get(sourceDirectory) ?? null;
+                  if (!presentationClient && streamBaseUrl) {
+                    temporaryClient = new OpenCodeClient({
+                      baseUrl: streamBaseUrl,
+                      directory: sourceDirectory,
+                      password: streamPassword,
+                    });
+                    await temporaryClient.connect();
+                    presentationClient = temporaryClient;
+                  }
+                }
+                if (!presentationClient) throw new Error("The source workspace is not connected.");
+                const title =
+                  presentation.artifact.presentation?.title ?? presentation.artifact.filename;
+                const dedicatedSessionId = await presentationClient.createSession(title);
+                await get().refreshSessions();
+                set((state) => ({
+                  sessions: state.sessions.some((session) => session.id === dedicatedSessionId)
+                    ? state.sessions
+                    : [
+                        {
+                          id: dedicatedSessionId,
+                          title,
+                          ...(sourceDirectory ? { directory: sourceDirectory } : {}),
+                          created: Date.now(),
+                          updated: Date.now(),
+                        },
+                        ...state.sessions,
+                      ],
+                  threads: {
+                    ...state.threads,
+                    [dedicatedSessionId]: {
+                      ...(state.threads[dedicatedSessionId] ?? emptyThread()),
+                      loaded: true,
+                    },
+                  },
+                }));
+                useLayoutStore
+                  .getState()
+                  .presentArtifact(
+                    dedicatedSessionId,
+                    presentation.artifact,
+                    presentation.placement,
+                    "new-screen",
+                  );
+              } finally {
+                temporaryClient?.close();
+              }
+            })().catch((error) =>
+              set({ error: error instanceof Error ? error.message : String(error) }),
+            );
+          } else {
+            useLayoutStore
+              .getState()
+              .presentArtifact(
+                sid,
+                presentation.artifact,
+                presentation.placement,
+                presentation.target,
+              );
+          }
+        }
+      }
       // A completed live write becomes a provenance version. One apply_patch call
       // can touch many files, so dedupe per (call, path) rather than per call.
       if (event.type === "tool.updated") {
@@ -2255,6 +2340,15 @@ export function foldEvent(
           index[akey] = blocks.length - 1;
         }
       }
+      const presentation = deriveArtifactPresentation(event);
+      if (presentation?.display === "inline") {
+        const pkey = `presentation:${event.callId}`;
+        if (pkey in index) blocks[index[pkey]] = presentation.artifact;
+        else {
+          blocks.push(presentation.artifact);
+          index[pkey] = blocks.length - 1;
+        }
+      }
       return { blocks, index };
     }
     case "reasoning.updated": {
@@ -2433,6 +2527,16 @@ export function historyToThread(messages: HistoryMessage[], commands?: CommandIn
             output: p.state?.output,
           });
           if (artifact) blocks.push(artifact);
+          const presentation = deriveArtifactPresentation({
+            type: "tool.updated",
+            sessionId: "",
+            callId: "",
+            tool: p.tool ?? "",
+            status,
+            input: p.state?.input,
+            output: p.state?.output,
+          });
+          if (presentation?.display === "inline") blocks.push(presentation.artifact);
         }
       }
       // A turn that ended in a provider/runtime error must say so on reload —

@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   /** Fire a client status flip into the store, as the SDK's reconnect would. */
   fireStatus: (_s: string) => {},
   runShell: vi.fn(),
+  createSessionSpy: vi.fn(),
   sendPromptSpy: vi.fn(),
   /** Captures the FULL sendPrompt arg list (incl. model + variant) — the plain
    *  spy above deliberately ignores those, so existing 3-arg assertions hold. */
@@ -133,7 +134,8 @@ vi.mock("@ai4s/sdk", () => {
       if (mocks.failSetModel) throw new Error("Load failed");
       mocks.currentModel = model;
     }
-    async createSession() {
+    async createSession(title?: string) {
+      mocks.createSessionSpy(title);
       if (mocks.failCreates > 0) {
         mocks.failCreates--;
         throw new Error("Load failed");
@@ -221,6 +223,7 @@ vi.mock("@ai4s/sdk", () => {
 
 import type { ArtifactBlock } from "@ai4s/shared";
 import { DRAFT_KEY, rootSessionOf, useRuntimeStore } from "./runtime";
+import { leaves, makeLeaf, useLayoutStore } from "./layout";
 
 beforeEach(async () => {
   vi.clearAllMocks();
@@ -238,6 +241,7 @@ beforeEach(async () => {
   mocks.providers = [];
   mocks.failSetModel = false;
   mocks.notifyPermissionRequest.mockResolvedValue(true);
+  mocks.createSessionSpy.mockClear();
   useRuntimeStore.setState({
     currentId: null,
     workspacePinned: false,
@@ -256,6 +260,47 @@ beforeEach(async () => {
   // connect() fires loadCatalog without awaiting it — settle it so tests that
   // override `agents` (or read them) aren't racing the catalog write.
   await new Promise((r) => setTimeout(r, 0));
+});
+
+describe("agent artifact presentation targets", () => {
+  it("creates a real dedicated Session and opens it with the artifact in a new Screen", async () => {
+    const source = makeLeaf("ses_source");
+    useLayoutStore.setState({
+      groups: [{ id: "g-source", name: "", tree: source, focusedLeafId: source.id, zoomedLeafId: null }],
+      activeGroupId: "g-source",
+      tree: source,
+      focusedLeafId: source.id,
+      zoomedLeafId: null,
+      ephemeralGroupId: null,
+    });
+    useRuntimeStore.setState({
+      currentId: "ses_source",
+      sessions: [{ id: "ses_source", title: "Source", directory: "/ws/base" }],
+    });
+
+    mocks.fireEvent({
+      type: "tool.updated",
+      sessionId: "ses_source",
+      callId: "present-dedicated",
+      tool: "present_artifact",
+      status: "success",
+      input: {
+        path: "figures/result.png",
+        display: "panel",
+        placement: "right",
+        target: "new-session",
+        title: "Result review",
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mocks.createSessionSpy).toHaveBeenCalledWith("Result review");
+    expect(useRuntimeStore.getState().sessions.some((session) => session.id === "ses_new")).toBe(true);
+    expect(useLayoutStore.getState().groups).toHaveLength(2);
+    expect(
+      leaves(useLayoutStore.getState().tree!).map((leaf) => leaf.artifact?.path ?? leaf.sessionId),
+    ).toEqual(["ses_new", "figures/result.png"]);
+  });
 });
 
 describe("runtime authentication", () => {

@@ -31,6 +31,13 @@ const md: FilePreviewInspectorT = {
 };
 
 describe("FilePreviewInspector — markdown", () => {
+  it("uses the same compact 32px header as a tiled Session pane", () => {
+    const { container } = render(
+      <FilePreviewInspector data={md} onClose={() => {}} compactHeader />,
+    );
+    expect(container.querySelector("header")).toHaveClass("h-8", "border-faint");
+  });
+
   it("renders markdown as a formatted document by default", async () => {
     render(<FilePreviewInspector data={md} onClose={() => {}} />);
     // The heading is real document markup, not raw "# Findings" text.

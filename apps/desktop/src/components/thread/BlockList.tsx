@@ -8,6 +8,7 @@ import { ReasoningRow } from "./ReasoningRow";
 import { StepSummaryRow } from "./StepSummaryRow";
 import { FigureBlock } from "./FigureBlock";
 import { ArtifactCard } from "./ArtifactCard";
+import { InlineArtifact } from "./InlineArtifact";
 
 export interface BlockHandlers {
   /** Open an artifact in the inspector (live session). */
@@ -53,7 +54,11 @@ export function renderBlock(
     case "figure":
       return <FigureBlock key={i} block={block} onComment={handlers?.onFigureComment} />;
     case "artifact":
-      return <ArtifactCard key={i} block={block} onOpen={handlers?.onArtifactOpen} />;
+      return block.presentation?.mode === "inline" && !block.filename.endsWith(".ipynb") ? (
+        <InlineArtifact key={i} block={block} />
+      ) : (
+        <ArtifactCard key={i} block={block} onOpen={handlers?.onArtifactOpen} />
+      );
     case "running-jobs":
       return <RunningJobsOverlay key={i} block={block} />;
     case "status-line":

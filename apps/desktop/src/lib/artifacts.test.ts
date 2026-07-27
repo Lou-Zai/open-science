@@ -4,6 +4,7 @@ import type { ArtifactInspector } from "@ai4s/shared";
 import {
   artifactBlockToInspector,
   deriveArtifact,
+  deriveArtifactPresentation,
   extractArtifactRefs,
   extToKind,
   fileInspectorFromBlock,
@@ -58,6 +59,76 @@ describe("deriveArtifact", () => {
     expect(deriveArtifact(write({ filePath: "a.py" }, { tool: "bash" }))).toBeNull();
     expect(deriveArtifact(write({ filePath: "a.py" }, { status: "running" }))).toBeNull();
     expect(deriveArtifact(write({ content: "x" }))).toBeNull();
+  });
+});
+
+describe("deriveArtifactPresentation", () => {
+  it("turns a successful inline tool call into a titled native preview artifact", () => {
+    const result = deriveArtifactPresentation(
+      write(
+        {
+          path: "figures/embedding.png",
+          display: "inline",
+          title: "Cell embedding",
+        },
+        { tool: "present_artifact" },
+      ),
+    );
+    expect(result).toMatchObject({
+      display: "inline",
+      placement: "right",
+      target: "current-screen",
+      artifact: {
+        path: "figures/embedding.png",
+        artifact: "figure",
+        presentation: { mode: "inline", title: "Cell embedding" },
+      },
+    });
+  });
+
+  it("keeps a valid panel placement and rejects incomplete or failed calls", () => {
+    expect(
+      deriveArtifactPresentation(
+        write(
+          { path: "results/summary.csv", display: "panel", placement: "bottom-right" },
+          { tool: "present_artifact" },
+        ),
+      ),
+    ).toMatchObject({
+      display: "panel",
+      placement: "bottom-right",
+      target: "current-screen",
+      artifact: { presentation: { mode: "panel" } },
+    });
+    expect(
+      deriveArtifactPresentation(
+        write({ path: "a.png", display: "panel" }, { tool: "present_artifact", status: "failed" }),
+      ),
+    ).toBeNull();
+    expect(
+      deriveArtifactPresentation(
+        write({ display: "inline" }, { tool: "present_artifact" }),
+      ),
+    ).toBeNull();
+  });
+
+  it("keeps explicit new Screen and dedicated Session targets", () => {
+    expect(
+      deriveArtifactPresentation(
+        write(
+          { path: "report.html", display: "panel", target: "new-screen" },
+          { tool: "present_artifact" },
+        ),
+      )?.target,
+    ).toBe("new-screen");
+    expect(
+      deriveArtifactPresentation(
+        write(
+          { path: "report.html", display: "panel", target: "new-session" },
+          { tool: "present_artifact" },
+        ),
+      )?.target,
+    ).toBe("new-session");
   });
 });
 

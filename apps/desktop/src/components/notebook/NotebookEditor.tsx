@@ -43,6 +43,7 @@ export function NotebookEditor({
   onBack,
   onClose,
   controls,
+  compactHeader = false,
 }: {
   path: string;
   /** Folder tree `path` resolves in (default the active workspace). The
@@ -54,6 +55,8 @@ export function NotebookEditor({
   onClose?: () => void;
   /** Pane-level header buttons (e.g. maximize), rendered before Close. */
   controls?: React.ReactNode;
+  /** Match the 32px header used by tiled Session panes. */
+  compactHeader?: boolean;
 }) {
   const { t } = useTranslation(["pages", "common"]);
   const [cells, setCells] = useState<NotebookCell[] | null>(null);
@@ -264,7 +267,14 @@ export function NotebookEditor({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
+      <div
+        className={cn(
+          "flex shrink-0 items-center border-b",
+          compactHeader
+            ? "h-8 gap-1 border-faint px-2.5"
+            : "h-12 gap-2 border-border px-4",
+        )}
+      >
         <PaneTitlebarInset />
         {onBack && (
           <button

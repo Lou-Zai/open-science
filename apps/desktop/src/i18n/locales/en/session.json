@@ -11,6 +11,11 @@
     "splitRight": "Split right — open a new session beside this one",
     "splitDown": "Split down — open a new session below this one",
     "closePane": "Close this pane",
+    "confirmClose": {
+      "title": "Close this panel?",
+      "body": "This only removes the panel from this Screen. The session, conversation history, and workspace files are kept.",
+      "action": "Close panel"
+    },
     "zoom": "Zoom this pane",
     "empty": {
       "title": "Empty screen",

@@ -29,6 +29,17 @@ import { BaseAgentRuntime } from "./base-runtime";
  *  cleanup never touches a probed or hand-set limit. */
 const LEGACY_BLIND_CONTEXT = 128_000;
 
+/** Host UI contract exposed by the app-owned `present_artifact` tool. A tool
+ *  description alone is not reliable enough: models sometimes mistake reading
+ *  a file or linking its path for displaying it. Attach this concise reminder
+ *  to every normal prompt so presentation requests produce a real UI event. */
+const ARTIFACT_PRESENTATION_SYSTEM = `Open Science Desktop can display workspace files through the present_artifact tool.
+- If the user asks to show, display, render, preview, or open an artifact in the chat/conversation, call present_artifact with display="inline".
+- If the user asks for a panel or side-by-side view in the current Screen, call present_artifact with display="panel", target="current-screen", and the matching placement.
+- If the user asks for a new Screen, call it with target="new-screen". If they ask for a new or dedicated Session, call it with target="new-session"; the host creates the Session.
+- If you generate the artifact, create the file first, then call present_artifact in the same turn.
+- Reading a file, mentioning its path, or attaching a link does not display it. Never claim an artifact is displayed unless present_artifact completed successfully.`;
+
 /** The slice of OpenCode's global config we read and write for custom
  *  providers. Extra keys in an entry are preserved via spread on write. */
 type CustomProviderConfig = Record<
@@ -299,13 +310,13 @@ export class OpenCodeClient extends BaseAgentRuntime implements AgentRuntime {
   /** Create a new agent session, returning its id. Scoping is by the sidecar's
    *  working directory (set at spawn), not a query param — passing `?directory=`
    *  here routes the turn to a scope whose events the global stream never sees. */
-  async createSession(): Promise<string> {
+  async createSession(title?: string): Promise<string> {
     // The directory decides where the session lives and works — without it the
     // server would put it in the process's boot folder, not the active one.
     const res = await this.fetchWithTimeout(`${this.baseUrl}/session${this.dirQuery()}`, {
       method: "POST",
       headers: this.headers(true),
-      body: "{}",
+      body: JSON.stringify(title ? { title } : {}),
     });
     if (!res.ok) throw await this.apiError(res, "Failed to create session");
     const json = (await res.json()) as { id: string };
@@ -863,6 +874,7 @@ export class OpenCodeClient extends BaseAgentRuntime implements AgentRuntime {
           parts: [{ type: "text", text }],
           ...(agent ? { agent } : {}),
           ...(m ? { model: m } : {}),
+          system: ARTIFACT_PRESENTATION_SYSTEM,
           // Per-turn reasoning effort; OpenCode maps the variant name to the
           // provider's native param. Omitted → the model's default effort.
           ...(variant ? { variant } : {}),

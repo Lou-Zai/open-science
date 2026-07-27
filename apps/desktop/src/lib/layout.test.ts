@@ -191,6 +191,88 @@ describe("layout store — groups", () => {
     expect(leaves(g.tree!).map((l) => l.sessionId)).toEqual(["B"]);
   });
 
+  it("presents an artifact beside its conversation without replacing it", () => {
+    const artifact = {
+      kind: "artifact" as const,
+      path: "figures/result.png",
+      filename: "result.png",
+      artifact: "figure" as const,
+      tool: "present_artifact",
+      presentation: { mode: "panel" as const, title: "Result" },
+    };
+    const leafId = S().presentArtifact("A", artifact, "right");
+    expect(leafId).toBeTruthy();
+    const visible = leaves(S().tree!);
+    expect(visible).toHaveLength(2);
+    expect(visible[0].sessionId).toBe("A");
+    expect(visible[0].artifact).toBeUndefined();
+    expect(visible[1].artifact).toEqual(artifact);
+    expect(asSplit(S().tree!).dir).toBe("row");
+  });
+
+  it("bottom-right nests below the visually rightmost pane", () => {
+    S().split("row", "B");
+    const artifact = {
+      kind: "artifact" as const,
+      path: "results/table.csv",
+      filename: "table.csv",
+      artifact: "table" as const,
+      tool: "present_artifact",
+      presentation: { mode: "panel" as const },
+    };
+    S().presentArtifact("A", artifact, "bottom-right");
+    const root = asSplit(S().tree!);
+    expect(root.dir).toBe("row");
+    expect(root.children[1].kind).toBe("split");
+    expect(asSplit(root.children[1]).dir).toBe("col");
+    expect(leaves(root.children[1]).map((leaf) => leaf.artifact?.path ?? leaf.sessionId)).toEqual([
+      "B",
+      "results/table.csv",
+    ]);
+  });
+
+  it("reuses and refreshes an existing panel for the same artifact path", () => {
+    const first = {
+      kind: "artifact" as const,
+      path: "figures/result.png",
+      filename: "result.png",
+      artifact: "figure" as const,
+      tool: "present_artifact",
+      presentation: { mode: "panel" as const, requestId: "call-1" },
+    };
+    const firstId = S().presentArtifact("A", first, "right");
+    const second = {
+      ...first,
+      presentation: { mode: "panel" as const, requestId: "call-2" },
+    };
+    const secondId = S().presentArtifact("A", second, "bottom");
+    expect(secondId).toBe(firstId);
+    expect(leaves(S().tree!)).toHaveLength(2);
+    expect(findLeaf(S().tree!, firstId!)?.artifact?.presentation?.requestId).toBe("call-2");
+  });
+
+  it("creates a named Screen with the source conversation beside the artifact", () => {
+    const artifact = {
+      kind: "artifact" as const,
+      path: "figures/result.png",
+      filename: "result.png",
+      artifact: "figure" as const,
+      tool: "present_artifact",
+      presentation: { mode: "panel" as const, title: "Result review" },
+    };
+    const leafId = S().presentArtifact("A", artifact, "right", "new-screen");
+    expect(S().groups).toHaveLength(2);
+    expect(S().activeGroupId).not.toBe("g0");
+    expect(S().groups[1].name).toBe("Result review");
+    expect(leaves(S().tree!).map((leaf) => leaf.artifact?.path ?? leaf.sessionId)).toEqual([
+      "A",
+      "figures/result.png",
+    ]);
+    expect(S().focusedLeafId).toBe(leafId);
+    // The source Screen remains unchanged.
+    expect(leaves(S().groups[0].tree!).map((leaf) => leaf.sessionId)).toEqual(["A"]);
+  });
+
   it("closeGroup activates a neighbor and never drops below one group", () => {
     const id = S().addGroup(); // g0 + new
     S().closeGroup(id);

@@ -43,6 +43,7 @@
     },
     "resources": {
       "../../../runtime/goal-plugin": "goal-plugin/",
+      "../../../runtime/tools": "tools/",
       "../../../runtime/skills/external/ai4s-skills": "skills/",
       "../../../runtime/skills/external/anthropic-skills": "skills-office/",
       "../../../runtime/skills/core": "skills-core/",

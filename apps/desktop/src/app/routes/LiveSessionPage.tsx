@@ -8,6 +8,7 @@ import { SessionView } from "@/components/session/SessionView";
 import { PaneTree } from "@/components/session/PaneTree";
 import { GroupTabs } from "@/components/session/GroupTabs";
 import { EmptyGroup } from "@/components/session/EmptyGroup";
+import { PresentedArtifactPane } from "@/components/session/PresentedArtifactPane";
 
 /**
  * Live agent surface. Owns the split-layout ↔ runtime plumbing: it keeps the
@@ -164,7 +165,16 @@ export function LiveSessionPage() {
   // the onboarding if the group is somehow empty.
   if (webOrMobile) {
     return focusedLeaf ? (
-      <SessionView sessionId={focusedLeaf.sessionId} leafId={focusedLeaf.id} focused chromeAsTitlebar />
+      focusedLeaf.artifact && focusedLeaf.sessionId ? (
+        <PresentedArtifactPane
+          artifact={focusedLeaf.artifact}
+          leafId={focusedLeaf.id}
+          sessionId={focusedLeaf.sessionId}
+          onClose={() => useLayoutStore.getState().closePane(focusedLeaf.id)}
+        />
+      ) : (
+        <SessionView sessionId={focusedLeaf.sessionId} leafId={focusedLeaf.id} focused chromeAsTitlebar />
+      )
     ) : (
       <EmptyGroup />
     );

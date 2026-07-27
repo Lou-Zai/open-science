@@ -46,11 +46,23 @@ export function FilePreviewInspector({
   data,
   onClose,
   controls,
+  embedded = false,
+  compactHeader = false,
+  title,
+  onTitlePointerDown,
 }: {
   data: FilePreviewInspectorT;
-  onClose: () => void;
+  onClose?: () => void;
   /** Pane-level header buttons (e.g. maximize), rendered before Close. */
   controls?: React.ReactNode;
+  /** Compact chrome when the same native preview is embedded in a message. */
+  embedded?: boolean;
+  /** Match the 32px header used by tiled Session panes. */
+  compactHeader?: boolean;
+  /** Optional presentation title; the underlying filename remains unchanged. */
+  title?: string;
+  /** Dedicated panes use the title as their drag handle. */
+  onTitlePointerDown?: React.PointerEventHandler<HTMLSpanElement>;
 }) {
   const { t } = useTranslation(["inspector", "common"]);
   // Web client: scope file reads to the VIEWED session's folder (from its
@@ -178,11 +190,29 @@ export function FilePreviewInspector({
   );
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
+    <div className={cn("flex h-full flex-col", embedded && "overflow-hidden rounded-card border border-border bg-surface")}>
+      <header
+        className={cn(
+          "flex shrink-0 items-center border-b",
+          embedded
+            ? "h-10 gap-2 border-border px-3"
+            : compactHeader
+              ? "h-8 gap-1 border-faint px-2.5"
+              : "h-12 gap-2 border-border px-4",
+        )}
+      >
         <PaneTitlebarInset />
-        <span className="truncate text-sm font-medium text-text">{data.filename}</span>
-        <span className="rounded bg-surface-2 px-1.5 py-0.5 text-xs text-muted">
+        <span
+          onPointerDown={onTitlePointerDown}
+          className={cn(
+            "truncate font-medium text-text",
+            compactHeader ? "text-[13px]" : "text-sm",
+            onTitlePointerDown && "cursor-grab select-none active:cursor-grabbing",
+          )}
+        >
+          {title ?? data.filename}
+        </span>
+        <span className={cn("rounded bg-surface-2 px-1.5 py-0.5 text-muted", compactHeader ? "text-[10px]" : "text-xs")}>
           {t(`filePreview.artifactKind.${data.artifact}`)}
         </span>
         {canToggle && (
@@ -216,9 +246,11 @@ export function FilePreviewInspector({
           {isGatewayWeb ? <Download size={14} strokeWidth={1.5} /> : <ExternalLink size={14} strokeWidth={1.5} />}
         </button>
         {controls}
-        <button className="text-text hover:opacity-60" aria-label={t("shell.closeInspector")} onClick={onClose}>
-          <X size={14} strokeWidth={1.5} />
-        </button>
+        {onClose && (
+          <button className="text-text hover:opacity-60" aria-label={t("shell.closeInspector")} onClick={onClose}>
+            <X size={14} strokeWidth={1.5} />
+          </button>
+        )}
       </header>
 
       <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-auto bg-surface-2">

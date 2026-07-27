@@ -11,6 +11,7 @@ export function InspectorShell({
   onClose,
   onEvaluate,
   controls,
+  compactHeader = false,
 }: {
   inspector: Inspector;
   onClose: () => void;
@@ -18,6 +19,8 @@ export function InspectorShell({
   onEvaluate?: (expr: string) => void;
   /** Pane-level header buttons (e.g. maximize), rendered before Close. */
   controls?: React.ReactNode;
+  /** Match the compact chrome of a tiled Session pane. */
+  compactHeader?: boolean;
 }) {
   return (
     <div className="h-full border-l border-border bg-surface" data-variant={inspector.variant}>
@@ -31,10 +34,21 @@ export function InspectorShell({
         <PdfInspector data={inspector} onClose={onClose} controls={controls} />
       )}
       {inspector.variant === "file" && (
-        <FilePreviewInspector data={inspector} onClose={onClose} controls={controls} />
+        <FilePreviewInspector
+          data={inspector}
+          onClose={onClose}
+          controls={controls}
+          compactHeader={compactHeader}
+        />
       )}
       {inspector.variant === "notebook-file" && (
-        <NotebookEditor path={inspector.path} root={inspector.root} onClose={onClose} controls={controls} />
+        <NotebookEditor
+          path={inspector.path}
+          root={inspector.root}
+          onClose={onClose}
+          controls={controls}
+          compactHeader={compactHeader}
+        />
       )}
     </div>
   );

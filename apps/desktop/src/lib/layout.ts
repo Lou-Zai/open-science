@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import type { ArtifactBlock } from "@ai4s/shared";
+import type { ArtifactPanelPlacement, ArtifactPanelTarget } from "./artifacts";
 
 /**
  * Ghostty/tmux-style recursive tiling layout. Each leaf holds one session; a
@@ -24,6 +26,9 @@ export interface PaneLeaf {
   /** Per-pane content zoom (CSS zoom on the conversation), 1 = 100%. Undefined
    *  = 100%. Narrow tiled panes often want smaller text. */
   zoom?: number;
+  /** A dedicated artifact surface owned by `sessionId`. When absent, this leaf
+   *  is the normal conversation pane for that session. */
+  artifact?: ArtifactBlock;
 }
 
 export interface PaneSplit {
@@ -47,6 +52,18 @@ const genId = (): string => `p${++nodeSeq}`;
 
 export function makeLeaf(sessionId: string | null): PaneLeaf {
   return { kind: "leaf", id: genId(), sessionId };
+}
+
+function makeArtifactLeaf(sessionId: string, artifact: ArtifactBlock): PaneLeaf {
+  return { kind: "leaf", id: genId(), sessionId, artifact };
+}
+
+function cloneLeaf(leaf: PaneLeaf): PaneLeaf {
+  return {
+    ...makeLeaf(leaf.sessionId),
+    ...(leaf.zoom !== undefined ? { zoom: leaf.zoom } : {}),
+    ...(leaf.artifact ? { artifact: leaf.artifact } : {}),
+  };
 }
 
 const equalSizes = (n: number): number[] => Array.from({ length: n }, () => 1 / n);
@@ -189,7 +206,12 @@ export function setSplitSizes(tree: PaneNode, splitId: string, sizes: number[]):
 
 export function setLeafSession(tree: PaneNode, leafId: string, sessionId: string | null): PaneNode {
   function rec(node: PaneNode): PaneNode {
-    if (node.kind === "leaf") return node.id === leafId ? { ...node, sessionId } : node;
+    if (node.kind === "leaf") {
+      if (node.id !== leafId) return node;
+      const conversationLeaf = { ...node };
+      delete conversationLeaf.artifact;
+      return { ...conversationLeaf, sessionId };
+    }
     return { ...node, children: node.children.map(rec) };
   }
   return rec(tree);
@@ -241,7 +263,18 @@ const LAYOUT_KEY = "ai4s.layout.v2";
 function isNode(v: unknown): v is PaneNode {
   if (!v || typeof v !== "object") return false;
   const n = v as Record<string, unknown>;
-  if (n.kind === "leaf") return typeof n.id === "string";
+  if (n.kind === "leaf") {
+    if (typeof n.id !== "string") return false;
+    if (n.artifact === undefined) return true;
+    if (!n.artifact || typeof n.artifact !== "object") return false;
+    const artifact = n.artifact as Record<string, unknown>;
+    return (
+      artifact.kind === "artifact" &&
+      typeof artifact.path === "string" &&
+      typeof artifact.filename === "string" &&
+      typeof artifact.artifact === "string"
+    );
+  }
   if (n.kind === "split")
     return (
       typeof n.id === "string" &&
@@ -342,6 +375,14 @@ interface LayoutState {
    *  `targetLeafId` on `edge`; focuses it. The drag-to-dock entry for a session
    *  coming from the sidebar. */
   dockSession: (targetLeafId: string, edge: DockEdge, sessionId: string | null) => string;
+  /** Present an artifact beside its owning conversation in the current Screen
+   *  or a newly created Screen. Returns the artifact leaf id. */
+  presentArtifact: (
+    sessionId: string,
+    artifact: ArtifactBlock,
+    placement: ArtifactPanelPlacement,
+    target?: ArtifactPanelTarget,
+  ) => string | null;
   /** Move an existing leaf to dock against `targetLeafId` on `edge` (re-dock via
    *  dragging a pane header). No-op if target === moved or target is missing. */
   moveLeaf: (leafId: string, targetLeafId: string, edge: DockEdge) => void;
@@ -516,6 +557,85 @@ export const useLayoutStore = create<LayoutState>((set, get) => {
       commitActive({ tree: insertLeaf(tree, targetLeafId, edge, leaf), focusedLeafId: leaf.id, zoomedLeafId: null });
       return leaf.id;
     },
+    presentArtifact: (sessionId, artifact, placement, destination = "current-screen") => {
+      get().pinEphemeral();
+      if (destination !== "current-screen") {
+        // A new Screen keeps a conversation beside the artifact, so the user
+        // can discuss what they are looking at without switching away. For a
+        // dedicated-session request, `sessionId` is the fresh host-created
+        // session supplied by the runtime event handler.
+        const conversation = makeLeaf(sessionId);
+        const presented = makeArtifactLeaf(sessionId, artifact);
+        const edge: DockEdge = placement === "bottom" ? "bottom" : "right";
+        const tree = insertLeaf(conversation, conversation.id, edge, presented);
+        const group: LayoutGroup = {
+          id: genGroupId(),
+          name: artifact.presentation?.title ?? artifact.filename,
+          tree,
+          focusedLeafId: presented.id,
+          zoomedLeafId: null,
+        };
+        set((s) => {
+          const groups = [...s.groups, group];
+          persist(groups, group.id);
+          return {
+            groups,
+            activeGroupId: group.id,
+            tree,
+            focusedLeafId: presented.id,
+            zoomedLeafId: null,
+            ephemeralGroupId: null,
+          };
+        });
+        return presented.id;
+      }
+      const { tree, focusedLeafId } = get();
+      if (!tree) return null;
+      const existing = leaves(tree).find(
+        (leaf) => leaf.sessionId === sessionId && leaf.artifact?.path === artifact.path,
+      );
+      if (existing) {
+        const replace = (node: PaneNode): PaneNode =>
+          node.kind === "leaf"
+            ? node.id === existing.id
+              ? { ...node, artifact }
+              : node
+            : { ...node, children: node.children.map(replace) };
+        commitActive({
+          tree: replace(tree),
+          focusedLeafId: existing.id,
+          zoomedLeafId: null,
+        });
+        return existing.id;
+      }
+      // Anchor to the conversation that invoked the tool. A background event
+      // that is not represented in this screen falls back to the focused pane,
+      // keeping the request visible without inventing a new Screen.
+      const owner =
+        leaves(tree).find((leaf) => leaf.sessionId === sessionId && !leaf.artifact) ??
+        (focusedLeafId ? findLeaf(tree, focusedLeafId) : null) ??
+        leaves(tree)[0];
+      if (!owner) return null;
+
+      let target = owner;
+      let edge: DockEdge = placement === "bottom" ? "bottom" : "right";
+      if (placement === "bottom-right" && tree.kind === "split") {
+        // Use the visually last cell as the lower-right anchor. On a row,
+        // stack below the rightmost cell; on a column, dock right of the
+        // bottommost cell. A single-pane screen gracefully becomes a right
+        // split because there is no meaningful empty upper-right quadrant.
+        const orderedLeaves = leaves(tree);
+        target = orderedLeaves[orderedLeaves.length - 1] ?? owner;
+        edge = tree.dir === "row" ? "bottom" : "right";
+      }
+      const leaf = makeArtifactLeaf(sessionId, artifact);
+      commitActive({
+        tree: insertLeaf(tree, target.id, edge, leaf),
+        focusedLeafId: leaf.id,
+        zoomedLeafId: null,
+      });
+      return leaf.id;
+    },
     moveLeaf: (leafId, targetLeafId, edge) => {
       if (leafId === targetLeafId) return;
       const { tree, focusedLeafId } = get();
@@ -525,7 +645,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => {
       get().pinEphemeral();
       // Insert a copy at the destination, then remove the original. A fresh id
       // keeps the two operations from colliding on one id mid-tree.
-      const clone = makeLeaf(moved.sessionId);
+      const clone = cloneLeaf(moved);
       const inserted = insertLeaf(tree, targetLeafId, edge, clone);
       const removed = removeLeaf(inserted, leafId);
       const nextTree = removed ? removed.tree : inserted;
@@ -547,7 +667,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => {
         const active = s.groups.find((g) => g.id === s.activeGroupId)!;
         // Same-group drops go through moveLeaf, not here.
         if (source.id === active.id) return {};
-        const clone = makeLeaf(moved.sessionId);
+        const clone = cloneLeaf(moved);
         // Dock the clone into the active group: fill an empty group, else insert
         // beside the target leaf (bail if the target vanished mid-drag).
         let activeTree: PaneNode;

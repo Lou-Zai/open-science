@@ -258,6 +258,17 @@ describe("OpenCodeClient ↔ OpenCode server", () => {
     expect(seen[0]).toBe("Basic " + Buffer.from("opencode:pw-secret").toString("base64"));
   });
 
+  it("gives a host-created dedicated session its artifact title", async () => {
+    let body: unknown;
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      body = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ id: "ses_dedicated" }), { status: 200 });
+    };
+    const client = new OpenCodeClient({ baseUrl: "http://127.0.0.1:1", fetchImpl });
+    await expect(client.createSession("Result review")).resolves.toBe("ses_dedicated");
+    expect(body).toEqual({ title: "Result review" });
+  });
+
   it("keeps the EventSource stream when a password is set, authenticating via auth_token", async () => {
     // EventSource cannot set headers, but it is the reliable SSE path in the
     // WKWebView — the server accepts the same Basic payload as ?auth_token=.
@@ -339,7 +350,7 @@ describe("OpenCodeClient ↔ OpenCode server", () => {
 });
 
 describe("per-prompt agent pinning", () => {
-  it("sends the optional agent field exactly when passed", async () => {
+  it("sends the host presentation contract and the optional agent field", async () => {
     const client = new OpenCodeClient({ baseUrl: `http://127.0.0.1:${server.port}` });
     await client.connect();
     const sessionId = await client.createSession();
@@ -353,7 +364,12 @@ describe("per-prompt agent pinning", () => {
       agent: "plan",
       parts: [{ type: "text", text: "plan the analysis" }],
     });
-    // Build mode stays byte-identical to before: no agent key at all.
+    expect(bodies[0].system).toContain("call present_artifact with display=\"inline\"");
+    expect(bodies[0].system).toContain("target=\"new-screen\"");
+    expect(bodies[0].system).toContain("target=\"new-session\"");
+    expect(bodies[0].system).toContain("Never claim an artifact is displayed");
+    expect(bodies[1].system).toBe(bodies[0].system);
+    // Build mode carries no agent key.
     expect(bodies[1]).not.toHaveProperty("agent");
     client.close();
   });

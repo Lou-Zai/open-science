@@ -11,6 +11,11 @@
     "splitRight": "Dividir a la derecha — abre una nueva sesión al lado",
     "splitDown": "Dividir abajo — abre una nueva sesión debajo",
     "closePane": "Cerrar este panel",
+    "confirmClose": {
+      "title": "¿Cerrar este panel?",
+      "body": "Esto solo quita el panel de esta pantalla. La sesión, el historial de conversación y los archivos del espacio de trabajo se conservan.",
+      "action": "Cerrar panel"
+    },
     "zoom": "Zoom de este panel",
     "empty": {
       "title": "Pantalla vacía",

@@ -1,9 +1,12 @@
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { MIN_SIZE, leaves, useLayoutStore, type DockEdge, type PaneNode, type PaneSplit } from "@/lib/layout";
 import { useDragDivider } from "@/lib/useDragDivider";
 import { useDragPane } from "@/lib/dragPane";
 import { cn } from "@/lib/cn";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SessionView } from "./SessionView";
+import { PresentedArtifactPane } from "./PresentedArtifactPane";
 
 /**
  * Ghostty-style recursive tiling renderer. A split becomes a flex row/column of
@@ -25,7 +28,7 @@ export function PaneTree() {
   if (zoomedLeafId) {
     const zoomed = allLeaves.find((l) => l.id === zoomedLeafId);
     if (zoomed) {
-      return <Leaf leafId={zoomed.id} sessionId={zoomed.sessionId} zoom={zoomed.zoom ?? 1} focused solo />;
+      return <Leaf leaf={zoomed} zoom={zoomed.zoom ?? 1} focused solo />;
     }
   }
 
@@ -44,8 +47,7 @@ function Node({
   if (node.kind === "leaf") {
     return (
       <Leaf
-        leafId={node.id}
-        sessionId={node.sessionId}
+        leaf={node}
         // Tiled panes are narrow → default to 75% unless the user set a zoom.
         zoom={node.zoom ?? (solo ? 1 : 0.75)}
         focused={node.id === focusedLeafId}
@@ -183,18 +185,19 @@ function Divider({
 }
 
 function Leaf({
-  leafId,
-  sessionId,
+  leaf,
   zoom,
   focused,
   solo,
 }: {
-  leafId: string;
-  sessionId: string | null;
+  leaf: Extract<PaneNode, { kind: "leaf" }>;
   zoom: number;
   focused: boolean;
   solo: boolean;
 }) {
+  const leafId = leaf.id;
+  const { t } = useTranslation("session");
+  const [confirmClose, setConfirmClose] = useState(false);
   const focusLeaf = useLayoutStore((s) => s.focusLeaf);
   const closePane = useLayoutStore((s) => s.closePane);
   return (
@@ -215,15 +218,36 @@ function Leaf({
     >
       {/* GroupTabs owns the window titlebar on desktop, so panes never do.
           The sole pane can't be closed (nothing to promote) → no ✕. */}
-      <SessionView
-        sessionId={sessionId}
-        leafId={leafId}
-        focused={focused}
-        chromeAsTitlebar={false}
-        zoom={zoom}
-        solo={solo}
-        onClose={solo ? undefined : () => closePane(leafId)}
-      />
+      {leaf.artifact && leaf.sessionId ? (
+        <PresentedArtifactPane
+          artifact={leaf.artifact}
+          leafId={leafId}
+          sessionId={leaf.sessionId}
+          onClose={() => closePane(leafId)}
+        />
+      ) : (
+        <SessionView
+          sessionId={leaf.sessionId}
+          leafId={leafId}
+          focused={focused}
+          chromeAsTitlebar={false}
+          zoom={zoom}
+          solo={solo}
+          onClose={solo ? undefined : () => setConfirmClose(true)}
+        />
+      )}
+      {confirmClose && (
+        <ConfirmDialog
+          title={t("group.confirmClose.title")}
+          body={t("group.confirmClose.body")}
+          confirmLabel={t("group.confirmClose.action")}
+          onConfirm={() => {
+            setConfirmClose(false);
+            closePane(leafId);
+          }}
+          onCancel={() => setConfirmClose(false)}
+        />
+      )}
       <DropOverlay leafId={leafId} />
     </div>
   );
