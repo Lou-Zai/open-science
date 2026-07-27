@@ -1,5 +1,21 @@
 # Progress
 
+2026-07-26 20:26 · chore(skills): desktop packaging now pins `ai4s-research/ai4s-skills@2519e8d`, including ordered citations, flexible figure/table placement, publication-layout QA, and recency-profile checks; the exact GitHub archive was fetched and its bundled revision verified.
+
+2026-07-26 20:14 · fix(session): Stop now always reaches the server (#59) — the interrupt is no longer gated on this app's in-memory running lock, a failed abort keeps the lock and surfaces the error instead of claiming "Interrupted", streamed activity and server history re-seed a lock the app lost (reload), and an interrupt drops the pending approval the stopped turn was blocked on, which OpenCode deletes without publishing any resolved event; 656 frontend tests (8 new, each verified to fail without its fix), typecheck, lint, production build, and mounted DMG verification pass (`ae5fd94000a6e0396abc29dbdd06532bffbe7b20c5013eaa52750b0b95c9a776`).
+
+2026-07-26 02:52 · fix(publication-skill): the first-party publication skill now governs figures and tables delegated by paper, survey, and experiment workflows, rejects generic diagram-tool output, resolves wide tables structurally before shrinking, and requires rasterized final-size collision/margin QA; skill validation, 648 frontend tests, typecheck, lint, production build, and mounted DMG verification pass (`98b0593464facbb8f764cd47099128ad8d5995e00466df97f8dc59d6a6ac6979`).
+
+2026-07-26 00:32 · correction(output-quality): reverted the mis-scoped equation/chart generation rules after confirming the supplied examples belonged to another project, restoring the existing publication style and presentation-only agent contract; 647 frontend tests, typecheck, lint, production build, and mounted DMG resource verification pass (`a62ad701f32b284630dc09aa7e134b37827d1abe0406e619b41522b351a92576`).
+
+2026-07-25 22:57 · fix(layout): Screen-level Session and AI Artifact panels now require an in-app confirmation before `×` removes them, explicitly preserving the session, conversation history, and workspace files; 647 frontend tests, typecheck, lint, production build, and mounted DMG verification pass (`b0891b502ac41495baf04203c4553ae00d9c1b95ab19375bfda9bdceb9d61d52`).
+
+2026-07-25 20:24 · feat(artifacts): AI presentation panels now share the tiled Session pane's 32px/faint-border header baseline, and `present_artifact` can target the current Screen, a named new Screen with the source conversation, or a real titled dedicated Agent Session in a new Screen; 645 frontend tests, 128 Rust tests, typecheck, lint, real OpenCode tool-schema validation, production build, and mounted DMG verification pass (`154465524b4e1114f3d2d34504980ad0a3ce71e55831cbffc62c21935615bb9c`).
+
+2026-07-25 19:38 · fix(artifacts): normal prompts now carry an explicit host-presentation contract so requests to show a generated/existing file must call `present_artifact`, and the tool forbids treating reads or path links as successful display; 640 frontend tests, 128 Rust tests, typecheck, lint, real OpenCode prompt-schema validation, production build, and mounted DMG resource verification pass (`b0fb89e6f62adae5d7c634a7a5a4811397820da095cb4f7f283107ce7c556ba6`).
+
+2026-07-25 10:32 · feat(artifacts): added the native `present_artifact` agent tool with inline chat rendering and AI-created Screen panels (right, bottom, or bottom-right), responsive web/mobile fallback, persisted layouts, and same-file refresh; 639 frontend tests, 128 Rust tests, typecheck, lint, production build, real OpenCode discovery, and a mounted 77 MB Apple Silicon DMG resource check pass (`d6d626c7e9a3962b18c9585b1c4ee57b887bb18f719c29b5967da339a693f9bb`).
+
 2026-07-25 04:22 · feat(session): agent answers now expose one-click copy feedback, existing sessions open at the latest messages with a non-yanking ↓ Latest control, and global/session file browsers persist their last directory with safe root fallback; 634 tests, typecheck, lint, production build, and a verified 77 MB Apple Silicon DMG pass (`85a64967dcb79b2b84672ed779831548dc83700c00ecbdd1e19c86c927a9fe4e`).
 
 2026-07-24 20:53 · test build: packaged the notebook-header responsive fix as a verified 77 MB Apple Silicon DMG (`Open Science_0.3.0_aarch64.dmg`, SHA-256 `ee91e080500828c50a45ae6790ba323c075b0926c0da2039844a89e46a33dfa5`).
