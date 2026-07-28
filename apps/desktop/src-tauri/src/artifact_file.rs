@@ -459,10 +459,47 @@ pub fn write_workspace_file(
     Ok(())
 }
 
-/// Pick local files via the native open dialog and copy them into the agent
-/// workspace so the agent can read them. Returns workspace-relative names
-/// (deduplicated as name-1.ext, name-2.ext on collision); empty on cancel.
-/// Files already inside the workspace attach in place without copying.
+/// Attach local files to the workspace and return their workspace-relative
+/// names. A source already inside the workspace is referenced in place; anything
+/// else is copied to the workspace root under a deduplicated name (name-1.ext,
+/// name-2.ext on collision). Non-files (folders, unreadable or dangling paths)
+/// are skipped. Requests a git snapshot only when something was actually copied
+/// in — an in-place reference adds no bytes to the workspace.
+///
+/// Shared by both attach paths (native picker and drag-and-drop): they differ
+/// only in how they obtain the paths, and the last two bugs here were both this
+/// logic having been fixed in one of them and not the other.
+fn attach_paths(ws: &Path, srcs: impl IntoIterator<Item = PathBuf>) -> Result<Vec<String>, String> {
+    // Canonicalize the workspace root once so we can tell whether a source path
+    // already resolves to somewhere inside it (through symlinks / `..` / case).
+    let ws_canon = ws.canonicalize().unwrap_or_else(|_| ws.to_path_buf());
+    let mut added = Vec::new();
+    let mut copied = false;
+    for src in srcs {
+        if !src.is_file() {
+            continue; // attach files only, not folders
+        }
+        // Already inside the workspace → attach its workspace-relative path in
+        // place rather than copying it to the root as a duplicate.
+        if let Some(rel) = workspace_relative(&ws_canon, &src) {
+            added.push(rel);
+            continue;
+        }
+        let name = src.file_name().ok_or("path has no file name")?.to_string_lossy().to_string();
+        let dst = unique_name(ws, &name);
+        std::fs::copy(&src, ws.join(&dst)).map_err(|e| format!("copy failed: {e}"))?;
+        added.push(dst);
+        copied = true;
+    }
+    if copied {
+        crate::git_snapshot::request_snapshot(ws);
+    }
+    Ok(added)
+}
+
+/// Pick local files via the native open dialog and attach them to the agent
+/// workspace so the agent can read them. Returns workspace-relative names; empty
+/// on cancel. See `attach_paths` for the in-place-vs-copy rule.
 #[tauri::command]
 pub async fn add_files_to_workspace(app: AppHandle) -> Result<Vec<String>, String> {
     use tauri_plugin_dialog::DialogExt;
@@ -470,33 +507,11 @@ pub async fn add_files_to_workspace(app: AppHandle) -> Result<Vec<String>, Strin
         return Ok(Vec::new()); // user cancelled
     };
     let ws = workspace_dir(&app)?;
-    // Canonicalize once so we can tell whether a picked path already resolves
-    // to somewhere inside the workspace (through symlinks / `..` / case).
-    let ws_canon = ws.canonicalize().unwrap_or_else(|_| ws.clone());
-    let mut added = Vec::new();
-    let mut copied = false;
-    for file in picked {
-        let src = file.into_path().map_err(|e| e.to_string())?;
-        // Already inside the workspace → attach its workspace-relative path in
-        // place rather than copying it to the root.
-        if let Some(rel) = workspace_relative(&ws_canon, &src) {
-            added.push(rel);
-            continue;
-        }
-        let name = src
-            .file_name()
-            .ok_or("picked path has no file name")?
-            .to_string_lossy()
-            .to_string();
-        let dst_name = unique_name(&ws, &name);
-        std::fs::copy(&src, ws.join(&dst_name)).map_err(|e| format!("copy failed: {e}"))?;
-        added.push(dst_name);
-        copied = true;
-    }
-    if copied {
-        crate::git_snapshot::request_snapshot(&ws);
-    }
-    Ok(added)
+    let srcs = picked
+        .into_iter()
+        .map(|f| f.into_path().map_err(|e| e.to_string()))
+        .collect::<Result<Vec<PathBuf>, String>>()?;
+    attach_paths(&ws, srcs)
 }
 
 /// Write text content into the workspace under `filename` (deduplicated as
@@ -520,41 +535,14 @@ pub fn add_text_to_workspace(
     Ok(name)
 }
 
-/// Copy explicit local file paths into the workspace (deduplicated). Used by
-/// drag-and-drop, which hands us OS paths — the native-picker path is
-/// `add_files_to_workspace`. A path that already lives inside the workspace is
-/// referenced in place (no copy) so dragging a workspace file back into the
-/// composer doesn't spawn a duplicate. Directories and unreadable entries are
-/// skipped.
+/// Attach explicit local file paths to the workspace. Used by drag-and-drop,
+/// which hands us OS paths — the native-picker path is `add_files_to_workspace`.
+/// See `attach_paths` for the in-place-vs-copy rule; dragging a workspace file
+/// back into the composer references it in place instead of duplicating it.
 #[tauri::command(async)]
 pub fn add_paths_to_workspace(app: AppHandle, paths: Vec<String>) -> Result<Vec<String>, String> {
     let ws = workspace_dir(&app)?;
-    // Canonicalize the workspace root once so we can tell whether a dropped path
-    // already resolves to somewhere inside it (through symlinks / `..` / case).
-    let ws_canon = ws.canonicalize().unwrap_or_else(|_| ws.clone());
-    let mut added = Vec::new();
-    let mut copied = false;
-    for p in paths {
-        let src = Path::new(&p);
-        if !src.is_file() {
-            continue; // attach files only, not folders
-        }
-        // Already inside the workspace → attach its workspace-relative path in
-        // place rather than copying it to the root.
-        if let Some(rel) = workspace_relative(&ws_canon, src) {
-            added.push(rel);
-            continue;
-        }
-        let name = src.file_name().ok_or("path has no file name")?.to_string_lossy().to_string();
-        let dst = unique_name(&ws, &name);
-        std::fs::copy(src, ws.join(&dst)).map_err(|e| format!("copy failed: {e}"))?;
-        added.push(dst);
-        copied = true;
-    }
-    if copied {
-        crate::git_snapshot::request_snapshot(&ws);
-    }
-    Ok(added)
+    attach_paths(&ws, paths.into_iter().map(PathBuf::from))
 }
 
 /// Write binary content (base64-encoded) into the workspace under `filename`
@@ -691,10 +679,10 @@ fn base64_encode(input: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        base64_decode, base64_encode, dir_entries, encode_for_preview, exceeds_preview_cap,
-        locate_under, mime_for, open_url, unique_name, workspace_relative,
+        attach_paths, base64_decode, base64_encode, dir_entries, encode_for_preview,
+        exceeds_preview_cap, locate_under, mime_for, open_url, unique_name, workspace_relative,
     };
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn base64_round_trips_arbitrary_bytes() {
@@ -843,6 +831,40 @@ mod tests {
 
         let _ = std::fs::remove_file(&outside);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn attach_paths_references_in_place_and_copies_from_outside() {
+        // The rule both attach paths (picker and drag-and-drop) now share: a
+        // workspace file keeps its relative path, an outside file is copied to
+        // the root under a deduplicated name, and folders are skipped.
+        let base = std::env::temp_dir().join(format!("ai4s-attach-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let ws = base.join("workspace");
+        std::fs::create_dir_all(ws.join("results/foo")).unwrap();
+        std::fs::create_dir_all(base.join("elsewhere")).unwrap();
+        std::fs::write(ws.join("results/foo/deep.csv"), "in").unwrap();
+        std::fs::write(ws.join("taken.csv"), "already here").unwrap();
+        std::fs::write(base.join("elsewhere/outside.csv"), "out").unwrap();
+        std::fs::write(base.join("elsewhere/taken.csv"), "collides").unwrap();
+
+        let srcs: Vec<PathBuf> = vec![
+            ws.join("results/foo/deep.csv"),    // inside → in place, no copy
+            base.join("elsewhere/outside.csv"), // outside → copied to the root
+            base.join("elsewhere/taken.csv"),   // outside, name collides → -1
+            base.join("elsewhere"),             // a folder → skipped
+            base.join("no/such.csv"),           // missing → skipped
+        ];
+        let added = attach_paths(&ws, srcs).unwrap();
+
+        assert_eq!(added, vec!["results/foo/deep.csv", "outside.csv", "taken-1.csv"]);
+        // The in-place file was referenced, not duplicated at the root.
+        assert!(!ws.join("deep.csv").exists());
+        assert_eq!(std::fs::read_to_string(ws.join("outside.csv")).unwrap(), "out");
+        assert_eq!(std::fs::read_to_string(ws.join("taken.csv")).unwrap(), "already here");
+        assert_eq!(std::fs::read_to_string(ws.join("taken-1.csv")).unwrap(), "collides");
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
