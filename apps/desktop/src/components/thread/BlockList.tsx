@@ -28,6 +28,7 @@ export function renderBlock(
   i: number,
   handlers?: BlockHandlers,
   liveReasoningIndex?: number,
+  workspaceDirectory?: string,
 ) {
   switch (block.kind) {
     case "user":
@@ -55,7 +56,7 @@ export function renderBlock(
       return <FigureBlock key={i} block={block} onComment={handlers?.onFigureComment} />;
     case "artifact":
       return block.presentation?.mode === "inline" && !block.filename.endsWith(".ipynb") ? (
-        <InlineArtifact key={i} block={block} />
+        <InlineArtifact key={i} block={block} workspaceDirectory={workspaceDirectory} />
       ) : (
         <ArtifactCard key={i} block={block} onOpen={handlers?.onArtifactOpen} />
       );
@@ -74,12 +75,15 @@ export const BlockList = memo(function BlockList({
   blocks,
   handlers,
   liveReasoningIndex,
+  workspaceDirectory,
 }: {
   blocks: ThreadBlock[];
   handlers?: BlockHandlers;
   /** Global index of the reasoning block streaming right now (live session);
    *  that block renders expanded and unfolds/collapses itself as it streams. */
   liveReasoningIndex?: number;
+  /** Workspace directory that owns inline artifact files. */
+  workspaceDirectory?: string;
 }) {
   // Runs of quiet tool steps render as one collapsible group (Codex-style);
   // everything else — text, artifacts, prominent tool cards — on its own.
@@ -94,7 +98,7 @@ export const BlockList = memo(function BlockList({
             liveReasoningIndex={liveReasoningIndex}
           />
         ) : (
-          renderBlock(item.block, item.index, handlers, liveReasoningIndex)
+          renderBlock(item.block, item.index, handlers, liveReasoningIndex, workspaceDirectory)
         ),
       )}
     </>

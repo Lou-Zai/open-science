@@ -12,6 +12,7 @@ export function InspectorShell({
   onEvaluate,
   controls,
   compactHeader = false,
+  workspaceDirectory,
 }: {
   inspector: Inspector;
   onClose: () => void;
@@ -21,6 +22,8 @@ export function InspectorShell({
   controls?: React.ReactNode;
   /** Match the compact chrome of a tiled Session pane. */
   compactHeader?: boolean;
+  /** Workspace directory that owns session-scoped files. */
+  workspaceDirectory?: string;
 }) {
   return (
     <div className="h-full border-l border-border bg-surface" data-variant={inspector.variant}>
@@ -36,6 +39,7 @@ export function InspectorShell({
       {inspector.variant === "file" && (
         <FilePreviewInspector
           data={inspector}
+          workspaceDirectory={workspaceDirectory}
           onClose={onClose}
           controls={controls}
           compactHeader={compactHeader}

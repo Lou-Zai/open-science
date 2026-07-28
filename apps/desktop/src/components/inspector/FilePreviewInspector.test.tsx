@@ -1,7 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { FilePreviewInspector as FilePreviewInspectorT } from "@ai4s/shared";
+import { readArtifact } from "@/lib/artifactFile";
+import { useRuntimeStore } from "@/lib/runtime";
 import { FilePreviewInspector, PreviewError } from "./FilePreviewInspector";
 
 // The markdown tests below carry inline `content`, so they never hit
@@ -79,6 +81,48 @@ describe("FilePreviewInspector — binary file behind a text preview", () => {
     render(<FilePreviewInspector data={bin} onClose={() => {}} />);
     expect(await screen.findByText(/binary and has no preview/)).toBeInTheDocument();
     expect(screen.queryByText(/available in the desktop app/)).not.toBeInTheDocument();
+  });
+});
+
+describe("FilePreviewInspector — session workspace scope", () => {
+  const deck: FilePreviewInspectorT = {
+    variant: "file",
+    path: "GPT-5.6-Luna-self-introduction-premium.pptx",
+    filename: "GPT-5.6-Luna-self-introduction-premium.pptx",
+    artifact: "report",
+  };
+
+  it("waits for the owning session workspace and never reloads from another pane's root", async () => {
+    const read = vi.mocked(readArtifact);
+    read.mockClear();
+    act(() => {
+      useRuntimeStore.setState({ workspace: "/workspaces/other-session" });
+    });
+
+    render(
+      <FilePreviewInspector
+        data={deck}
+        workspaceDirectory="/workspaces/luna-session"
+      />,
+    );
+    expect(read).not.toHaveBeenCalled();
+
+    act(() => {
+      useRuntimeStore.setState({ workspace: "/workspaces/luna-session" });
+    });
+    await waitFor(() => {
+      expect(read).toHaveBeenCalledWith(deck.path, undefined);
+    });
+    expect(read).toHaveBeenCalledTimes(1);
+
+    // Focusing a different split pane changes the global active workspace.
+    // The already-bound Luna preview must neither 404 nor read a same-named
+    // file from that other directory.
+    act(() => {
+      useRuntimeStore.setState({ workspace: "/workspaces/third-session" });
+    });
+    await Promise.resolve();
+    expect(read).toHaveBeenCalledTimes(1);
   });
 });
 

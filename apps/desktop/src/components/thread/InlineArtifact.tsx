@@ -8,8 +8,10 @@ import { FilePreviewInspector } from "@/components/inspector/FilePreviewInspecto
  *  modes never disagree about how a file type should look. */
 export const InlineArtifact = memo(function InlineArtifact({
   block,
+  workspaceDirectory,
 }: {
   block: ArtifactBlock;
+  workspaceDirectory?: string;
 }) {
   const inspector = fileInspectorFromBlock(block);
   if (inspector.variant === "notebook-file") return null;
@@ -17,6 +19,7 @@ export const InlineArtifact = memo(function InlineArtifact({
     <div className="h-[min(460px,58vh)] min-h-72 w-full">
       <FilePreviewInspector
         data={inspector}
+        workspaceDirectory={workspaceDirectory}
         embedded
         title={block.presentation?.title}
       />

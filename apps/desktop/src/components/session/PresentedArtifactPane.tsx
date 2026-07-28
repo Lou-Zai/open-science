@@ -5,6 +5,7 @@ import type { ArtifactBlock } from "@ai4s/shared";
 import { fileInspectorFromBlock } from "@/lib/artifacts";
 import { startPaneDrag } from "@/lib/dragPane";
 import { useLayoutStore } from "@/lib/layout";
+import { useRuntimeStore } from "@/lib/runtime";
 import { FilePreviewInspector } from "@/components/inspector/FilePreviewInspector";
 import { InspectorShell } from "@/components/inspector/InspectorShell";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -24,6 +25,11 @@ export function PresentedArtifactPane({
   const [confirmClose, setConfirmClose] = useState(false);
   const toggleZoom = useLayoutStore((s) => s.toggleZoom);
   const zoomed = useLayoutStore((s) => s.zoomedLeafId === leafId);
+  const workspaceDirectory = useRuntimeStore(
+    (s) =>
+      s.sessions.find((session) => session.id === sessionId)?.directory ??
+      (s.currentId === sessionId ? s.workspace ?? undefined : undefined),
+  );
   const inspector = fileInspectorFromBlock(artifact);
   const controls = (
     <button
@@ -42,6 +48,7 @@ export function PresentedArtifactPane({
         <FilePreviewInspector
           key={artifact.presentation?.requestId ?? artifact.path}
           data={inspector}
+          workspaceDirectory={workspaceDirectory}
           title={artifact.presentation?.title}
           onClose={() => setConfirmClose(true)}
           controls={controls}
@@ -55,6 +62,7 @@ export function PresentedArtifactPane({
     ) : (
       <InspectorShell
         inspector={inspector}
+        workspaceDirectory={workspaceDirectory}
         onClose={() => setConfirmClose(true)}
         controls={controls}
         compactHeader

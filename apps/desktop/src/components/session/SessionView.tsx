@@ -329,6 +329,7 @@ export function SessionView({
   const inspectorNode = activeArtifact ? (
     <InspectorShell
       inspector={fileInspectorFromBlock(activeArtifact)}
+      workspaceDirectory={sessionDir ?? undefined}
       onClose={() => closeArtifact(sid ?? undefined)}
       onEvaluate={onEvaluate}
       controls={<MaximizePaneButton />}
@@ -593,6 +594,7 @@ export function SessionView({
                 blocks={thread.blocks}
                 handlers={handlers}
                 liveReasoningIndex={liveReasoningIndex}
+                workspaceDirectory={sessionDir ?? undefined}
               />
             )}
             {working && (

@@ -44,6 +44,7 @@ import { PaneTitlebarInset } from "./RightPane";
  */
 export function FilePreviewInspector({
   data,
+  workspaceDirectory,
   onClose,
   controls,
   embedded = false,
@@ -52,6 +53,9 @@ export function FilePreviewInspector({
   onTitlePointerDown,
 }: {
   data: FilePreviewInspectorT;
+  /** Directory that owns this file. Keeps split-pane previews bound to their
+   *  session instead of following whichever session is focused globally. */
+  workspaceDirectory?: string;
   onClose?: () => void;
   /** Pane-level header buttons (e.g. maximize), rendered before Close. */
   controls?: React.ReactNode;
@@ -65,11 +69,17 @@ export function FilePreviewInspector({
   onTitlePointerDown?: React.PointerEventHandler<HTMLSpanElement>;
 }) {
   const { t } = useTranslation(["inspector", "common"]);
-  // Web client: scope file reads to the VIEWED session's folder (from its
-  // SessionMeta) — over the network that isn't the host's active workspace.
-  const sessionDir = useRuntimeStore(
-    (s) => (data.root === "base" ? undefined : s.sessions.find((x) => x.id === s.currentId)?.directory ?? s.workspace ?? undefined),
-  );
+  const activeWorkspace = useRuntimeStore((s) => s.workspace);
+  // Desktop file commands are intentionally scoped to the active workspace.
+  // Focusing another split pane changes that workspace asynchronously; do not
+  // issue a read against the old root, and do not reload a background preview
+  // from the newly focused pane's root.
+  const waitingForWorkspace =
+    !isGatewayWeb &&
+    data.root !== "base" &&
+    workspaceDirectory !== undefined &&
+    activeWorkspace !== null &&
+    activeWorkspace !== workspaceDirectory;
   const kind = previewKindForName(data.filename);
   const needsUrl = kind === "pdf" || kind === "image" || kind === "html" || kind === "video";
   const needsText =
@@ -91,25 +101,32 @@ export function FilePreviewInspector({
   const [tab, setTab] = useState<"preview" | "code">(kind === "text" ? "code" : "preview");
   const [showHistory, setShowHistory] = useState(false);
 
+  // Clear the previous file even when this pane is currently in the background
+  // and must wait for its workspace to become active before loading the next
+  // one. A focus change alone does not touch these values.
   useEffect(() => {
-    let cancelled = false;
     setError(null);
     setLoading(true);
-    // Reset per-file state up front: the same inspector instance is reused when
-    // the user opens a different file, and the async loads below only fill in
-    // what the NEW file needs — without this, the previous file's text/url/bytes
-    // would linger and bleed into the new preview.
     setText(data.content ?? null);
     setUrl(null);
     setBytes(null);
     setDl(null);
+  }, [data.path, data.content, data.root, workspaceDirectory]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (waitingForWorkspace) {
+      return () => {
+        cancelled = true;
+      };
+    }
     (async () => {
       try {
         // Web client: everything flows from one gateway file URL — image/pdf via
         // <img>/<iframe>, text/bytes fetched from it, and it doubles as the
         // open/download link. (readArtifact/preview_url are Tauri-only.)
         if (isGatewayWeb) {
-          const u = await previewUrl(data.path, data.root, sessionDir);
+          const u = await previewUrl(data.path, data.root, workspaceDirectory);
           if (cancelled) return;
           setDl(u);
           if (needsUrl) setUrl(u);
@@ -166,10 +183,21 @@ export function FilePreviewInspector({
     // locale switch mid-load shouldn't re-trigger a network/disk read to refresh
     // an error string.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.path, data.content, data.root, kind, needsUrl, needsText, needsBytes, sessionDir]);
+  }, [
+    data.path,
+    data.content,
+    data.root,
+    kind,
+    needsUrl,
+    needsText,
+    needsBytes,
+    waitingForWorkspace,
+    workspaceDirectory,
+  ]);
 
   // Open in the OS app on desktop; open/download via the browser in web.
   const openOrDownload = () => {
+    if (waitingForWorkspace) return;
     if (isGatewayWeb) {
       if (dl) window.open(dl, "_blank", "noopener");
     } else {
@@ -238,10 +266,11 @@ export function FilePreviewInspector({
           <History size={14} strokeWidth={1.5} />
         </button>
         <button
-          className="text-text hover:opacity-60"
+          className="text-text hover:opacity-60 disabled:cursor-wait disabled:opacity-40"
           aria-label={isGatewayWeb ? t("filePreview.download") : t("filePreview.openExternally")}
           title={isGatewayWeb ? t("filePreview.download") : t("filePreview.openExternallyTitle")}
           onClick={openOrDownload}
+          disabled={waitingForWorkspace}
         >
           {isGatewayWeb ? <Download size={14} strokeWidth={1.5} /> : <ExternalLink size={14} strokeWidth={1.5} />}
         </button>
