@@ -1,5 +1,7 @@
 # Progress
 
+2026-07-27 23:52 · security(deps): closed stale Dependabot alert #1 as inaccurate after verifying `master`'s manifest, lockfile, and installed dependency tree contain only patched `react-router-dom` / `react-router` 7.18.1 from `a0d1300`; GitHub now reports zero open Dependabot alerts.
+
 2026-07-27 23:07 · fix(preview): session and inline artifact previews now stay bound to their owning workspace, wait through cross-session workspace switches instead of reading the previous root, and remain stable when another split pane gains focus; the reported 39 KB Luna PPTX was verified in the logged session directory, 658 frontend tests/typecheck/lint pass, and the read-only-mounted 87 MB arm64 DMG contains the matching release binary (SHA-256 `4c96fd61a03a4bc6d4c8d2a6f3a2cf05bbc8dc82f6d303ce91c0040a1aecf56e`).
 
 2026-07-27 19:30 · chore(deps): upgraded `react-router-dom` 6.30.4 → 7.18.1 (no import changes) to leave the unpatchable v6 open-redirect/XSS advisories GHSA-jjmj-jmhj-qwj2 and GHSA-wrjc-x8rr-h8h6; the one remaining audit hit (GHSA-qwww-vcr4-c8h2, RSC-mode CSRF, needs react-router 8 + React 19) is unreachable — the app ships no RSC/server-action code; 657 frontend tests, typecheck, lint, production build, and a mounted 87 MB DMG check pass (SHA-256 `bbc590c9688cddf32646a1d0634ebc344ba820cce84bee9c8089890b47f48875`).
