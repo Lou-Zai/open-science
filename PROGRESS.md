@@ -1,5 +1,7 @@
 # Progress
 
+2026-07-27 19:30 · chore(deps): upgraded `react-router-dom` 6.30.4 → 7.18.1 (no import changes) to leave the unpatchable v6 open-redirect/XSS advisories GHSA-jjmj-jmhj-qwj2 and GHSA-wrjc-x8rr-h8h6; the one remaining audit hit (GHSA-qwww-vcr4-c8h2, RSC-mode CSRF, needs react-router 8 + React 19) is unreachable — the app ships no RSC/server-action code; 657 frontend tests, typecheck, lint, production build, and a mounted 87 MB DMG check pass (SHA-256 `bbc590c9688cddf32646a1d0634ebc344ba820cce84bee9c8089890b47f48875`).
+
 2026-07-27 07:31 · fix(runtime): fresh desktop profiles now receive the pinned OpenCode plugin SDK from the installer before the goal plugin is registered, removing the blocking first-run npm install from `/event`; 12 runtime tests pass and a clean plugin-enabled event stream reaches first byte in 142 ms with the offline dependency tree.
 
 2026-07-27 01:07 · fix(artifacts): AI panel placement now honors `bottom` — a repeat `present_artifact` call for an open panel moves it to the requested side instead of silently refreshing it in place (unrequested placements still leave the pane where the user put it) — and the `bottom-right` placement is gone from the tool, types, and layout; 657 frontend tests, typecheck, lint, real sidecar tool-schema check (`enum ["right","bottom"]`), and a mounted 77 MB DMG resource check pass (SHA-256 `89cc5c8523ed93ca61198629deebcce2a2edb2a89b796e68e6045e31fcdb1ff9`).
