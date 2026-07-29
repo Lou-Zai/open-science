@@ -2276,8 +2276,9 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       // The turn goes through the normal send path (echo, running lock, error
       // line, stream folding) — hand-rolling the POST left the pane with no
       // message, no spinner and no way to tell a failure from a slow model.
-      // The thread shows what the USER typed; the model gets it wrapped in
-      // instructions, in the user's own language.
+      // Both texts are localized: the thread shows one short ask around what the
+      // user typed, the model gets the full install instructions.
+      const echo = i18n.t("pages:skills.install.echo", { input: text });
       const prompt = i18n.t("pages:skills.install.agentPrompt", { input: text });
       const model = modelForSession(get(), id).model;
       // Deliberately not awaited: the caller opens the new pane immediately and
@@ -2285,7 +2286,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       void performTurn(
         set,
         get,
-        text,
+        echo,
         (sid) => withRetry(() => client!.sendPrompt(sid, prompt, undefined, model)),
         false,
         false,

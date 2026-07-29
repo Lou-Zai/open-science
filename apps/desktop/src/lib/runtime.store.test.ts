@@ -1546,9 +1546,13 @@ describe("skill install", () => {
     // The new screen has one pane, bound to the install session.
     expect(leaves(layout.tree!).map((l) => l.sessionId)).toEqual(["ses_new"]);
 
-    // The thread shows the user's own words; the model gets them wrapped.
+    // The thread shows one short localized ask around the user's own words; the
+    // model gets them wrapped in the full instructions.
     const blocks = useRuntimeStore.getState().threads["ses_new"].blocks;
-    expect(blocks[0]).toMatchObject({ kind: "user", text: "找到 dbs 这个 skills，安装" });
+    const shown = (blocks[0] as { kind: string; text: string }).text;
+    expect(blocks[0].kind).toBe("user");
+    expect(shown).toContain("找到 dbs 这个 skills，安装");
+    expect(shown).not.toBe("找到 dbs 这个 skills，安装"); // carries the ask too
     const calls = mocks.sendPromptFullSpy.mock.calls;
     const sent = calls[calls.length - 1][1] as string;
     expect(sent).toContain("找到 dbs 这个 skills，安装");
