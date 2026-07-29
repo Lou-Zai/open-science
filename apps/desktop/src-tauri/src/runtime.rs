@@ -554,10 +554,12 @@ pub fn workspace_skill_names(app: AppHandle) -> Result<Vec<String>, String> {
         .collect())
 }
 
-/// Copy skills the agent just wrote into the workspace over to the profile's
+/// Move skills the agent just wrote into the workspace over to the profile's
 /// user skills dir, so they outlive that session's folder. `known` is the
 /// pre-install listing — a pinned project's own skills stay project-scoped.
-/// Restarts the sidecar when anything was adopted; returns the adopted names.
+/// The workspace copy is dropped once the profile copy is in place: leaving both
+/// would give OpenCode two skills with the same name, and it then picks whichever
+/// it scanned last. Restarts the sidecar when anything moved; returns the names.
 #[tauri::command(async)]
 pub fn adopt_workspace_skills(
     app: AppHandle,
@@ -576,6 +578,11 @@ pub fn adopt_workspace_skills(
             std::fs::remove_dir_all(&dst).map_err(|e| e.to_string())?;
         }
         copy_dir(&src, &dst).map_err(|e| e.to_string())?;
+        // Only now that the profile copy exists — a failed cleanup leaves a
+        // harmless duplicate, never a lost skill.
+        if let Err(e) = std::fs::remove_dir_all(&src) {
+            eprintln!("could not remove the workspace copy of {name}: {e}");
+        }
         adopted.push(name.to_string());
     }
     if !adopted.is_empty() {

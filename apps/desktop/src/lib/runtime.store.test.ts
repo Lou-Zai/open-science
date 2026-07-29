@@ -1523,6 +1523,40 @@ describe("skill install", () => {
     expect(mocks.sendPromptSpy).not.toHaveBeenCalled();
   });
 
+  it("opens the agent install in its OWN screen, echoing what the user typed", async () => {
+    // A pane the user is working in must not be taken over by an install.
+    const busy = makeLeaf("ses_busy");
+    useLayoutStore.setState({
+      groups: [{ id: "g-busy", name: "", tree: busy, focusedLeafId: busy.id, zoomedLeafId: null }],
+      activeGroupId: "g-busy",
+      tree: busy,
+      focusedLeafId: busy.id,
+      zoomedLeafId: null,
+      ephemeralGroupId: null,
+    });
+
+    await useRuntimeStore.getState().installSkill("找到 dbs 这个 skills，安装");
+    await new Promise((r) => setTimeout(r, 0));
+
+    const layout = useLayoutStore.getState();
+    expect(layout.groups).toHaveLength(2);
+    expect(layout.activeGroupId).not.toBe("g-busy");
+    // The busy pane still shows its own session.
+    expect(leaves(layout.groups[0].tree!)[0].sessionId).toBe("ses_busy");
+    // The new screen has one pane, bound to the install session.
+    expect(leaves(layout.tree!).map((l) => l.sessionId)).toEqual(["ses_new"]);
+
+    // The thread shows the user's own words; the model gets them wrapped.
+    const blocks = useRuntimeStore.getState().threads["ses_new"].blocks;
+    expect(blocks[0]).toMatchObject({ kind: "user", text: "找到 dbs 这个 skills，安装" });
+    const calls = mocks.sendPromptFullSpy.mock.calls;
+    const sent = calls[calls.length - 1][1] as string;
+    expect(sent).toContain("找到 dbs 这个 skills，安装");
+    expect(sent.length).toBeGreaterThan("找到 dbs 这个 skills，安装".length);
+    // Locked while the turn runs, so the pane shows a spinner and a Stop.
+    expect(useRuntimeStore.getState().runningSessions["ses_new"]).toBe(true);
+  });
+
   it("hands a URL to an agent session and adopts what it wrote when idle", async () => {
     const result = await useRuntimeStore
       .getState()
@@ -1530,6 +1564,7 @@ describe("skill install", () => {
 
     expect(result).toEqual({ kind: "session", id: "ses_new" });
     expect(mocks.installSkillMarkdown).not.toHaveBeenCalled();
+    await new Promise((r) => setTimeout(r, 0));
     expect(mocks.sendPromptSpy).toHaveBeenCalled();
     // Adoption waits for the turn to finish...
     expect(mocks.adoptWorkspaceSkills).not.toHaveBeenCalled();

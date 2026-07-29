@@ -65,7 +65,8 @@
       "cta": "Skill installieren",
       "hintConnected": "Eine eingefügte SKILL.md wird direkt installiert; alles andere öffnet eine Agentensitzung. Installierte Skills stehen in jedem Arbeitsbereich zur Verfügung.",
       "hintDisconnected": "Verbinden Sie zuerst die Runtime.",
-      "installed": "„{{name}}“ installiert — in jedem Arbeitsbereich verfügbar."
+      "installed": "„{{name}}“ installiert — in jedem Arbeitsbereich verfügbar.",
+      "agentPrompt": "Der Nutzer hat dies in das Feld zum Installieren von Skills eingegeben:\n\n---\n{{input}}\n---\n\nBitte hilf geduldig bei der Installation: Finde heraus, welcher Skill gemeint ist (URL abrufen, suchen oder bei Unklarheit nachfragen), und speichere ihn dann als Skill-Datei unter .opencode/skills/<name>/SKILL.md innerhalb dieses Arbeitsbereichs — niemals außerhalb; die App stellt ihn danach in jedem Arbeitsbereich bereit. Das Format ist im Skill customize-opencode beschrieben. Antworte am Ende mit dem Namen des installierten Skills."
     },
     "environment": {
       "sectionTitle": "Wissenschaftliche Umgebung",

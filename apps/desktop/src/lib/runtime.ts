@@ -2262,27 +2262,35 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
           known: await workspaceSkillNames().catch(() => []),
         };
       }
-      const id = await client.createSession();
+      const title = i18n.t("pages:skills.install.sectionTitle");
+      const id = await client.createSession(title);
       if (pendingSkillInstall) pendingSkillInstall.sessionId = id;
-      set((s) => ({ currentId: id, threads: { ...s.threads, [id]: { ...emptyThread(), loaded: true } } }));
       await get().refreshSessions();
-      const prompt =
-        "Install the following as an OpenCode skill for this project. Use the " +
-        "customize-opencode skill. If it is a URL, fetch it. Save it as a skill file under " +
-        ".opencode/skills/<name>/SKILL.md — inside this workspace, never outside it (the app " +
-        "then makes it available in every workspace). Then reply with the installed skill's " +
-        "name.\n\n---\n" +
-        text;
-      set((s) => {
-        const cur = s.threads[id];
-        return {
-          threads: {
-            ...s.threads,
-            [id]: { ...cur, blocks: [...cur.blocks, { kind: "user", text: `Install skill:\n${text}` }] },
-          },
-        };
-      });
-      await client.sendPrompt(id, prompt, undefined, get().defaultModel);
+      // Its OWN Screen with its own pane. Binding the install onto whatever pane
+      // happened to be focused took over a conversation the user was in the
+      // middle of — an install is a new piece of work, not a hijack.
+      const layout = useLayoutStore.getState();
+      const groupId = layout.addGroup();
+      layout.reset(id);
+      layout.renameGroup(groupId, title);
+      // The turn goes through the normal send path (echo, running lock, error
+      // line, stream folding) — hand-rolling the POST left the pane with no
+      // message, no spinner and no way to tell a failure from a slow model.
+      // The thread shows what the USER typed; the model gets it wrapped in
+      // instructions, in the user's own language.
+      const prompt = i18n.t("pages:skills.install.agentPrompt", { input: text });
+      const model = modelForSession(get(), id).model;
+      // Deliberately not awaited: the caller opens the new pane immediately and
+      // watches the turn there (performTurn reports failures into the thread).
+      void performTurn(
+        set,
+        get,
+        text,
+        (sid) => withRetry(() => client!.sendPrompt(sid, prompt, undefined, model)),
+        false,
+        false,
+        id,
+      );
       return { kind: "session", id };
     } catch (err) {
       pendingSkillInstall = null;
