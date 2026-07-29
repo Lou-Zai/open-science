@@ -55,16 +55,17 @@
   "skills": {
     "title": "스킬 & 에이전트",
     "description": {
-      "prefix": "OpenCode 런타임에서 실시간으로 로드됩니다 — 내장된 ai4s-skills 팩과 워크스페이스의 ",
-      "suffix": " 아래에 있는 모든 항목."
+      "prefix": "OpenCode 런타임에서 실시간으로 로드됩니다 — 내장 스킬 팩, 워크스페이스의 ",
+      "suffix": " 아래에 있는 모든 항목, 그리고 ~/.claude/skills 또는 ~/.agents/skills에 있는 사용자 스킬."
     },
     "install": {
       "sectionTitle": "스킬 설치",
-      "placeholder": "스킬(Markdown) 또는 GitHub URL을 붙여넣으세요 — 에이전트가 .opencode/skills/에 설치합니다",
+      "placeholder": "SKILL.md를 붙여넣거나, 에이전트가 스킬로 만들 URL / 설명을 붙여넣으세요",
       "starting": "시작하는 중…",
-      "cta": "에이전트로 설치",
-      "hintConnected": "세션을 열고 에이전트에게 추가하도록 요청합니다 (customize-opencode).",
-      "hintDisconnected": "먼저 런타임을 연결하세요."
+      "cta": "스킬 설치",
+      "hintConnected": "붙여넣은 SKILL.md는 바로 설치됩니다. 그 밖의 입력은 에이전트 세션을 엽니다. 설치된 스킬은 모든 워크스페이스에서 사용할 수 있습니다.",
+      "hintDisconnected": "먼저 런타임을 연결하세요.",
+      "installed": "“{{name}}”을(를) 설치했습니다 — 모든 워크스페이스에서 사용할 수 있습니다."
     },
     "environment": {
       "sectionTitle": "과학 환경",

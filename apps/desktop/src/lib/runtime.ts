@@ -17,6 +17,7 @@ import {
 } from "@ai4s/sdk";
 import type { ArtifactBlock, RuntimeStatus, ThreadBlock, ToolVerb } from "@ai4s/shared";
 import {
+  adoptWorkspaceSkills,
   detectTools as probeTools,
   commitWorkspaceSnapshot,
   createProject as createProjectFolder,
@@ -24,6 +25,7 @@ import {
   setProjectPinned as setProjectPinnedCmd,
   deleteProject as deleteProjectCmd,
   getApprovalMode,
+  installSkillMarkdown,
   isTauri,
   listProjects,
   logDebug,
@@ -35,6 +37,7 @@ import {
   setWorkspace,
   startRuntime,
   workspacePath,
+  workspaceSkillNames,
   type ApprovalMode,
   type ProjectInfo,
   type ProxyMode,
@@ -105,6 +108,12 @@ export interface Thread {
   index: Record<string, number>;
   loaded: boolean;
 }
+
+/** Outcome of installSkill: the skill is already installed, or an agent session
+ *  is doing it and the caller should open that session to watch. */
+export type InstallSkillResult =
+  | { kind: "installed"; name: string }
+  | { kind: "session"; id: string };
 
 /** What a session's right pane shows: an artifact inspector, the Files
  *  browser, the Runs ledger, or nothing. Mutually exclusive — one pane. */
@@ -291,7 +300,11 @@ interface RuntimeState {
   reconcileRunning: () => Promise<void>;
   deleteSession: (id: string) => Promise<void>;
   hideExample: (id: string) => void;
-  installSkill: (text: string) => Promise<string | null>;
+  /** Install a skill. A pasted SKILL.md is written straight into the profile's
+   *  user skills dir (`installed`); anything else (a URL, a description) hands
+   *  the job to an agent session (`session`, whose id the caller opens) and is
+   *  adopted into that same dir when the session finishes. null on failure. */
+  installSkill: (text: string) => Promise<InstallSkillResult | null>;
   /** Ensure a live background event stream for every workspace folder shown in
    *  a split pane (besides the foreground folder), and drop streams for folders
    *  no longer tiled — so sessions across DIFFERENT projects stream live at once.
@@ -330,6 +343,22 @@ let contextLimitsCleaned = false;
 /** Unhook the current client's status listener BEFORE closing it — teardown
  *  emits "offline", and a reconnect attempt must not flash that at the user. */
 let clientStatusUnsub: (() => void) | null = null;
+/** An agent skill install in flight: the session doing it, and the workspace's
+ *  skills as they were before it started. When that session goes idle whatever
+ *  it added is adopted into the profile's user skills dir (#61). One at a time —
+ *  the Skills page starts one install per click. */
+let pendingSkillInstall: { sessionId: string | null; known: string[] } | null = null;
+
+/** Does this text look like a SKILL.md the app can install itself (YAML
+ *  frontmatter with a name)? The Rust command owns the strict rules — this only
+ *  decides whether to skip the agent. */
+function looksLikeSkillFile(text: string): boolean {
+  const body = text.replace(/^\uFEFF/, "").trimStart();
+  if (!body.startsWith("---")) return false;
+  const end = body.indexOf("\n---", 3);
+  return end > 0 && /^\s*name:\s*\S/m.test(body.slice(3, end));
+}
+
 /** The SDK recovers a dropped stream in ~250ms (OpenCode closes /event ~1s
  *  after a config PATCH while rebuilding its instance). Surfacing that blip
  *  repaints every status consumer, so a ready→connecting flip is held this
@@ -1576,6 +1605,34 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
             logDebug(`git snapshot skipped for ${sid}: ${err instanceof Error ? err.message : String(err)}`),
           );
       }
+      // The agent finished a skill install: it wrote the skill into THIS
+      // session's workspace, which the next dated session folder would leave
+      // behind — copy it into the profile's user skills dir, where OpenCode
+      // finds it from every workspace (#61).
+      if (event.type === "session.idle" && pendingSkillInstall?.sessionId === sid) {
+        const pending = pendingSkillInstall;
+        // Disarmed while the copy runs, so a second idle cannot adopt twice.
+        pendingSkillInstall = null;
+        void adoptWorkspaceSkills(pending.known)
+          .then(async (adopted) => {
+            if (!adopted.length) {
+              // The turn may have stopped to ask a question or wait for an
+              // approval — stay armed for the turn that finishes the install
+              // (unless another install has started meanwhile).
+              pendingSkillInstall ??= pending;
+              return;
+            }
+            // adoptWorkspaceSkills restarted the sidecar so discovery reruns.
+            await get().connectRetry();
+            await get().loadCatalog();
+            toast.success(
+              i18n.t("pages:skills.install.installed", { name: adopted.join(", ") }),
+            );
+          })
+          .catch((err) =>
+            logDebug(`skill adoption failed: ${err instanceof Error ? err.message : String(err)}`),
+          );
+      }
       };
     c.onEvent(sharedEventHandler);
     try {
@@ -2171,20 +2228,50 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     set({ hiddenExamples: next });
   },
 
-  // Install a skill by asking the agent (uses OpenCode's customize-opencode skill) (#1).
+  // Install a skill (#1). Installed skills land in the app profile's user
+  // skills dir, which OpenCode scans for every workspace — writing them into
+  // the session's own .opencode/skills/ loses them with that dated folder (#61).
   installSkill: async (text) => {
+    // A pasted SKILL.md needs no model: the app writes it itself. This also
+    // works before any provider is configured.
+    if (isTauri && looksLikeSkillFile(text)) {
+      try {
+        const name = await installSkillMarkdown(text);
+        // The sidecar restarted to rediscover it — pick the new list up.
+        await get().connectRetry();
+        await get().loadCatalog();
+        toast.success(i18n.t("pages:skills.install.installed", { name }));
+        return { kind: "installed", name };
+      } catch (err) {
+        set({ error: err instanceof Error ? err.message : String(err) });
+        return null;
+      }
+    }
     if (!client) {
       set({ error: "Connect the runtime first to install skills." });
       return null;
     }
     try {
+      // Snapshot first: whatever the agent adds on top of this is what gets
+      // adopted, so a pinned project's own skills stay project-scoped. Only the
+      // desktop can adopt (the profile lives on the host) — over the web the
+      // skill stays workspace-scoped, which is all a web client can do.
+      if (isTauri) {
+        pendingSkillInstall = {
+          sessionId: null,
+          known: await workspaceSkillNames().catch(() => []),
+        };
+      }
       const id = await client.createSession();
+      if (pendingSkillInstall) pendingSkillInstall.sessionId = id;
       set((s) => ({ currentId: id, threads: { ...s.threads, [id]: { ...emptyThread(), loaded: true } } }));
       await get().refreshSessions();
       const prompt =
         "Install the following as an OpenCode skill for this project. Use the " +
-        "customize-opencode skill. If it is a URL, fetch it; if it is Markdown, save it as " +
-        "a skill file under .opencode/skills/<name>/SKILL.md. Then reply with the installed skill's name.\n\n---\n" +
+        "customize-opencode skill. If it is a URL, fetch it. Save it as a skill file under " +
+        ".opencode/skills/<name>/SKILL.md — inside this workspace, never outside it (the app " +
+        "then makes it available in every workspace). Then reply with the installed skill's " +
+        "name.\n\n---\n" +
         text;
       set((s) => {
         const cur = s.threads[id];
@@ -2196,8 +2283,9 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         };
       });
       await client.sendPrompt(id, prompt, undefined, get().defaultModel);
-      return id;
+      return { kind: "session", id };
     } catch (err) {
+      pendingSkillInstall = null;
       set({ error: err instanceof Error ? err.message : String(err) });
       return null;
     }

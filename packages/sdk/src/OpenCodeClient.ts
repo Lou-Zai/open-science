@@ -434,17 +434,28 @@ export class OpenCodeClient extends BaseAgentRuntime implements AgentRuntime {
     if (!res.ok) throw await this.apiError(res, "Failed to interrupt the session");
   }
 
-  /** Real skills loaded by OpenCode (built-in + bundled + user). */
+  /** Every skill OpenCode has really loaded for this workspace: built-in,
+   *  the app's bundled packs, `.opencode/skills/`, and the home-level
+   *  `~/.claude/skills` + `~/.agents/skills` it auto-loads.
+   *
+   *  `/skill` (not the experimental `/api/skill`): the v2 list is built only
+   *  from config-declared sources — config dirs plus `.opencode/skill(s)` —
+   *  so home-level skills are missing from it even though sessions (which run
+   *  on this same v1 API) load and use them (#61). */
   async listSkills(): Promise<SkillInfo[]> {
     // Scope to the workspace: skill instances are created lazily per directory,
     // and the unscoped endpoint answers from an instance that may have none.
-    const query = this.directory ? `?directory=${encodeURIComponent(this.directory)}` : "";
-    const res = await this.fetchImpl(`${this.baseUrl}/api/skill${query}`, {
+    const res = await this.fetchImpl(`${this.baseUrl}/skill${this.dirQuery()}`, {
       headers: this.headers(),
     });
     if (!res.ok) throw await this.apiError(res, "Failed to list skills");
-    const body = (await res.json()) as { data?: SkillInfo[] };
-    return body.data ?? [];
+    // v1 answers with a bare array; tolerate the v2 envelope so a server
+    // pinned to either shape still lists.
+    const body = (await res.json()) as SkillInfo[] | { data?: SkillInfo[] };
+    const skills = Array.isArray(body) ? body : body.data ?? [];
+    // Discovery order is scan order (concurrent globs) — sort so the list the
+    // user sees is stable across reloads.
+    return [...skills].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /** The configured default model ("provider/model"), or null when unset. */

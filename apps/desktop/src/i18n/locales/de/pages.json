@@ -55,16 +55,17 @@
   "skills": {
     "title": "Skills & Agenten",
     "description": {
-      "prefix": "Live aus der OpenCode-Runtime geladen — das gebündelte ai4s-skills-Paket plus alles unter ",
-      "suffix": " in Ihrem Arbeitsbereich."
+      "prefix": "Live aus der OpenCode-Runtime geladen — die gebündelten Skill-Pakete, alles unter ",
+      "suffix": " in Ihrem Arbeitsbereich sowie Ihre eigenen Skills in ~/.claude/skills oder ~/.agents/skills."
     },
     "install": {
       "sectionTitle": "Einen Skill installieren",
-      "placeholder": "Einen Skill (Markdown) oder eine GitHub-URL einfügen — der Agent installiert ihn in .opencode/skills/",
+      "placeholder": "Eine SKILL.md einfügen oder eine URL / Beschreibung, aus der der Agent eine macht",
       "starting": "Wird gestartet…",
-      "cta": "Mit Agent installieren",
-      "hintConnected": "Öffnet eine Sitzung und bittet den Agenten, ihn hinzuzufügen (customize-opencode).",
-      "hintDisconnected": "Verbinden Sie zuerst die Runtime."
+      "cta": "Skill installieren",
+      "hintConnected": "Eine eingefügte SKILL.md wird direkt installiert; alles andere öffnet eine Agentensitzung. Installierte Skills stehen in jedem Arbeitsbereich zur Verfügung.",
+      "hintDisconnected": "Verbinden Sie zuerst die Runtime.",
+      "installed": "„{{name}}“ installiert — in jedem Arbeitsbereich verfügbar."
     },
     "environment": {
       "sectionTitle": "Wissenschaftliche Umgebung",

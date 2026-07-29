@@ -55,16 +55,17 @@
   "skills": {
     "title": "Skills & Agents",
     "description": {
-      "prefix": "Loaded live from the OpenCode runtime — the bundled ai4s-skills pack plus anything under ",
-      "suffix": " in your workspace."
+      "prefix": "Loaded live from the OpenCode runtime — the bundled skill packs, everything under ",
+      "suffix": " in your workspace, and your own skills in ~/.claude/skills or ~/.agents/skills."
     },
     "install": {
       "sectionTitle": "Install a skill",
-      "placeholder": "Paste a skill (Markdown) or a GitHub URL — the agent installs it into .opencode/skills/",
+      "placeholder": "Paste a SKILL.md, or a URL / description for the agent to turn into one",
       "starting": "Starting…",
-      "cta": "Install with agent",
-      "hintConnected": "Opens a session and asks the agent to add it (customize-opencode).",
-      "hintDisconnected": "Connect the runtime first."
+      "cta": "Install skill",
+      "hintConnected": "A pasted SKILL.md installs straight away; anything else opens an agent session. Installed skills are available in every workspace.",
+      "hintDisconnected": "Connect the runtime first.",
+      "installed": "Installed “{{name}}” — available in every workspace."
     },
     "environment": {
       "sectionTitle": "Scientific environment",

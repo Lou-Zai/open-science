@@ -55,16 +55,17 @@
   "skills": {
     "title": "技能与代理",
     "description": {
-      "prefix": "从 OpenCode 运行时实时加载——内置的 ai4s-skills 包，以及您工作区中位于 ",
-      "suffix": " 下的所有内容。"
+      "prefix": "从 OpenCode 运行时实时加载——内置技能包、工作区中位于 ",
+      "suffix": " 下的所有内容，以及您自己放在 ~/.claude/skills 或 ~/.agents/skills 的技能。"
     },
     "install": {
       "sectionTitle": "安装技能",
-      "placeholder": "粘贴一个技能（Markdown）或 GitHub URL — 代理会将其安装到 .opencode/skills/",
+      "placeholder": "粘贴 SKILL.md，或粘贴一个 URL / 描述，交给代理生成",
       "starting": "正在启动…",
-      "cta": "使用代理安装",
-      "hintConnected": "将打开一个会话并让代理添加它（customize-opencode）。",
-      "hintDisconnected": "请先连接运行时。"
+      "cta": "安装技能",
+      "hintConnected": "粘贴 SKILL.md 会直接安装；其他内容会打开代理会话。安装后的技能在所有工作区都可用。",
+      "hintDisconnected": "请先连接运行时。",
+      "installed": "已安装“{{name}}”——在所有工作区均可用。"
     },
     "environment": {
       "sectionTitle": "科学计算环境",

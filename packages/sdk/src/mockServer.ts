@@ -129,9 +129,15 @@ export function startMockOpenCode(port = 0): Promise<MockOpenCode> {
       res.end(JSON.stringify(messages[decodeURIComponent(mm[1])] ?? []));
       return;
     }
-    if (req.method === "GET" && url.startsWith("/api/skill")) {
+    // v1 shape: a bare array, unsorted (OpenCode returns discovery order).
+    if (req.method === "GET" && url.startsWith("/skill")) {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ data: [{ name: "customize-opencode", description: "Configure OpenCode.", location: "/builtin/customize-opencode.md" }] }));
+      res.end(
+        JSON.stringify([
+          { name: "home-skill", description: "From ~/.claude/skills.", location: "/home/u/.claude/skills/home-skill/SKILL.md" },
+          { name: "customize-opencode", description: "Configure OpenCode.", location: "<built-in>" },
+        ]),
+      );
       return;
     }
     if (req.method === "GET" && url === "/config") {

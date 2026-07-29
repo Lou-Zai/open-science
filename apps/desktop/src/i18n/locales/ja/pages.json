@@ -55,16 +55,17 @@
   "skills": {
     "title": "スキル & エージェント",
     "description": {
-      "prefix": "OpenCode ランタイムからライブで読み込まれます — バンドルされた ai4s-skills パックと、ワークスペース内の ",
-      "suffix": " にあるものすべて。"
+      "prefix": "OpenCode ランタイムからライブで読み込まれます — 同梱のスキルパック、ワークスペース内の ",
+      "suffix": " にあるものすべて、そして ~/.claude/skills または ~/.agents/skills にあるご自身のスキル。"
     },
     "install": {
       "sectionTitle": "スキルをインストール",
-      "placeholder": "スキル（Markdown）または GitHub URL を貼り付けてください — エージェントが .opencode/skills/ にインストールします",
+      "placeholder": "SKILL.md を貼り付けるか、エージェントに作らせる URL / 説明を貼り付けてください",
       "starting": "開始中…",
-      "cta": "エージェントでインストール",
-      "hintConnected": "セッションを開き、エージェントに追加を依頼します（customize-opencode）。",
-      "hintDisconnected": "先にランタイムに接続してください。"
+      "cta": "スキルをインストール",
+      "hintConnected": "貼り付けた SKILL.md はそのままインストールされます。それ以外はエージェントのセッションが開きます。インストールしたスキルはすべてのワークスペースで使えます。",
+      "hintDisconnected": "先にランタイムに接続してください。",
+      "installed": "「{{name}}」をインストールしました — すべてのワークスペースで使えます。"
     },
     "environment": {
       "sectionTitle": "科学計算環境",

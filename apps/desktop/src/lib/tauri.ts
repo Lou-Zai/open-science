@@ -541,6 +541,32 @@ export async function commitWorkspaceSnapshot(message: string): Promise<boolean>
   return invoke<boolean>("commit_workspace_snapshot", { message });
 }
 
+/** Install a pasted SKILL.md into the app profile's user skills dir, where
+ *  OpenCode finds it from every workspace, and restart the sidecar so it is
+ *  discovered now. Returns the installed skill's name; throws when the text is
+ *  not a SKILL.md (no frontmatter `name:`) or the name is already bundled. */
+export async function installSkillMarkdown(text: string): Promise<string> {
+  if (!isTauri) throw new Error("not running in the desktop app");
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string>("install_skill_markdown", { text });
+}
+
+/** Skill names already in the active workspace's `.opencode/skills/`. */
+export async function workspaceSkillNames(): Promise<string[]> {
+  if (!isTauri) return [];
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string[]>("workspace_skill_names");
+}
+
+/** Move skills the agent just wrote into the workspace into the profile's user
+ *  skills dir (skipping `known`, the pre-install listing), so they survive the
+ *  session folder. Restarts the sidecar when it adopted anything. */
+export async function adoptWorkspaceSkills(known: string[]): Promise<string[]> {
+  if (!isTauri) return [];
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string[]>("adopt_workspace_skills", { known });
+}
+
 /** Create a new dated folder under the base workspace and switch to it. */
 export async function newDatedWorkspace(name: string): Promise<string> {
   if (!isTauri) throw new Error("not running in the desktop app");

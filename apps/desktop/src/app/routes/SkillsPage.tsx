@@ -35,12 +35,13 @@ export function SkillsPage() {
   const onInstall = async () => {
     if (!text.trim()) return;
     setInstalling(true);
-    const id = await installSkill(text.trim());
+    const result = await installSkill(text.trim());
     setInstalling(false);
-    if (id) {
-      setText("");
-      navigate(`/live/${id}`); // watch the agent install it
-    }
+    if (!result) return; // failed — the store surfaced the reason
+    setText("");
+    // A pasted SKILL.md is already installed (the store toasts it); anything
+    // else runs in an agent session worth watching.
+    if (result.kind === "session") navigate(`/live/${result.id}`);
   };
 
   return (
@@ -134,10 +135,20 @@ export function SkillsPage() {
 
 type SkillSource = "builtin" | "project" | "user";
 
+/** Where a skill came from, read off the path OpenCode reports. Windows paths
+ *  arrive with backslashes, so match on a normalized copy. */
 function sourceOf(location?: string): SkillSource | undefined {
   if (!location) return undefined;
-  if (location.includes("/builtin/")) return "builtin";
-  if (location.includes("/.opencode/")) return "project";
+  const path = location.replace(/\\/g, "/");
+  // OpenCode's own built-in skill reports "<built-in>" (v1) or /builtin/… (v2).
+  if (path === "<built-in>" || path.includes("/builtin/")) return "builtin";
+  // The app profile's skills dir: bundled packs, except the `user/` subtree the
+  // skill installer writes to.
+  if (path.includes("/xdg-config/opencode/skills/")) {
+    return path.includes("/xdg-config/opencode/skills/user/") ? "user" : "builtin";
+  }
+  if (path.includes("/.opencode/")) return "project";
+  // ~/.claude/skills, ~/.agents/skills, and config-declared skill paths.
   return "user";
 }
 

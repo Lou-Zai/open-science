@@ -71,6 +71,14 @@ describe("OpenCodeClient ↔ OpenCode server", () => {
     expect(commands[1].source).toBe("skill");
   });
 
+  it("listSkills reads the v1 list, so home-level skills are included (#61)", async () => {
+    const client = new OpenCodeClient({ baseUrl: `http://127.0.0.1:${server.port}` });
+    const skills = await client.listSkills();
+    // Sorted by name, and the ~/.claude/skills entry the v2 route omits is here.
+    expect(skills.map((s) => s.name)).toEqual(["customize-opencode", "home-skill"]);
+    expect(skills[1].location).toContain(".claude/skills");
+  });
+
   it("listProviders surfaces per-model reasoning variants, ordered low→high", async () => {
     // /config/providers carries a per-model `variants` map (variant name →
     // provider options). We keep just the names, ordered by effort, and a model

@@ -55,16 +55,17 @@
   "skills": {
     "title": "Habilidades y agentes",
     "description": {
-      "prefix": "Cargado en vivo desde el entorno de ejecución de OpenCode — el paquete ai4s-skills incluido, más todo lo que haya bajo ",
-      "suffix": " en tu espacio de trabajo."
+      "prefix": "Cargado en vivo desde el entorno de ejecución de OpenCode — los paquetes de habilidades incluidos, todo lo que haya bajo ",
+      "suffix": " en tu espacio de trabajo y tus propias habilidades en ~/.claude/skills o ~/.agents/skills."
     },
     "install": {
       "sectionTitle": "Instalar una habilidad",
-      "placeholder": "Pega una habilidad (Markdown) o una URL de GitHub — el agente la instalará en .opencode/skills/",
+      "placeholder": "Pega un SKILL.md, o una URL / descripción para que el agente lo cree",
       "starting": "Iniciando…",
-      "cta": "Instalar con el agente",
-      "hintConnected": "Abre una sesión y le pide al agente que la añada (customize-opencode).",
-      "hintDisconnected": "Conecta primero el entorno de ejecución."
+      "cta": "Instalar habilidad",
+      "hintConnected": "Un SKILL.md pegado se instala directamente; cualquier otra cosa abre una sesión del agente. Las habilidades instaladas están disponibles en todos los espacios de trabajo.",
+      "hintDisconnected": "Conecta primero el entorno de ejecución.",
+      "installed": "«{{name}}» instalada: disponible en todos los espacios de trabajo."
     },
     "environment": {
       "sectionTitle": "Entorno científico",

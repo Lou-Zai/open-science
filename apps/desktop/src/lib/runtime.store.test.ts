@@ -64,6 +64,10 @@ const mocks = vi.hoisted(() => ({
   }),
   notifyPermissionRequest: vi.fn(async () => true),
   startRuntime: vi.fn(async () => "http://127.0.0.1:1"),
+  /** Skill install bridges (#61). */
+  installSkillMarkdown: vi.fn(async (_text: string) => "pasted-skill"),
+  workspaceSkillNames: vi.fn(async () => ["already-there"]),
+  adoptWorkspaceSkills: vi.fn(async (_known: string[]) => ["agent-skill"]),
   /** Constructor options every OpenCodeClient was created with. */
   clientOpts: [] as Record<string, unknown>[],
 }));
@@ -81,6 +85,9 @@ vi.mock("./tauri", () => ({
   getApprovalMode: async () => mocks.approvalMode,
   setApprovalMode: mocks.setApprovalMode,
   runtimePassword: async () => "pw-test",
+  installSkillMarkdown: mocks.installSkillMarkdown,
+  workspaceSkillNames: mocks.workspaceSkillNames,
+  adoptWorkspaceSkills: mocks.adoptWorkspaceSkills,
 }));
 vi.mock("./kernel", () => ({ kernelReset: mocks.kernelReset }));
 vi.mock("./systemNotification", () => ({
@@ -1499,5 +1506,65 @@ describe("plan agent mode", () => {
     ];
     await useRuntimeStore.getState().openSession("ses_hist");
     expect(useRuntimeStore.getState().sessionAgents["ses_hist"]).toBe("plan");
+  });
+});
+
+// A skill must end up somewhere every workspace can see: the app profile's user
+// skills dir. Writing it into the session's own .opencode/skills/ loses it with
+// that dated folder (#61).
+describe("skill install", () => {
+  it("installs a pasted SKILL.md itself — no session, no model turn", async () => {
+    const skill = "---\nname: pasted-skill\ndescription: Say hi.\n---\n\nhi\n";
+    const result = await useRuntimeStore.getState().installSkill(skill);
+
+    expect(result).toEqual({ kind: "installed", name: "pasted-skill" });
+    expect(mocks.installSkillMarkdown).toHaveBeenCalledWith(skill);
+    expect(mocks.createSessionSpy).not.toHaveBeenCalled();
+    expect(mocks.sendPromptSpy).not.toHaveBeenCalled();
+  });
+
+  it("hands a URL to an agent session and adopts what it wrote when idle", async () => {
+    const result = await useRuntimeStore
+      .getState()
+      .installSkill("https://example.com/skills/thing");
+
+    expect(result).toEqual({ kind: "session", id: "ses_new" });
+    expect(mocks.installSkillMarkdown).not.toHaveBeenCalled();
+    expect(mocks.sendPromptSpy).toHaveBeenCalled();
+    // Adoption waits for the turn to finish...
+    expect(mocks.adoptWorkspaceSkills).not.toHaveBeenCalled();
+
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_new" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    // ...and skips the skills that were already in the workspace.
+    expect(mocks.adoptWorkspaceSkills).toHaveBeenCalledWith(["already-there"]);
+  });
+
+  it("adopts only for the install's own session", async () => {
+    await useRuntimeStore.getState().installSkill("https://example.com/skills/thing");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_other" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.adoptWorkspaceSkills).not.toHaveBeenCalled();
+  });
+
+  it("keeps waiting when a turn ends before the skill exists (question, approval)", async () => {
+    // First turn writes nothing (the agent stopped to ask something).
+    mocks.adoptWorkspaceSkills.mockResolvedValueOnce([]);
+    await useRuntimeStore.getState().installSkill("https://example.com/skills/thing");
+
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_new" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.adoptWorkspaceSkills).toHaveBeenCalledTimes(1);
+
+    // The finishing turn is still adopted — the install was not abandoned.
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_new" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.adoptWorkspaceSkills).toHaveBeenCalledTimes(2);
+
+    // ...and once adopted it stops adopting on every later idle.
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_new" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mocks.adoptWorkspaceSkills).toHaveBeenCalledTimes(2);
   });
 });

@@ -397,11 +397,15 @@ fn deploy_workbench_tools(app: &AppHandle) {
 }
 
 /// Remove every SKILL.md-bearing directory in `dst` whose name is not in
-/// `bundled` (the set just deployed). Non-skill directories are left untouched.
+/// `bundled` (the set just deployed). Non-skill directories — including the
+/// reserved `user/` tree of installed skills — are left untouched.
 fn prune_stale_skills(dst: &Path, bundled: &std::collections::HashSet<std::ffi::OsString>) {
     let Ok(entries) = std::fs::read_dir(dst) else { return };
     for entry in entries.flatten() {
         let path = entry.path();
+        if entry.file_name() == std::ffi::OsStr::new(USER_SKILLS_DIR) {
+            continue;
+        }
         if path.is_dir()
             && path.join("SKILL.md").is_file()
             && !bundled.contains(&entry.file_name())
@@ -421,6 +425,10 @@ fn sync_skill_pack(src: &Path, dst: &Path) -> std::io::Result<Vec<std::ffi::OsSt
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
         if !entry.file_type()?.is_dir() || !entry.path().join("SKILL.md").is_file() {
+            continue;
+        }
+        // `user/` belongs to the installed skills — a pack may never claim it.
+        if entry.file_name() == std::ffi::OsStr::new(USER_SKILLS_DIR) {
             continue;
         }
         let target = dst.join(entry.file_name());
@@ -445,6 +453,135 @@ fn copy_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Reserved subdirectory of the profile's global skills dir holding the skills
+/// the USER installs. It lives inside a directory OpenCode already scans
+/// (`<xdg-config>/opencode/skills/`, matched recursively by both skill loaders),
+/// so an installed skill is available in EVERY workspace — a session's own
+/// `.opencode/skills/` would vanish with the next dated session folder (#61).
+/// Bundled-pack pruning skips this name, so app upgrades never delete it.
+const USER_SKILLS_DIR: &str = "user";
+
+fn user_skills_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(xdg_config_home(app)?
+        .join("opencode")
+        .join("skills")
+        .join(USER_SKILLS_DIR))
+}
+
+/// The `name:` from a SKILL.md's YAML frontmatter, or None when the text is not
+/// a skill file (no leading frontmatter, no usable name).
+fn skill_name_from_markdown(text: &str) -> Option<String> {
+    let front = text
+        .trim_start_matches('\u{feff}')
+        .trim_start()
+        .strip_prefix("---")?
+        .split_once("\n---")?
+        .0
+        .to_string();
+    front.lines().find_map(|line| {
+        let value = line.trim().strip_prefix("name:")?;
+        sanitize_skill_name(value.trim().trim_matches(['"', '\'']))
+    })
+}
+
+/// A skill's name doubles as its directory name — accept only what cannot
+/// escape the skills dir (no separators, no `..`, no hidden names).
+fn sanitize_skill_name(name: &str) -> Option<String> {
+    let ok = !name.is_empty()
+        && name.len() <= 64
+        && !name.starts_with('.')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'));
+    ok.then(|| name.to_string())
+}
+
+/// Skill directories in the active workspace's `.opencode/skills/`.
+fn workspace_skill_dirs(workspace: &Path) -> Vec<PathBuf> {
+    let root = workspace.join(".opencode").join("skills");
+    let Ok(entries) = std::fs::read_dir(&root) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir() && p.join("SKILL.md").is_file())
+        .collect()
+}
+
+fn dir_name(path: &Path) -> Option<&str> {
+    path.file_name().and_then(|n| n.to_str())
+}
+
+/// Install a pasted SKILL.md straight into the profile's user skills dir — no
+/// model turn, no provider needed — and restart the sidecar so OpenCode
+/// rediscovers it (discovery is cached per instance). Returns the skill's name.
+#[tauri::command(async)]
+pub fn install_skill_markdown(
+    app: AppHandle,
+    state: State<'_, RuntimeState>,
+    text: String,
+) -> Result<String, String> {
+    let name = skill_name_from_markdown(&text)
+        .ok_or_else(|| "not a skill file: it needs YAML frontmatter with a `name:`".to_string())?;
+    // A bundled pack owns its name: two skills sharing one name make OpenCode
+    // pick whichever it scanned last, so refuse instead of shadowing.
+    if xdg_config_home(&app)?
+        .join("opencode")
+        .join("skills")
+        .join(&name)
+        .join("SKILL.md")
+        .is_file()
+    {
+        return Err(format!("a bundled skill is already called \"{name}\""));
+    }
+    let dir = user_skills_dir(&app)?.join(&name);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(dir.join("SKILL.md"), text.as_bytes()).map_err(|e| e.to_string())?;
+    restart_sidecar_if_running(&app, &state)?;
+    Ok(name)
+}
+
+/// Names already in the workspace's `.opencode/skills/`. Taken before an agent
+/// install runs so `adopt_workspace_skills` can tell what it added.
+#[tauri::command(async)]
+pub fn workspace_skill_names(app: AppHandle) -> Result<Vec<String>, String> {
+    Ok(workspace_skill_dirs(&workspace_dir(&app)?)
+        .iter()
+        .filter_map(|p| dir_name(p).map(str::to_owned))
+        .collect())
+}
+
+/// Copy skills the agent just wrote into the workspace over to the profile's
+/// user skills dir, so they outlive that session's folder. `known` is the
+/// pre-install listing — a pinned project's own skills stay project-scoped.
+/// Restarts the sidecar when anything was adopted; returns the adopted names.
+#[tauri::command(async)]
+pub fn adopt_workspace_skills(
+    app: AppHandle,
+    state: State<'_, RuntimeState>,
+    known: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let dst_root = user_skills_dir(&app)?;
+    let mut adopted = Vec::new();
+    for src in workspace_skill_dirs(&workspace_dir(&app)?) {
+        let Some(name) = dir_name(&src) else { continue };
+        if known.iter().any(|k| k == name) || sanitize_skill_name(name).is_none() {
+            continue;
+        }
+        let dst = dst_root.join(name);
+        if dst.exists() {
+            std::fs::remove_dir_all(&dst).map_err(|e| e.to_string())?;
+        }
+        copy_dir(&src, &dst).map_err(|e| e.to_string())?;
+        adopted.push(name.to_string());
+    }
+    if !adopted.is_empty() {
+        restart_sidecar_if_running(&app, &state)?;
+    }
+    Ok(adopted)
 }
 
 /// PATH for the sidecar (and everything the agent runs through it). Apps
@@ -1117,7 +1254,7 @@ mod tests {
     use super::{
         auth_has_provider, deploy_goal_plugin_dependencies, parse_scutil_proxy,
         prune_stale_skills, random_hex, remove_key_from_config, resolve_proxy_env,
-        sync_skill_pack, validate_proxy_url,
+        skill_name_from_markdown, sync_skill_pack, validate_proxy_url, workspace_skill_dirs,
     };
     use std::fs;
 
@@ -1183,6 +1320,63 @@ mod tests {
         assert!(!dst.join("hpc-slurm").exists(), "stale renamed skill removed");
         assert!(dst.join("notes").is_dir(), "non-skill dir left alone");
         let _ = fs::remove_dir_all(&dst);
+    }
+
+    #[test]
+    fn prune_keeps_installed_user_skills() {
+        // The reserved `user/` tree holds what the user installed — an app
+        // upgrade (which prunes everything unbundled) must never delete it (#61).
+        let dst = std::env::temp_dir().join(format!("os-prune-user-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dst);
+        let installed = dst.join("user").join("my-skill");
+        fs::create_dir_all(&installed).unwrap();
+        fs::write(installed.join("SKILL.md"), b"---\nname: my-skill\n---\n").unwrap();
+        // A SKILL.md directly inside `user/` (not a skill dir of its own) too.
+        fs::write(dst.join("user").join("SKILL.md"), b"---\n").unwrap();
+
+        prune_stale_skills(&dst, &std::collections::HashSet::new());
+
+        assert!(installed.join("SKILL.md").is_file(), "installed skill kept");
+        let _ = fs::remove_dir_all(&dst);
+    }
+
+    #[test]
+    fn skill_name_comes_from_frontmatter_and_is_safe() {
+        assert_eq!(
+            skill_name_from_markdown("---\nname: my-skill\ndescription: x\n---\n\nbody\n")
+                .as_deref(),
+            Some("my-skill"),
+        );
+        // Quoted, CRLF, and a leading BOM all still parse.
+        assert_eq!(
+            skill_name_from_markdown("\u{feff}---\r\nname: \"quoted_1\"\r\n---\r\n").as_deref(),
+            Some("quoted_1"),
+        );
+        // Not a skill file, or a name that cannot be a directory.
+        assert_eq!(skill_name_from_markdown("# just markdown\n"), None);
+        assert_eq!(skill_name_from_markdown("---\ndescription: x\n---\n"), None);
+        assert_eq!(skill_name_from_markdown("---\nname: ../escape\n---\n"), None);
+        assert_eq!(skill_name_from_markdown("---\nname: sub/dir\n---\n"), None);
+        assert_eq!(skill_name_from_markdown("---\nname: .hidden\n---\n"), None);
+        assert_eq!(skill_name_from_markdown("---\nname:\n---\n"), None);
+    }
+
+    #[test]
+    fn workspace_skill_dirs_lists_only_real_skills() {
+        let ws = std::env::temp_dir().join(format!("os-ws-skills-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&ws);
+        let root = ws.join(".opencode").join("skills");
+        fs::create_dir_all(root.join("installed")).unwrap();
+        fs::write(root.join("installed").join("SKILL.md"), b"---\n").unwrap();
+        fs::create_dir_all(root.join("half-written")).unwrap(); // no SKILL.md yet
+        fs::write(root.join("loose.md"), b"---\n").unwrap();
+
+        let found = workspace_skill_dirs(&ws);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].file_name().unwrap(), "installed");
+        // A workspace with no .opencode/skills at all is simply empty.
+        assert!(workspace_skill_dirs(&std::env::temp_dir().join("os-nope")).is_empty());
+        let _ = fs::remove_dir_all(&ws);
     }
 
     #[cfg(unix)]
