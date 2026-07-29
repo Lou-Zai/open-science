@@ -402,6 +402,13 @@ interface LayoutState {
   pinEphemeral: () => void;
   /** Add a new empty group and activate it; returns its id. */
   addGroup: () => string;
+  /** Open ONE new pane in its own Screen — bound to `sessionId`, or a draft when
+   *  null — activate and focus it, optionally naming the Screen. Every "new
+   *  session" entry point goes through this: binding the new work onto the
+   *  focused pane took over whatever conversation the user had there. An empty
+   *  active Screen is filled instead of stacking a second empty one beside it.
+   *  Returns the new leaf's id. */
+  openInNewGroup: (sessionId: string | null, name?: string) => string;
   /** Close a group; never drops below one (the last group is emptied instead). */
   closeGroup: (groupId: string) => void;
   renameGroup: (groupId: string, name: string) => void;
@@ -533,6 +540,25 @@ export const useLayoutStore = create<LayoutState>((set, get) => {
       persist(get().groups, get().activeGroupId);
       return g.id;
     },
+
+    openInNewGroup: (sessionId, name) => {
+      const leaf = makeLeaf(sessionId);
+      set((s) => {
+        const active = { tree: leaf, focusedLeafId: leaf.id, zoomedLeafId: null };
+        // An empty active Screen (onboarding, or every pane closed) is where the
+        // new pane belongs — a second empty Screen beside it would be noise.
+        const groups = s.tree
+          ? [...s.groups, { id: genGroupId(), name: name ?? "", ...active }]
+          : s.groups.map((g) => (g.id === s.activeGroupId ? { ...g, ...(name ? { name } : {}), ...active } : g));
+        const activeGroupId = s.tree ? groups[groups.length - 1].id : s.activeGroupId;
+        persist(groups, activeGroupId);
+        // New work pins the tentative screen: the next sidebar click opens its
+        // own preview screen instead of swapping this pane out.
+        return { groups, activeGroupId, ...active, ephemeralGroupId: null };
+      });
+      return leaf.id;
+    },
+
     closeGroup: (groupId) => {
       set((s) => {
         const ephemeralGroupId = s.ephemeralGroupId === groupId ? null : s.ephemeralGroupId;

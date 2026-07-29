@@ -167,6 +167,31 @@ describe("layout store — groups", () => {
     expect(S().groups[0].tree).not.toBeNull();
   });
 
+  it("openInNewGroup gives new work its own Screen, leaving the busy pane alone", () => {
+    const leafId = S().openInNewGroup(null, "Install a skill");
+    expect(S().groups).toHaveLength(2);
+    expect(S().activeGroupId).not.toBe("g0");
+    expect(S().groups[1].name).toBe("Install a skill");
+    // One draft pane, focused; the pane the user was in still shows A.
+    expect(leaves(S().tree!).map((l) => l.sessionId)).toEqual([null]);
+    expect(S().focusedLeafId).toBe(leafId);
+    expect(leaves(S().groups[0].tree!).map((l) => l.sessionId)).toEqual(["A"]);
+  });
+
+  it("openInNewGroup fills an EMPTY active Screen instead of stacking another", () => {
+    S().addGroup(); // empty, active
+    S().openInNewGroup("B");
+    expect(S().groups).toHaveLength(2); // no third Screen
+    expect(leaves(S().tree!).map((l) => l.sessionId)).toEqual(["B"]);
+  });
+
+  it("openInNewGroup pins the tentative Screen (it is real work now)", () => {
+    S().openSessionEphemeral("P");
+    expect(S().ephemeralGroupId).not.toBeNull();
+    S().openInNewGroup(null);
+    expect(S().ephemeralGroupId).toBeNull();
+  });
+
   it("setActiveGroup swaps the mirrored tree/focus", () => {
     const id = S().addGroup(); // empty, active
     S().setActiveGroup("g0");

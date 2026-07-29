@@ -121,13 +121,9 @@ export function Sidebar({ project }: { project: Project }) {
   });
 
   const startNew = () => {
-    // Desktop: "New" acts on the active group — the focused pane becomes a fresh
-    // draft, and an EMPTY group gets a draft pane (so New always shows one).
-    if (!isMobile && !isGatewayWeb) {
-      const layout = useLayoutStore.getState();
-      if (layout.tree && layout.focusedLeafId) layout.bindSession(layout.focusedLeafId, null);
-      else layout.reset(null);
-    }
+    // Desktop: "New" is new work — it gets its own Screen with its own draft
+    // pane, never the focused pane (which is a conversation in progress).
+    if (!isMobile && !isGatewayWeb) useLayoutStore.getState().openInNewGroup(null);
     startDraft();
     navigate("/live");
   };
@@ -195,6 +191,9 @@ export function Sidebar({ project }: { project: Project }) {
 
   const newSessionIn = async (p: ProjectInfo) => {
     await startDraftInWorkspace(p.path);
+    // Same rule as "New": its own Screen, so starting work in a project does not
+    // replace the pane the user is reading.
+    if (!isMobile && !isGatewayWeb) useLayoutStore.getState().openInNewGroup(null, p.name);
     navigate("/live");
   };
 
@@ -315,6 +314,10 @@ export function Sidebar({ project }: { project: Project }) {
             } else {
               layout.openSessionEphemeral(row.id);
             }
+            // The layout change alone is invisible from Skills/Runs/Files/…:
+            // those routes render instead of the panes, so the click looked
+            // dead. Navigate so the session is actually shown.
+            navigate(row.to);
           }
         }}
         className={cn(

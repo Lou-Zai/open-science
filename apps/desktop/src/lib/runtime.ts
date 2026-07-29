@@ -2252,10 +2252,20 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       return null;
     }
     try {
-      // Snapshot first: whatever the agent adds on top of this is what gets
-      // adopted, so a pinned project's own skills stay project-scoped. Only the
-      // desktop can adopt (the profile lives on the host) — over the web the
-      // skill stays workspace-scoped, which is all a web client can do.
+      // Installing a skill is not part of whatever project happens to be open:
+      // give it its own plain dated folder (what any new session gets) so the
+      // session does not end up filed under that project. Nobody pinned this
+      // folder, so the user's next new session goes back to the default.
+      if (isTauri) {
+        await get().switchWorkspace({ dated: datedWorkspaceName() });
+        set({ workspacePinned: false });
+        if (get().status !== "ready" || !client) {
+          throw new Error("Runtime did not reconnect after creating the install folder.");
+        }
+      }
+      // Snapshot: whatever the agent adds on top of this is what gets adopted.
+      // Only the desktop can adopt (the profile lives on the host) — over the
+      // web the skill stays workspace-scoped, which is all a web client can do.
       if (isTauri) {
         pendingSkillInstall = {
           sessionId: null,
@@ -2269,10 +2279,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       // Its OWN Screen with its own pane. Binding the install onto whatever pane
       // happened to be focused took over a conversation the user was in the
       // middle of — an install is a new piece of work, not a hijack.
-      const layout = useLayoutStore.getState();
-      const groupId = layout.addGroup();
-      layout.reset(id);
-      layout.renameGroup(groupId, title);
+      useLayoutStore.getState().openInNewGroup(id, title);
       // The turn goes through the normal send path (echo, running lock, error
       // line, stream folding) — hand-rolling the POST left the pane with no
       // message, no spinner and no way to tell a failure from a slow model.

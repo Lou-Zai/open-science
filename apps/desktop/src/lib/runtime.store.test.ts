@@ -1535,8 +1535,16 @@ describe("skill install", () => {
       ephemeralGroupId: null,
     });
 
+    // Pinned into a project folder, as if the user were working in one.
+    useRuntimeStore.setState({ workspacePinned: true });
+
     await useRuntimeStore.getState().installSkill("找到 dbs 这个 skills，安装");
     await new Promise((r) => setTimeout(r, 0));
+
+    // An install is not part of that project: it gets its own plain dated
+    // folder, and does not leave the folder pinned behind it.
+    expect(mocks.newDatedWorkspace).toHaveBeenCalledTimes(1);
+    expect(useRuntimeStore.getState().workspacePinned).toBe(false);
 
     const layout = useLayoutStore.getState();
     expect(layout.groups).toHaveLength(2);

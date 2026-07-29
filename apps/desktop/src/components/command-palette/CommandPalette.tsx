@@ -13,6 +13,9 @@ import {
 } from "lucide-react";
 import { useUiStore } from "@/lib/store";
 import { useRuntimeStore } from "@/lib/runtime";
+import { useLayoutStore } from "@/lib/layout";
+import { useIsMobile } from "@/lib/useIsMobile";
+import { isGatewayWeb } from "@/lib/webMode";
 import { WORKFLOW_STARTERS } from "@/components/thread/WorkflowStarters";
 
 interface Action {
@@ -31,6 +34,8 @@ export function CommandPalette() {
   const setOpen = useUiStore((s) => s.setPaletteOpen);
   const toggleTheme = useUiStore((s) => s.toggleTheme);
   const navigate = useNavigate();
+  // Tiling is desktop-only: web/phone show one pane, so there is no Screen to open.
+  const newPaneAllowed = !useIsMobile() && !isGatewayWeb;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -52,15 +57,20 @@ export function CommandPalette() {
   const close = () => setOpen(false);
 
   // Start a new session and send a workflow prompt, then reveal that session.
+  // Its own Screen and pane, like every other "new session" entry — the pane the
+  // user was reading stays put.
   const runWorkflow = async (starterId: string) => {
     close();
+    const layout = useLayoutStore.getState();
+    const leafId = newPaneAllowed ? layout.openInNewGroup(null) : null;
     useRuntimeStore.getState().startDraft();
     const id = await useRuntimeStore.getState().sendPrompt(starterPrompt(starterId));
+    if (id && leafId) layout.bindSession(leafId, id);
     if (id) navigate(`/live/${id}`);
   };
 
   const actions: Action[] = [
-    { id: "new", label: t("commandPalette.actions.newSession"), icon: <Plus size={16} />, run: () => { useRuntimeStore.getState().startDraft(); navigate("/live"); close(); } },
+    { id: "new", label: t("commandPalette.actions.newSession"), icon: <Plus size={16} />, run: () => { if (newPaneAllowed) useLayoutStore.getState().openInNewGroup(null); useRuntimeStore.getState().startDraft(); navigate("/live"); close(); } },
     { id: "analyze", label: t("commandPalette.actions.analyzeData"), icon: <FileSearch size={16} />, run: () => void runWorkflow("analyze") },
     { id: "review", label: t("commandPalette.actions.auditReport"), icon: <ShieldCheck size={16} />, run: () => void runWorkflow("audit") },
     { id: "notebooks", label: t("commandPalette.actions.openNotebooks"), icon: <NotebookPen size={16} />, run: () => { navigate("/notebooks"); close(); } },
