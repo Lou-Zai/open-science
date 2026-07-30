@@ -195,8 +195,17 @@ jobs:
           path: ${{ steps.macos_app.outputs.archive_path }}
           if-no-files-found: error
 
+      - name: Queue submitted macOS app on draft release
+        if: steps.macos_app.outputs.found == 'true' && github.ref_type == 'tag'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" "${{ steps.macos_app.outputs.archive_path }}" --clobber
+
       - name: Wait for notarization and create macOS DMG
+        id: finalize_macos
         if: steps.tauri_build.outcome == 'success' && steps.macos_app.outputs.found == 'true' && env.MACOS_SIGNING_ENABLED == 'true'
+        continue-on-error: ${{ github.ref_type == 'tag' }}
         shell: bash
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -205,7 +214,9 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          MACOS_NOTARIZATION_TIMEOUT_SECONDS: 5400
+          # A tagged release falls back to finalize-macos-notarization.yml after
+          # 15 minutes. A manual build waits longer so it can return a DMG.
+          MACOS_NOTARIZATION_TIMEOUT_SECONDS: ${{ github.ref_type == 'tag' && '900' || '5400' }}
           MACOS_NOTARIZATION_POLL_SECONDS: 60
         run: |
           bash scripts/release/finalize-macos-notarization.sh \
@@ -213,11 +224,18 @@ jobs:
             "${{ steps.macos_app.outputs.dmg_path }}"
 
       - name: Upload finalized macOS DMG to draft release
-        if: runner.os == 'macOS' && github.ref_type == 'tag'
+        if: steps.finalize_macos.outcome == 'success' && github.ref_type == 'tag'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "$GITHUB_REF_NAME" "${{ steps.macos_app.outputs.dmg_path }}" --clobber
+        run: |
+          gh release upload "$GITHUB_REF_NAME" "${{ steps.macos_app.outputs.dmg_path }}" --clobber
+          queued_name=$(basename "${{ steps.macos_app.outputs.archive_path }}")
+          queued_id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
+            --jq ".assets[] | select(.name == \"$queued_name\") | .id")
+          if [ -n "$queued_id" ]; then
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$queued_id"
+          fi
 
       - name: Upload installers
         if: always()

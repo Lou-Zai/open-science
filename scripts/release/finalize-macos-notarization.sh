@@ -30,6 +30,11 @@ fi
 deadline=$((SECONDS + timeout_seconds))
 attempt=1
 while true; do
+  if xcrun stapler validate "$app_path" >/dev/null 2>&1; then
+    echo "Apple notarization ticket is already stapled."
+    break
+  fi
+
   echo "Checking for the Apple notarization ticket (attempt $attempt)..."
   if staple_output=$(xcrun stapler staple "$app_path" 2>&1); then
     printf '%s\n' "$staple_output"
