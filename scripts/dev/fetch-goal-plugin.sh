@@ -43,7 +43,7 @@ echo "$GOAL_PLUGIN_VERSION" > "$OUT_DIR/.version"
 (
   cd "$OUT_DIR"
   npm init --yes > /dev/null
-  npm install --silent --no-fund --no-audit --omit=dev --ignore-scripts \
+  npm install --silent --no-fund --no-audit --omit=dev --omit=optional --ignore-scripts \
     "@opencode-ai/plugin@${OPENCODE_PLUGIN_VERSION}" > /dev/null
 )
 echo "$OPENCODE_PLUGIN_VERSION" > "$OUT_DIR/.opencode-plugin-version"
