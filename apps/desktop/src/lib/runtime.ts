@@ -39,6 +39,7 @@ import {
   workspacePath,
   workspaceSkillNames,
   type ApprovalMode,
+  type ProjectImportMode,
   type ProjectInfo,
   type ProxyMode,
   type ToolStatus,
@@ -210,13 +211,13 @@ interface RuntimeState {
   refreshSessions: () => Promise<void>;
   startDraft: () => void;
   startDraftInCurrentWorkspace: (key?: string) => void;
-  /** Projects: named shared-workspace folders under the base dir. Sessions
-   *  group under a project by `directory`; multiple sessions share the folder. */
+  /** Projects: named shared workspaces under `<base>/projects`. Sessions group
+   *  under a project by `directory`; multiple sessions share the folder. */
   projects: ProjectInfo[];
   refreshProjects: () => Promise<void>;
   /** Create a project folder and move into it with a fresh pinned draft. */
   createProject: (name: string) => Promise<ProjectInfo | null>;
-  importProject: (path: string) => Promise<ProjectInfo | null>;
+  importProject: (path: string, mode: ProjectImportMode) => Promise<ProjectInfo | null>;
   setProjectPinned: (id: string, pinned: boolean) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   /** Fresh draft pinned inside `path` (a project folder), so the next new
@@ -619,7 +620,7 @@ async function performTurn(
     if (!id) {
       // Lazy-create the session on the first message (#3). Unless the user
       // pinned a folder via the workspace switcher, a new session gets its
-      // own fresh dated folder (~/Documents/OpenScience/<date-time>) first,
+      // own fresh dated folder (~/Documents/OpenScience/sessions/<date-time>) first,
       // so its files never pile up in the bare base folder.
       if (isTauri && !get().workspacePinned) {
         set({ switching: true });
@@ -1827,9 +1828,9 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     }
   },
 
-  importProject: async (path) => {
+  importProject: async (path, mode) => {
     try {
-      const project = await importProjectFolder(path);
+      const project = await importProjectFolder(path, mode);
       void get().refreshProjects();
       await get().switchWorkspace({ path: project.path });
       return project;

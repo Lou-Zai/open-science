@@ -16,6 +16,11 @@
       "body": "This only removes the panel from this Screen. The session, conversation history, and workspace files are kept.",
       "action": "Close panel"
     },
+    "confirmCloseScreen": {
+      "title": "Close this Screen?",
+      "body": "This removes the Screen and every panel in it. Sessions, conversation history, and workspace files are kept.",
+      "action": "Close Screen"
+    },
     "zoom": "Zoom this pane",
     "empty": {
       "title": "Empty screen",

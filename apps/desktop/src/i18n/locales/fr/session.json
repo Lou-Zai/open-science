@@ -16,6 +16,11 @@
       "body": "Cela retire uniquement le volet de cet écran. La session, l’historique de conversation et les fichiers de l’espace de travail sont conservés.",
       "action": "Fermer le volet"
     },
+    "confirmCloseScreen": {
+      "title": "Fermer cet écran ?",
+      "body": "Cela supprime l’écran et tous ses volets. Les sessions, l’historique de conversation et les fichiers de l’espace de travail sont conservés.",
+      "action": "Fermer l’écran"
+    },
     "zoom": "Zoom de ce volet",
     "empty": {
       "title": "Écran vide",

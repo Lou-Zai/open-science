@@ -5,6 +5,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import { cn } from "@/lib/cn";
+import { openExternal } from "@/lib/tauri";
 
 /** Two contexts render markdown: chat bubbles (theme colors, compact) and the
  *  file-preview "paper" (document-neutral black-on-white, editorial scale —
@@ -100,7 +101,19 @@ export function MarkdownViewer({
         components={{
           p: ({ children }) => <p className={s.p}>{children}</p>,
           a: ({ children, href }) => (
-            <a href={href} className={s.a}>
+            <a
+              href={href}
+              className={s.a}
+              onClick={(event) => {
+                // Never let a document link navigate the application WebView:
+                // even a relative or unsupported URL would replace the current
+                // Screen with an invalid app route. Only approved http(s) URLs
+                // are handed to the system browser by openExternal.
+                event.preventDefault();
+                event.stopPropagation();
+                if (href && /^https?:\/\//i.test(href)) void openExternal(href);
+              }}
+            >
               {children}
             </a>
           ),

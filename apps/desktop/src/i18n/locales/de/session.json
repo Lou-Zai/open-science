@@ -16,6 +16,11 @@
       "body": "Dadurch wird nur das Panel von diesem Bildschirm entfernt. Sitzung, Gesprächsverlauf und Arbeitsbereichsdateien bleiben erhalten.",
       "action": "Panel schließen"
     },
+    "confirmCloseScreen": {
+      "title": "Diesen Bildschirm schließen?",
+      "body": "Dadurch werden der Bildschirm und alle darin enthaltenen Panels entfernt. Sitzungen, Gesprächsverlauf und Arbeitsbereichsdateien bleiben erhalten.",
+      "action": "Bildschirm schließen"
+    },
     "zoom": "Dieses Bereich zoomen",
     "empty": {
       "title": "Leerer Bildschirm",

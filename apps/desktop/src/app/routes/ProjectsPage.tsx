@@ -281,7 +281,11 @@ export function ProjectsPage() {
       {confirmRemove && (
         <ConfirmDialog
           title={t("projects.removeTitle", { name: confirmRemove.name })}
-          body={t("projects.removeBody")}
+          body={t(
+            confirmRemove.importMode === "copy"
+              ? "projects.removeCopyBody"
+              : "projects.removeBody",
+          )}
           confirmLabel={t("projects.remove")}
           onConfirm={() => {
             void deleteProject(confirmRemove.id);

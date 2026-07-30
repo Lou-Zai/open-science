@@ -195,7 +195,7 @@
   },
   "workspace": {
     "title": "Arbeitsbereich",
-    "hint": "Local-first — jede Sitzung arbeitet in ihrem eigenen, hier erstellten, datierten Unterordner",
+    "hint": "Local-first — Projekte liegen in projects/, eigenständige Sitzungen in sessions/",
     "unavailable": "in der Desktop-App verfügbar",
     "change": "Ändern…",
     "reveal": "Anzeigen"

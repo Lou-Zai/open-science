@@ -195,7 +195,7 @@
   },
   "workspace": {
     "title": "Workspace",
-    "hint": "Local-first — each session works in its own dated subfolder created here",
+    "hint": "Local-first — projects live in projects/ and standalone sessions in sessions/",
     "unavailable": "available in the desktop app",
     "change": "Change…",
     "reveal": "Reveal"

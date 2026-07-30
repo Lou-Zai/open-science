@@ -21,7 +21,12 @@ import {
 import type { Project } from "@ai4s/shared";
 import { cn } from "@/lib/cn";
 import { rootSessionOf, useRuntimeStore } from "@/lib/runtime";
-import { pickFolder, renameProject, type ProjectInfo } from "@/lib/tauri";
+import {
+  pickFolder,
+  renameProject,
+  type ProjectImportMode,
+  type ProjectInfo,
+} from "@/lib/tauri";
 import {
   SIDEBAR_MAX,
   SIDEBAR_MIN,
@@ -149,6 +154,7 @@ export function Sidebar({ project }: { project: Project }) {
   const [namingProject, setNamingProject] = useState(false);
   const [createBusy, setCreateBusy] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
+  const [pendingImportPath, setPendingImportPath] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
 
   const toggleProject = (id: string) =>
@@ -174,18 +180,22 @@ export function Sidebar({ project }: { project: Project }) {
     if (created) navigate("/live");
   };
 
-  // Import an existing repo/folder as a project: pick a folder, then make a
-  // faithful copy of it (files, git history, symlinks) into the app's base dir,
-  // leaving the original untouched. The copy lives where the sandboxed sidecar
-  // can reach it — a folder left in place under ~/Documents would fail macOS
-  // TCC (#31). Its AGENTS.md records where it was imported from.
+  // Pick first, then make the copy-vs-in-place tradeoff explicit. In-place is
+  // primary: users choose their project location, and the signed macOS app asks
+  // for access there. Copy remains an explicit storage/isolation alternative.
   const handleImport = async () => {
     if (importBusy) return;
     const path = await pickFolder();
     if (!path) return;
+    setPendingImportPath(path);
+  };
+
+  const submitImport = async (mode: ProjectImportMode) => {
+    if (importBusy || !pendingImportPath) return;
     setImportBusy(true);
-    const imported = await importProject(path);
+    const imported = await importProject(pendingImportPath, mode);
     setImportBusy(false);
+    setPendingImportPath(null);
     if (imported) navigate("/live");
   };
 
@@ -557,6 +567,16 @@ export function Sidebar({ project }: { project: Project }) {
               }}
             />
           )}
+          {pendingImportPath && (
+            <ImportProjectDialog
+              path={pendingImportPath}
+              busy={importBusy}
+              onImport={(mode) => void submitImport(mode)}
+              onCancel={() => {
+                if (!importBusy) setPendingImportPath(null);
+              }}
+            />
+          )}
           {projects.length === 0 && !namingProject && (
             <button
               onClick={() => setNamingProject(true)}
@@ -754,6 +774,85 @@ export function Sidebar({ project }: { project: Project }) {
               : "bg-transparent group-hover:bg-accent/40",
           )}
         />
+      </div>
+    </div>
+  );
+}
+
+function ImportProjectDialog({
+  path,
+  busy,
+  onImport,
+  onCancel,
+}: {
+  path: string;
+  busy: boolean;
+  onImport: (mode: ProjectImportMode) => void;
+  onCancel: () => void;
+}) {
+  const { t } = useTranslation(["nav", "common"]);
+  const pathParts = path.split(/[\\/]/).filter(Boolean);
+  const name = pathParts[pathParts.length - 1] ?? path;
+  useEffect(() => {
+    if (busy) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onCancel();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [busy, onCancel]);
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+      onClick={() => !busy && onCancel()}
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-label={t("nav:projects.importTitle")}
+        className="w-[520px] max-w-[calc(100vw-2rem)] rounded-card border border-border bg-surface p-5 shadow-card"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="text-base font-semibold text-text">{t("nav:projects.importTitle")}</div>
+        <p className="mt-1 text-sm text-muted">
+          {t("nav:projects.importSubtitle", { name })}
+        </p>
+        <div className="mt-4 grid gap-2">
+          <button
+            autoFocus
+            disabled={busy}
+            onClick={() => onImport("in-place")}
+            className="rounded-card border border-accent bg-surface-2 p-3 text-left hover:bg-surface disabled:opacity-50"
+          >
+            <span className="block text-sm font-medium text-text">
+              {t("nav:projects.importInPlace")}
+            </span>
+            <span className="mt-1 block text-xs leading-relaxed text-muted">
+              {t("nav:projects.importInPlaceHint")}
+            </span>
+          </button>
+          <button
+            disabled={busy}
+            onClick={() => onImport("copy")}
+            className="rounded-card border border-border p-3 text-left hover:bg-surface-2 disabled:opacity-50"
+          >
+            <span className="block text-sm font-medium text-text">
+              {t("nav:projects.importCopy")}
+            </span>
+            <span className="mt-1 block text-xs leading-relaxed text-muted">
+              {t("nav:projects.importCopyHint")}
+            </span>
+          </button>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button
+            disabled={busy}
+            onClick={onCancel}
+            className="rounded-input border border-border px-3 py-1.5 text-sm text-text hover:bg-surface-2 disabled:opacity-50"
+          >
+            {t("common:actions.cancel")}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -194,7 +194,7 @@
   },
   "workspace": {
     "title": "工作区",
-    "hint": "本地优先——每个会话都在此创建的独立日期子文件夹中工作",
+    "hint": "本地优先——项目位于 projects/，独立会话位于 sessions/",
     "unavailable": "该功能在桌面应用中可用",
     "change": "更改…",
     "reveal": "在文件管理器中显示"

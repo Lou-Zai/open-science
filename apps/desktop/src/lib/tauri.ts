@@ -490,7 +490,7 @@ export async function workspacePath(): Promise<string | null> {
   }
 }
 
-/** The base folder new dated workspaces are created under (desktop only). */
+/** The base folder containing `projects/` and `sessions/` (desktop only). */
 export async function workspaceBase(): Promise<string | null> {
   if (!isTauri) return null;
   try {
@@ -567,29 +567,31 @@ export async function adoptWorkspaceSkills(known: string[]): Promise<string[]> {
   return invoke<string[]>("adopt_workspace_skills", { known });
 }
 
-/** Create a new dated folder under the base workspace and switch to it. */
+/** Create a new dated folder under `<base>/sessions` and switch to it. */
 export async function newDatedWorkspace(name: string): Promise<string> {
   if (!isTauri) throw new Error("not running in the desktop app");
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<string>("new_dated_workspace", { name });
 }
 
-/** A project: a named workspace folder under the base dir, marked by its
- *  `.openscience/project.json`. Sessions group under it by `directory`. */
+/** A project: a named workspace folder under `<base>/projects`, marked by its
+ *  `.openscience/project.json`. Legacy root-level projects remain readable. */
 export interface ProjectInfo {
   id: string;
   name: string;
   description?: string;
   createdAt: number;
   /** Absolute workspace folder (canonical, matches session `directory`). For a
-   *  copy-import this is the local copy under the base dir. */
+   *  copy import this is the managed copy; for in-place it is the source. */
   path: string;
   /** True when this project was brought in from elsewhere (a copy-import, or a
-   *  legacy in-place import) — drives the "imported" badge. */
+   *  in-place import) — drives the "imported" badge. */
   imported: boolean;
   /** Where an imported project was brought in from (shown as a hint). Absent for
    *  app-created projects. */
   importedFrom?: string;
+  /** Whether an imported project is a managed copy or used in place. */
+  importMode?: ProjectImportMode;
   /** Whether this project is pinned to the sidebar. */
   pinned: boolean;
 }
@@ -602,15 +604,19 @@ export async function createProject(name: string): Promise<ProjectInfo> {
   return invoke<ProjectInfo>("create_project", { name });
 }
 
-/** Import an existing repo/folder as a project, referenced in place: the repo
- *  is not moved, not scaffolded, and never auto-committed into. */
-export async function importProject(path: string): Promise<ProjectInfo> {
+export type ProjectImportMode = "copy" | "in-place";
+
+/** Import an existing folder as either a managed copy or an in-place project. */
+export async function importProject(
+  path: string,
+  mode: ProjectImportMode,
+): Promise<ProjectInfo> {
   if (!isTauri) throw new Error("not running in the desktop app");
   const { invoke } = await import("@tauri-apps/api/core");
-  return invoke<ProjectInfo>("import_project", { path });
+  return invoke<ProjectInfo>("import_project", { path, mode });
 }
 
-/** Every project under the base dir, sorted by name. */
+/** Every structured or legacy project, sorted by name. */
 export async function listProjects(): Promise<ProjectInfo[]> {
   if (isGatewayWeb) return (await gatewayGet<ProjectInfo[]>("/v1/projects")) ?? [];
   if (!isTauri) return [];

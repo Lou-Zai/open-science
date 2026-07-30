@@ -195,7 +195,7 @@
   },
   "workspace": {
     "title": "Espacio de trabajo",
-    "hint": "Local-first — cada sesión trabaja en su propia subcarpeta con fecha, creada aquí",
+    "hint": "Local-first — los proyectos están en projects/ y las sesiones independientes en sessions/",
     "unavailable": "disponible en la app de escritorio",
     "change": "Cambiar…",
     "reveal": "Mostrar"

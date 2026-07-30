@@ -256,8 +256,8 @@ export function SettingsPage() {
     setCatalogState("loading");
   }, [serverUrl]);
   useEffect(() => {
-    // The BASE folder — the parent every session's dated subfolder is created
-    // under. (The per-session active folder shows in the conversation header.)
+    // The BASE folder — contains projects/ and sessions/. (The per-session
+    // active folder shows in the conversation header.)
     void workspaceBase().then(setWsPath);
   }, []);
   const refreshPython = useCallback(() => {

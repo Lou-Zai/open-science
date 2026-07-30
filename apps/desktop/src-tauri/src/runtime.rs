@@ -56,10 +56,40 @@ fn active_workspace_file(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(runtime_root(app)?.join("active-workspace.txt"))
 }
 
-/// File recording the user's chosen BASE folder — the parent every new dated
-/// session workspace is created under (Settings → Workspace).
+/// File recording the user's chosen BASE folder — it contains the managed
+/// `projects/` and `sessions/` collections (Settings → Workspace).
 fn base_workspace_file(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(runtime_root(app)?.join("base-workspace.txt"))
+}
+
+pub(crate) const PROJECTS_DIR_NAME: &str = "projects";
+pub(crate) const SESSIONS_DIR_NAME: &str = "sessions";
+
+/// Keep the user-visible workspace root predictable:
+///
+/// ```text
+/// OpenScience/
+///   projects/
+///   sessions/
+///   .openscience/
+/// ```
+///
+/// Existing root-level workspaces are left where they are and remain readable.
+/// Moving them would invalidate absolute session directories stored by OpenCode.
+fn ensure_base_layout(dir: PathBuf) -> Result<PathBuf, String> {
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    for child in [PROJECTS_DIR_NAME, SESSIONS_DIR_NAME] {
+        std::fs::create_dir_all(dir.join(child)).map_err(|e| e.to_string())?;
+    }
+    Ok(dir)
+}
+
+pub(crate) fn projects_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(base_workspace_dir(app)?.join(PROJECTS_DIR_NAME))
+}
+
+pub(crate) fn sessions_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(base_workspace_dir(app)?.join(SESSIONS_DIR_NAME))
 }
 
 /// The active workspace folder OpenCode / the kernel / previews / provenance all
@@ -70,15 +100,15 @@ pub fn workspace_dir(app: &AppHandle) -> Result<PathBuf, String> {
         if let Ok(s) = std::fs::read_to_string(&f) {
             let dir = PathBuf::from(s.trim());
             if dir.is_dir() {
-                return Ok(dir);
+                return ensure_base_layout(dir);
             }
         }
     }
     base_workspace_dir(app)
 }
 
-/// The workspace root new dated session folders are created under. A folder
-/// the user picked in Settings wins; the default is `~/Documents/OpenScience`
+/// The workspace root containing the `projects/` and `sessions/` collections.
+/// A folder the user picked in Settings wins; the default is `~/Documents/OpenScience`
 /// (no space — the agent runs shell commands against this path, and unquoted
 /// spaces break them), falling back to `$HOME/Documents`.
 pub fn base_workspace_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -109,12 +139,11 @@ pub fn base_workspace_dir(app: &AppHandle) -> Result<PathBuf, String> {
                 if std::fs::rename(&old, &dir).is_ok() {
                     break;
                 }
-                return Ok(old);
+                return ensure_base_layout(old);
             }
         }
     }
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir)
+    ensure_base_layout(dir)
 }
 
 /// Path OpenCode reads when XDG_CONFIG_HOME points at our private dir.
@@ -1111,22 +1140,22 @@ pub fn workspace_path(app: AppHandle) -> Result<String, String> {
     Ok(workspace_dir(&app)?.to_string_lossy().to_string())
 }
 
-/// The base folder new dated workspaces are created under (`~/Documents/OpenScience`).
+/// The base folder containing projects and sessions (`~/Documents/OpenScience`).
 #[tauri::command]
 pub fn workspace_base(app: AppHandle) -> Result<String, String> {
     Ok(base_workspace_dir(&app)?.to_string_lossy().to_string())
 }
 
-/// Choose the base folder (Settings → Workspace → Change). Creates it if
-/// needed and persists the choice; every NEW session's dated folder is created
-/// under it. Existing sessions keep their folders.
+/// Choose the base folder (Settings → Workspace → Change). Creates its
+/// `projects/` and `sessions/` collections and persists the choice. Existing
+/// workspaces keep their folders.
 #[tauri::command]
 pub fn set_workspace_base(app: AppHandle, path: String) -> Result<String, String> {
     let dir = PathBuf::from(&path);
     if !dir.is_absolute() {
         return Err("workspace base must be absolute".into());
     }
-    std::fs::create_dir_all(&dir).map_err(|e| format!("could not create folder: {e}"))?;
+    ensure_base_layout(dir.clone()).map_err(|e| format!("could not create folder: {e}"))?;
     let canon = dir.canonicalize().map_err(|e| e.to_string())?;
     std::fs::write(base_workspace_file(&app)?, canon.to_string_lossy().as_bytes())
         .map_err(|e| e.to_string())?;
@@ -1203,8 +1232,9 @@ pub fn mark_session(app: AppHandle, session_id: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Create a new dated folder `<base>/<name>` and switch to it. `name` is a
-/// single path segment (the frontend supplies a timestamp); rejects separators.
+/// Create a new dated folder `<base>/sessions/<name>` and switch to it. `name`
+/// is a single path segment (the frontend supplies a timestamp); rejects
+/// separators.
 #[tauri::command(async)]
 pub fn new_dated_workspace(
     app: AppHandle,
@@ -1214,7 +1244,7 @@ pub fn new_dated_workspace(
     if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
         return Err("invalid folder name".into());
     }
-    let dir = base_workspace_dir(&app)?.join(&name);
+    let dir = sessions_dir(&app)?.join(&name);
     // `set_workspace` moves `app`; keep a handle to seed the harness afterwards.
     let seed_app = app.clone();
     let canon = set_workspace(app, state, dir.to_string_lossy().to_string())?;
@@ -1260,8 +1290,9 @@ pub fn kill_child(state: &RuntimeState) {
 mod tests {
     use super::{
         auth_has_provider, deploy_goal_plugin_dependencies, parse_scutil_proxy,
-        prune_stale_skills, random_hex, remove_key_from_config, resolve_proxy_env,
-        skill_name_from_markdown, sync_skill_pack, validate_proxy_url, workspace_skill_dirs,
+        ensure_base_layout, prune_stale_skills, random_hex, remove_key_from_config,
+        resolve_proxy_env, skill_name_from_markdown, sync_skill_pack, validate_proxy_url,
+        workspace_skill_dirs,
     };
     use std::fs;
 
@@ -1272,6 +1303,19 @@ mod tests {
         assert!(!auth_has_provider(auth, "anthropic"));
         assert!(!auth_has_provider("", "openai")); // empty/corrupt store
         assert!(!auth_has_provider("not json", "openai"));
+    }
+
+    #[test]
+    fn base_layout_has_separate_project_and_session_collections() {
+        let root =
+            std::env::temp_dir().join(format!("os-workspace-layout-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+
+        assert_eq!(ensure_base_layout(root.clone()).unwrap(), root);
+        assert!(root.join("projects").is_dir());
+        assert!(root.join("sessions").is_dir());
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
