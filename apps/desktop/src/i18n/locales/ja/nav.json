@@ -47,7 +47,9 @@
     "removeBody": "サイドバーからプロジェクトを削除します。ディスク上のファイルは削除されません。",
     "removeCopyBody": "ワークスペース内の管理コピーを削除します。元のソースフォルダは保持されますが、既存のセッションからワークスペースファイルへアクセスできなくなります。",
     "seeAll": "すべてのプロジェクト",
-    "openFolder": "{{path}} を開く"
+    "openFolder": "{{path}} を開く",
+    "newSession": "新しいセッション",
+    "openFolderLabel": "フォルダを開く"
   },
   "history": {
     "heading": "セッション",
@@ -118,5 +120,10 @@
       "openSettings": "設定を開く",
       "toggleTheme": "テーマを切り替え（ライト / ウォーム / ダーク）"
     }
+  },
+  "rowMenu": {
+    "sessionLabel": "セッションの操作",
+    "projectLabel": "プロジェクトの操作",
+    "exampleLabel": "サンプルの操作"
   }
 }

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, X, PanelLeft } from "lucide-react";
+import { Pencil, Plus, X, PanelLeft } from "lucide-react";
 import { groupLabel, useLayoutStore } from "@/lib/layout";
 import { useOverlayTitlebar, useUiStore } from "@/lib/store";
 import { overlayTitlebarStyle } from "@/lib/titlebar";
 import { cn } from "@/lib/cn";
+import { ContextMenu, ContextMenuItem } from "@/components/ui/ContextMenu";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 /**
@@ -38,7 +39,8 @@ export function GroupTabs() {
         data-tauri-drag-region={overlayTitlebar || undefined}
         style={overlayTitlebar ? overlayTitlebarStyle(sidebarCollapsed) : undefined}
         className={cn(
-          "flex shrink-0 items-center gap-1 border-b border-faint px-2",
+          // `select-none`: right-clicking a tab used to select its name.
+          "flex shrink-0 select-none items-center gap-1 border-b border-faint px-2",
           !overlayTitlebar && "h-9",
         )}
       >
@@ -59,8 +61,28 @@ export function GroupTabs() {
             const active = g.id === activeGroupId;
             const ephemeral = g.id === ephemeralGroupId;
             return (
-              <div
+              <ContextMenu
                 key={g.id}
+                label={t("group.tabMenu")}
+                items={
+                  <>
+                    <ContextMenuItem
+                      icon={<Pencil size={14} />}
+                      onSelect={() => requestAnimationFrame(() => setEditingId(g.id))}
+                    >
+                      {t("group.rename")}
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      icon={<X size={14} />}
+                      danger
+                      onSelect={() => setConfirmCloseId(g.id)}
+                    >
+                      {t("group.close")}
+                    </ContextMenuItem>
+                  </>
+                }
+              >
+              <div
                 // Dock-drag target: hovering this tab mid-drag switches screens (#4).
                 data-group-tab={g.id}
                 onClick={() => setActiveGroup(g.id)}
@@ -101,6 +123,7 @@ export function GroupTabs() {
                   <X size={12} />
                 </button>
               </div>
+              </ContextMenu>
             );
           })}
           <button

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
+  Archive,
   ArrowLeft,
   ChevronRight,
   Files,
@@ -13,6 +14,8 @@ import {
   FolderTree,
   Loader2,
   NotebookPen,
+  Pencil,
+  Pin,
   PanelLeft,
   Plus,
   Settings,
@@ -22,8 +25,10 @@ import type { Project } from "@ai4s/shared";
 import { cn } from "@/lib/cn";
 import { rootSessionOf, useRuntimeStore } from "@/lib/runtime";
 import {
+  openProjectFolder,
   pickFolder,
   renameProject,
+  workspaceBase,
   type ProjectImportMode,
   type ProjectInfo,
 } from "@/lib/tauri";
@@ -43,6 +48,13 @@ import { startPaneDrag } from "@/lib/dragPane";
 import { isGatewayWeb } from "@/lib/webMode";
 import { StatusPills } from "./StatusPills";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import {
+  ContextMenu,
+  ContextMenuEmpty,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+} from "@/components/ui/ContextMenu";
 import logo from "@/assets/logo.webp";
 
 interface Row {
@@ -55,6 +67,17 @@ interface Row {
 /** Dragging the divider below this pointer x collapses the sidebar; dragging
  *  back past it re-expands. Sits below SIDEBAR_MIN so there is a clear "snap". */
 const COLLAPSE_BELOW = 140;
+
+/** Whether `path` is the same folder as `base`, or sits inside it. Compared as
+ *  path SEGMENTS, so "/w/OpenScience-old" is not treated as inside "/w/OpenScience".
+ *  Both sides are normalized for separator and trailing slash only — this is a
+ *  UI shortcut; the runtime canonicalizes and decides for real. */
+export function isInside(path: string, base: string): boolean {
+  const parts = (p: string) => p.replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean);
+  const b = parts(base);
+  const p = parts(path);
+  return b.length > 0 && b.length <= p.length && b.every((seg, i) => seg === p[i]);
+}
 
 /** Session rows shown per group in the rail. The runtime now hands the app its
  *  WHOLE history (it used to stop at 100 — #65), which would otherwise turn the
@@ -95,6 +118,10 @@ export function Sidebar({ project }: { project: Project }) {
   const refreshProjects = useRuntimeStore((s) => s.refreshProjects);
   const deleteSession = useRuntimeStore((s) => s.deleteSession);
   const renameSession = useRuntimeStore((s) => s.renameSession);
+  const moveSessionToWorkspace = useRuntimeStore((s) => s.moveSessionToWorkspace);
+  const setSessionArchived = useRuntimeStore((s) => s.setSessionArchived);
+  const setProjectPinned = useRuntimeStore((s) => s.setProjectPinned);
+  const deleteProject = useRuntimeStore((s) => s.deleteProject);
   const hideExample = useRuntimeStore((s) => s.hideExample);
   // Which sessions are working right now — so a background session (or its
   // subagent) shows it's busy without opening it. A running subagent surfaces
@@ -194,6 +221,17 @@ export function Sidebar({ project }: { project: Project }) {
     if (importBusy) return;
     const path = await pickFolder();
     if (!path) return;
+    // A folder that already lives in the workspace is ADOPTED in place — the
+    // copy-vs-in-place question does not apply to it, and asking would promise
+    // a copy the runtime is not going to make.
+    const base = await workspaceBase();
+    if (base && isInside(path, base)) {
+      setImportBusy(true);
+      const adopted = await importProject(path, "in-place");
+      setImportBusy(false);
+      if (adopted) navigate("/live");
+      return;
+    }
     setPendingImportPath(path);
   };
 
@@ -273,6 +311,7 @@ export function Sidebar({ project }: { project: Project }) {
     }));
 
   const [pendingDelete, setPendingDelete] = useState<Row | null>(null);
+  const [pendingRemoveProject, setPendingRemoveProject] = useState<ProjectInfo | null>(null);
 
   const confirmDelete = () => {
     const row = pendingDelete;
@@ -297,6 +336,9 @@ export function Sidebar({ project }: { project: Project }) {
   const railWidth = isMobile ? Math.min(width, 300) : width;
   const drawerOpen = isMobile ? !sidebarCollapsed : !(sidebarCollapsed && !inSettings);
 
+  /** The folder a session row already lives in, for the "add to project" list. */
+  const sessionDirOf = (id: string) => sessions.find((x) => x.id === id)?.directory;
+
   const sessionRow = (row: Row) => {
     const running = row.kind === "session" && activeRoots.has(row.id);
     // A session the runtime never auto-titled stays "New session - <stamp>"
@@ -315,7 +357,60 @@ export function Sidebar({ project }: { project: Project }) {
         </div>
       );
     return (
-    <div key={row.to} className="group relative">
+    <ContextMenu
+      key={row.to}
+      label={row.kind === "example" ? t("rowMenu.exampleLabel") : t("rowMenu.sessionLabel")}
+      items={
+        row.kind === "example" ? (
+          <ContextMenuItem icon={<Trash2 size={14} />} danger onSelect={() => setPendingDelete(row)}>
+            {t("confirmDelete.hideAction")}
+          </ContextMenuItem>
+        ) : (
+          <>
+            <ContextMenuItem
+              icon={<Pencil size={14} />}
+              disabled={webReadOnly}
+              // Mount the editor after the menu hands focus back, or the
+              // restore blurs the fresh input and a blur commits it.
+              onSelect={() => requestAnimationFrame(() => setRenamingSession(row.id))}
+            >
+              {t("history.rename")}
+            </ContextMenuItem>
+            <ContextMenuSub icon={<FolderInput size={14} />} label={t("history.moveTo")}>
+              {projects.length === 0 && (
+                <ContextMenuEmpty>{t("history.moveToNone")}</ContextMenuEmpty>
+              )}
+              {projects.map((p) => (
+                <ContextMenuItem
+                  key={p.id}
+                  disabled={p.path === sessionDirOf(row.id)}
+                  onSelect={() => void moveSessionToWorkspace(row.id, p.path)}
+                >
+                  {p.name}
+                </ContextMenuItem>
+              ))}
+            </ContextMenuSub>
+            <ContextMenuItem
+              icon={<Archive size={14} />}
+              disabled={webReadOnly}
+              onSelect={() => void setSessionArchived(row.id, true)}
+            >
+              {t("history.archive")}
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              icon={<Trash2 size={14} />}
+              danger
+              disabled={webReadOnly}
+              onSelect={() => setPendingDelete(row)}
+            >
+              {t("confirmDelete.deleteAction")}
+            </ContextMenuItem>
+          </>
+        )
+      }
+    >
+    <div className="group relative">
       <NavLink
         to={row.to}
         // An <a> is natively draggable; that native drag hijacks the pointer
@@ -402,6 +497,7 @@ export function Sidebar({ project }: { project: Project }) {
         <Trash2 size={13} />
       </button>
     </div>
+    </ContextMenu>
     );
   };
 
@@ -419,7 +515,10 @@ export function Sidebar({ project }: { project: Project }) {
       }
     >
       <aside
-        className="sidebar-surface flex h-full flex-col border-r border-border"
+        // `select-none`: the rail is chrome, so a right-click (or a sloppy drag)
+        // must not leave its labels highlighted. Inline rename inputs opt back
+        // in via the global rule in index.css.
+        className="sidebar-surface flex h-full select-none flex-col border-r border-border"
         style={{ width: railWidth }}
       >
         {/* The strip clears the traffic lights and hosts the collapse button just
@@ -638,6 +737,47 @@ export function Sidebar({ project }: { project: Project }) {
                     />
                   </div>
                 ) : (
+                  <ContextMenu
+                    label={t("rowMenu.projectLabel")}
+                    items={
+                      <>
+                        <ContextMenuItem
+                          icon={<Plus size={14} />}
+                          disabled={webReadOnly}
+                          onSelect={() => void newSessionIn(p)}
+                        >
+                          {t("projects.newSession")}
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          icon={<Pencil size={14} />}
+                          onSelect={() => requestAnimationFrame(() => setRenamingId(p.id))}
+                        >
+                          {t("projects.rename")}
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          icon={<FolderOpen size={14} />}
+                          disabled={isGatewayWeb}
+                          onSelect={() => void openProjectFolder(p.id)}
+                        >
+                          {t("projects.openFolderLabel")}
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          icon={<Pin size={14} />}
+                          onSelect={() => void setProjectPinned(p.id, !p.pinned)}
+                        >
+                          {p.pinned ? t("projects.unpin") : t("projects.pin")}
+                        </ContextMenuItem>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem
+                          icon={<Trash2 size={14} />}
+                          danger
+                          onSelect={() => setPendingRemoveProject(p)}
+                        >
+                          {t("projects.remove")}
+                        </ContextMenuItem>
+                      </>
+                    }
+                  >
                   <div className="group/project relative">
                     <button
                       onClick={() => toggleProject(p.id)}
@@ -707,6 +847,7 @@ export function Sidebar({ project }: { project: Project }) {
                       )}
                     </div>
                   </div>
+                  </ContextMenu>
                 )}
                 <div
                   className={cn(
@@ -795,6 +936,23 @@ export function Sidebar({ project }: { project: Project }) {
           </button>
         </div>
         </>
+        )}
+
+        {pendingRemoveProject && (
+          <ConfirmDialog
+            title={t("projects.removeTitle", { name: pendingRemoveProject.name })}
+            body={t(
+              pendingRemoveProject.importMode === "copy"
+                ? "projects.removeCopyBody"
+                : "projects.removeBody",
+            )}
+            confirmLabel={t("projects.remove")}
+            onConfirm={() => {
+              void deleteProject(pendingRemoveProject.id);
+              setPendingRemoveProject(null);
+            }}
+            onCancel={() => setPendingRemoveProject(null)}
+          />
         )}
 
         {pendingDelete && (

@@ -26,7 +26,9 @@
       "title": "Écran vide",
       "hint": "Faites glisser une session depuis la barre latérale ici pour commencer, ou appuyez sur ⌘D pour diviser.",
       "newSession": "Nouvelle session"
-    }
+    },
+    "rename": "Renommer l’écran",
+    "tabMenu": "Actions de l’écran"
   },
   "composer": {
     "placeholder": {

@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
-use crate::runtime::{base_workspace_dir, projects_dir, random_hex, PROJECTS_DIR_NAME};
+use crate::runtime::{
+    base_workspace_dir, projects_dir, random_hex, PROJECTS_DIR_NAME, SESSIONS_DIR_NAME,
+};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ProjectMeta {
@@ -315,16 +317,20 @@ pub fn import_project(
     let source = source
         .canonicalize()
         .map_err(|e| format!("could not resolve the selected folder: {e}"))?;
-    // Guard: reject overlap with the base dir in either direction — importing a
-    // folder inside base would double-track an app-managed workspace (use "New
-    // project"), and importing a parent of base would copy the workspace into
-    // itself and recurse.
+    // Guard: overlap with the base dir is never a plain import. A folder INSIDE
+    // the workspace is adopted (below); a folder CONTAINING it would copy the
+    // workspace into itself and recurse, so it is refused outright.
     if let Ok(base_canon) = base.canonicalize() {
-        if source == base_canon || source.starts_with(&base_canon) {
-            return Err("this folder is already managed by the app; use New project instead".into());
-        }
-        if base_canon.starts_with(&source) {
+        if base_canon.starts_with(&source) && source != base_canon {
             return Err("cannot import a folder that contains the app's workspace".into());
+        }
+        // A folder INSIDE the workspace is adopted, not copied or pointed at.
+        // Removing a project deletes only its `project.json` and keeps every
+        // file, so a removed project leaves exactly this: a real workspace with
+        // no metadata. Refusing it (as this used to) stranded the folder — "New
+        // project" makes a DIFFERENT folder, so there was no way back in.
+        if source.starts_with(&base_canon) {
+            return adopt_in_base(&base_canon, &source);
         }
     }
     let name = source
@@ -452,6 +458,47 @@ fn record_import_provenance(dir: &Path, source: &Path) {
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&agents) {
         let _ = f.write_all(line.as_bytes());
     }
+}
+
+/// Register a folder that already lives inside the app's workspace as a
+/// project, in place. Used when the user picks such a folder in the importer —
+/// the honest reading of that gesture is "make this a project", and for a
+/// previously-removed project it is the only way back.
+///
+/// Idempotent: a folder that still carries metadata is already listed, so its
+/// existing entry is returned untouched rather than being re-created with a new id.
+fn adopt_in_base(base: &Path, source: &Path) -> Result<ProjectInfo, String> {
+    // The containers are not workspaces; adopting one would swallow every
+    // project or session inside it.
+    if source == base
+        || source == base.join(PROJECTS_DIR_NAME)
+        || source == base.join(SESSIONS_DIR_NAME)
+    {
+        return Err("this folder holds your projects; pick one of the folders inside it".into());
+    }
+    if let Some(meta) = read_meta(source) {
+        return Ok(info_of(meta, source));
+    }
+    let name = source
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "project".into());
+    // No `source_path` / `imported_from`: the folder IS the workspace, exactly
+    // like a project the app created itself. That also keeps Remove
+    // non-destructive for it — it drops the marker and leaves the files.
+    let meta = ProjectMeta {
+        id: random_hex(8),
+        name,
+        description: None,
+        created_at: now_ms(),
+        version: 1,
+        source_path: None,
+        imported_from: None,
+        pinned: None,
+    };
+    write_meta(source, &meta)?;
+    Ok(info_of(meta, source))
 }
 
 /// New projects live under `<base>/projects`. Root-level project folders from
@@ -616,6 +663,77 @@ pub fn open_project_folder(app: AppHandle, id: String) -> Result<(), String> {
 mod tests {
     use super::{create_in, folder_slug, read_meta};
     use std::fs;
+
+    mod adopting_a_folder_already_in_the_workspace {
+        use super::super::{adopt_in_base, delete_in, project_dirs, read_meta, PROJECTS_DIR_NAME};
+        use std::fs;
+
+        /// A scratch base dir with the app's layout.
+        fn base() -> std::path::PathBuf {
+            let dir = std::env::temp_dir().join(format!("ai4s-adopt-{}", super::super::random_hex(8)));
+            fs::create_dir_all(dir.join(PROJECTS_DIR_NAME)).unwrap();
+            fs::create_dir_all(dir.join("sessions")).unwrap();
+            dir
+        }
+
+        #[test]
+        fn a_removed_project_can_be_added_back() {
+            // The exact reported state: Remove deletes only project.json and
+            // keeps every file, so the folder vanishes from the list with no way
+            // back — import refused it and "New project" makes a DIFFERENT folder.
+            let base = base();
+            let (dir, meta) = super::super::create_in(&base, "仙侠克苏鲁").unwrap();
+            fs::write(dir.join("notes.md"), "work").unwrap();
+            delete_in(&base, &meta.id).unwrap();
+            assert!(read_meta(&dir).is_none(), "Remove drops the marker");
+            assert!(dir.join("notes.md").exists(), "…but keeps the files");
+            assert!(project_dirs(&base).is_empty(), "so it is no longer listed");
+
+            let info = adopt_in_base(&base, &dir).unwrap();
+
+            assert_eq!(info.name, "仙侠克苏鲁");
+            assert_eq!(project_dirs(&base).len(), 1, "back in the list");
+            assert!(dir.join("notes.md").exists(), "files untouched");
+            // Adopted in place: the folder IS the workspace, not a pointer.
+            assert_eq!(read_meta(&dir).unwrap().source_path, None);
+            assert!(!info.imported, "not an import — it was always ours");
+        }
+
+        #[test]
+        fn adopting_twice_keeps_the_same_project() {
+            let base = base();
+            let dir = base.join("已有的项目");
+            fs::create_dir_all(&dir).unwrap();
+
+            let first = adopt_in_base(&base, &dir).unwrap();
+            let second = adopt_in_base(&base, &dir).unwrap();
+
+            assert_eq!(first.id, second.id, "no duplicate entry, no new id");
+            assert_eq!(project_dirs(&base).len(), 1);
+        }
+
+        #[test]
+        fn the_containers_themselves_are_never_adopted() {
+            // Adopting one of these would swallow every project or session in it.
+            let base = base();
+            for candidate in [base.clone(), base.join(PROJECTS_DIR_NAME), base.join("sessions")] {
+                assert!(adopt_in_base(&base, &candidate).is_err(), "{candidate:?}");
+            }
+            assert!(project_dirs(&base).is_empty());
+        }
+
+        #[test]
+        fn a_folder_under_projects_is_adopted_too() {
+            let base = base();
+            let dir = base.join(PROJECTS_DIR_NAME).join("orphan");
+            fs::create_dir_all(&dir).unwrap();
+
+            let info = adopt_in_base(&base, &dir).unwrap();
+
+            assert_eq!(info.name, "orphan");
+            assert_eq!(project_dirs(&base).len(), 1);
+        }
+    }
 
     #[test]
     fn slug_is_one_safe_path_segment() {

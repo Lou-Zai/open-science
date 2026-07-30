@@ -26,7 +26,9 @@
       "title": "Pantalla vacía",
       "hint": "Arrastra una sesión desde la barra lateral aquí para empezar, o pulsa ⌘D para dividir.",
       "newSession": "Nueva sesión"
-    }
+    },
+    "rename": "Cambiar nombre de la pantalla",
+    "tabMenu": "Acciones de la pantalla"
   },
   "composer": {
     "placeholder": {

@@ -47,7 +47,9 @@
     "removeBody": "这会从侧边栏移除该项目。磁盘上的文件不会被删除。",
     "removeCopyBody": "这会删除工作区中的托管副本。原始来源文件夹会保留，但已有会话将无法再访问其工作区文件。",
     "seeAll": "全部项目",
-    "openFolder": "打开 {{path}}"
+    "openFolder": "打开 {{path}}",
+    "newSession": "新建会话",
+    "openFolderLabel": "打开文件夹"
   },
   "history": {
     "heading": "会话",
@@ -118,5 +120,10 @@
       "openSettings": "打开设置",
       "toggleTheme": "切换主题（浅色 / 暖色 / 深色）"
     }
+  },
+  "rowMenu": {
+    "sessionLabel": "会话操作",
+    "projectLabel": "项目操作",
+    "exampleLabel": "示例操作"
   }
 }

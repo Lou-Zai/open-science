@@ -47,7 +47,9 @@
     "removeBody": "This removes the project from the sidebar. Files on disk will not be deleted.",
     "removeCopyBody": "This deletes the managed copy from the workspace. The original source folder is kept, but existing sessions will no longer have their workspace files.",
     "seeAll": "All projects",
-    "openFolder": "Open {{path}}"
+    "openFolder": "Open {{path}}",
+    "newSession": "New session",
+    "openFolderLabel": "Open folder"
   },
   "history": {
     "heading": "Sessions",
@@ -120,5 +122,10 @@
       "openSettings": "Open settings",
       "toggleTheme": "Switch theme (light / warm / dark)"
     }
+  },
+  "rowMenu": {
+    "sessionLabel": "Session actions",
+    "projectLabel": "Project actions",
+    "exampleLabel": "Example actions"
   }
 }

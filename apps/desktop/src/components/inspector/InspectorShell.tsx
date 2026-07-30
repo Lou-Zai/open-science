@@ -26,7 +26,13 @@ export function InspectorShell({
   workspaceDirectory?: string;
 }) {
   return (
-    <div className="h-full border-l border-border bg-surface" data-variant={inspector.variant}>
+    // A file preview is document content: its text keeps the WebView's own
+    // menu (Copy, Look Up) — see lib/nativeMenu.
+    <div
+      className="h-full border-l border-border bg-surface"
+      data-variant={inspector.variant}
+      data-native-menu
+    >
       {inspector.variant === "artifact" && (
         <ArtifactInspector data={inspector} onClose={onClose} controls={controls} />
       )}

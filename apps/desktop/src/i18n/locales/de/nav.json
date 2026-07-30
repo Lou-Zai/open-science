@@ -47,7 +47,9 @@
     "removeBody": "Entfernt das Projekt aus der Seitenleiste. Dateien auf der Festplatte werden nicht gelöscht.",
     "removeCopyBody": "Löscht die verwaltete Kopie aus dem Arbeitsbereich. Der ursprüngliche Quellordner bleibt erhalten, vorhandene Sitzungen haben jedoch keinen Zugriff mehr auf ihre Arbeitsbereichsdateien.",
     "seeAll": "Alle Projekte",
-    "openFolder": "{{path}} öffnen"
+    "openFolder": "{{path}} öffnen",
+    "newSession": "Neue Sitzung",
+    "openFolderLabel": "Ordner öffnen"
   },
   "history": {
     "heading": "Sitzungen",
@@ -120,5 +122,10 @@
       "openSettings": "Einstellungen öffnen",
       "toggleTheme": "Design wechseln (Hell / Warm / Dunkel)"
     }
+  },
+  "rowMenu": {
+    "sessionLabel": "Sitzungsaktionen",
+    "projectLabel": "Projektaktionen",
+    "exampleLabel": "Beispielaktionen"
   }
 }

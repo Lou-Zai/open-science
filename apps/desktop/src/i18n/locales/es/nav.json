@@ -47,7 +47,9 @@
     "removeBody": "Quita el proyecto de la barra lateral. Los archivos en disco no se eliminarán.",
     "removeCopyBody": "Elimina la copia administrada del espacio de trabajo. La carpeta de origen se conserva, pero las sesiones existentes ya no tendrán sus archivos de trabajo.",
     "seeAll": "Todos los proyectos",
-    "openFolder": "Abrir {{path}}"
+    "openFolder": "Abrir {{path}}",
+    "newSession": "Nueva sesión",
+    "openFolderLabel": "Abrir carpeta"
   },
   "history": {
     "heading": "Sesiones",
@@ -120,5 +122,10 @@
       "openSettings": "Abrir configuración",
       "toggleTheme": "Cambiar tema (claro / cálido / oscuro)"
     }
+  },
+  "rowMenu": {
+    "sessionLabel": "Acciones de la sesión",
+    "projectLabel": "Acciones del proyecto",
+    "exampleLabel": "Acciones del ejemplo"
   }
 }

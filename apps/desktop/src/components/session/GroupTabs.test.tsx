@@ -49,3 +49,55 @@ describe("GroupTabs Screen close", () => {
     expect(useLayoutStore.getState().groups[0].id).toBe("screen-b");
   });
 });
+
+describe("GroupTabs right-click menu", () => {
+  beforeEach(() => {
+    const leaf = makeLeaf("session-a");
+    useLayoutStore.setState({
+      groups: [
+        { id: "screen-a", name: "Analysis", tree: leaf, focusedLeafId: leaf.id, zoomedLeafId: null },
+      ],
+      activeGroupId: "screen-a",
+      tree: leaf,
+      focusedLeafId: leaf.id,
+      zoomedLeafId: null,
+      ephemeralGroupId: null,
+    });
+  });
+
+  it("offers Screen actions instead of the WebView's text menu", async () => {
+    render(<GroupTabs />);
+    // What the user hit: right-clicking a tab selected its name and offered
+    // Look Up / Translate / Search with Google.
+    await userEvent.pointer({ target: screen.getByText("Analysis"), keys: "[MouseRight]" });
+
+    const menu = await screen.findByRole("menu", { name: "Screen actions" });
+    expect(menu).toHaveTextContent("Rename screen");
+    expect(menu).toHaveTextContent("Close screen");
+  });
+
+  it("renames the Screen in place from the menu", async () => {
+    render(<GroupTabs />);
+    await userEvent.pointer({ target: screen.getByText("Analysis"), keys: "[MouseRight]" });
+    await userEvent.click(await screen.findByText("Rename screen"));
+
+    const input = await screen.findByDisplayValue("Analysis");
+    await userEvent.clear(input);
+    await userEvent.type(input, "Spike sorting{Enter}");
+
+    expect(useLayoutStore.getState().groups[0].name).toBe("Spike sorting");
+  });
+
+  it("closing from the menu still asks first", async () => {
+    render(<GroupTabs />);
+    await userEvent.pointer({ target: screen.getByText("Analysis"), keys: "[MouseRight]" });
+    await userEvent.click(await screen.findByText("Close screen"));
+
+    expect(await screen.findByRole("alertdialog", { name: "Close this Screen?" })).toBeInTheDocument();
+  });
+
+  it("the tab strip opts out of text selection", () => {
+    const { container } = render(<GroupTabs />);
+    expect(container.firstElementChild?.className).toContain("select-none");
+  });
+});

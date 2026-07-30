@@ -599,6 +599,9 @@ export function SessionView({
           {/* Zoom the CHAT content (not the scroll box or the composer). */}
           <div
             ref={chatContentRef}
+            // The conversation is document content, so it keeps the WebView's
+            // own menu (Copy, Look Up, Translate) — see lib/nativeMenu.
+            data-native-menu
             style={zoom !== 1 ? { zoom } : undefined}
             className="mx-auto flex max-w-[760px] flex-col gap-4 px-8 pt-6"
           >

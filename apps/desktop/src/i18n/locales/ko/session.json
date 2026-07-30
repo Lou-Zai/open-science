@@ -26,7 +26,9 @@
       "title": "빈 화면",
       "hint": "시작하려면 사이드바에서 세션을 여기로 드래그하거나 ⌘D를 눌러 분할하세요.",
       "newSession": "새 세션"
-    }
+    },
+    "rename": "화면 이름 변경",
+    "tabMenu": "화면 작업"
   },
   "composer": {
     "placeholder": {

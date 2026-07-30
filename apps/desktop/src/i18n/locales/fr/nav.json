@@ -47,7 +47,9 @@
     "removeBody": "Retire le projet de la barre latérale. Les fichiers sur le disque ne seront pas supprimés.",
     "removeCopyBody": "Supprime la copie gérée de l’espace de travail. Le dossier source d’origine est conservé, mais les sessions existantes n’auront plus accès à leurs fichiers de travail.",
     "seeAll": "Tous les projets",
-    "openFolder": "Ouvrir {{path}}"
+    "openFolder": "Ouvrir {{path}}",
+    "newSession": "Nouvelle session",
+    "openFolderLabel": "Ouvrir le dossier"
   },
   "history": {
     "heading": "Sessions",
@@ -120,5 +122,10 @@
       "openSettings": "Ouvrir les paramètres",
       "toggleTheme": "Changer de thème (clair / chaud / sombre)"
     }
+  },
+  "rowMenu": {
+    "sessionLabel": "Actions de la session",
+    "projectLabel": "Actions du projet",
+    "exampleLabel": "Actions de l’exemple"
   }
 }

@@ -323,6 +323,18 @@ body {
   animation: fade-in 150ms ease-out 150ms backwards;
 }
 
+/* App chrome is not a document. Right-clicking a sidebar row or a Screen tab
+   used to select its label (WebKit selects the word under the cursor before
+   opening its menu), leaving stray highlight behind. Chrome opts out of
+   selection via `select-none`; editable fields always opt back IN, since a
+   `user-select:none` ancestor would otherwise make their own text unselectable. */
+input,
+textarea,
+[contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 /* While a pane is being dragged (see lib/dragPane), forcefully suppress text
    selection everywhere — the conversation's message text sets its own
    `user-select`, which a body-level `user-select:none` can't override. */

@@ -18,6 +18,7 @@ import { isGatewayWeb, gatewayToken, setUnauthorizedHandler } from "@/lib/webMod
 import { WebTokenGate } from "@/components/web/WebTokenGate";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { leaves, useLayoutStore, type SplitDir } from "@/lib/layout";
+import { useNativeContextMenuGuard } from "@/lib/nativeMenu";
 
 export function AppShell() {
   const { t } = useTranslation("nav");
@@ -41,6 +42,9 @@ export function AppShell() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // A right-click on app chrome must not open the WebView's page menu.
+  useNativeContextMenuGuard();
 
   // Ghostty-style split-pane shortcuts, live only on the /live surface. Disabled
   // where tiling can't work (phone width, web gateway) and in Settings. New

@@ -26,7 +26,9 @@
       "title": "空屏幕",
       "hint": "从左侧栏拖一个会话到这里开始，或按 ⌘D 分屏。",
       "newSession": "新建会话"
-    }
+    },
+    "rename": "重命名屏幕",
+    "tabMenu": "屏幕操作"
   },
   "composer": {
     "placeholder": {
