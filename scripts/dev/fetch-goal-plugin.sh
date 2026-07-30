@@ -40,8 +40,12 @@ echo "$GOAL_PLUGIN_VERSION" > "$OUT_DIR/.version"
 # and an unreachable registry leaves the desktop on "Connecting" for minutes.
 # This script runs on every release target, so optional native packages match
 # that platform.
-(cd "$OUT_DIR" && npm install --silent --no-fund --no-audit --omit=dev --ignore-scripts \
-  "@opencode-ai/plugin@${OPENCODE_PLUGIN_VERSION}" > /dev/null)
+(
+  cd "$OUT_DIR"
+  npm init --yes > /dev/null
+  npm install --silent --no-fund --no-audit --omit=dev --ignore-scripts \
+    "@opencode-ai/plugin@${OPENCODE_PLUGIN_VERSION}" > /dev/null
+)
 echo "$OPENCODE_PLUGIN_VERSION" > "$OUT_DIR/.opencode-plugin-version"
 
 echo "Placed ${PKG}@${GOAL_PLUGIN_VERSION} in $OUT_DIR:"
