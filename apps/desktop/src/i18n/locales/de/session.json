@@ -113,6 +113,13 @@
       "reasoningDefault": "Modellstandard",
       "faster": "Schneller",
       "smarter": "Klüger"
+    },
+    "reference": {
+      "filesAria": "Dateien im Arbeitsbereich",
+      "sessionsAria": "Frühere Unterhaltungen",
+      "scanning": "Arbeitsbereich wird gelesen…",
+      "chipTitle": "Diese Unterhaltung wird für den Agenten zitiert",
+      "removeAria": "Verweis auf {{title}} entfernen"
     }
   },
   "localCommand": {
@@ -336,5 +343,30 @@
       "edit": "Bearbeiten & erneut senden",
       "revert": "Hierher zurücksetzen"
     }
+  },
+  "compaction": {
+    "label": "Kontext verdichtet",
+    "autoBody": "Die Laufzeit hat die früheren Züge zusammengefasst, um im Kontextfenster dieses Modells zu bleiben; die Unterhaltung ging hier weiter.",
+    "manualBody": "Sie haben die Zusammenfassung der früheren Züge angefordert; die Unterhaltung ging hier weiter.",
+    "overflowBody": "Auslöser war ein bereits vollgelaufener Kontext.",
+    "at": "Zeitpunkt: {{time}}",
+    "originalKept": "Die vollständige ursprüngliche Unterhaltung bleibt lokal gespeichert."
+  },
+  "selection": {
+    "aria": "Aktionen für den markierten Text",
+    "quote": "Zitieren",
+    "explain": "Erklären",
+    "explainPrompt": "Erkläre diesen Teil ausführlicher.",
+    "remember": "Ins Gedächtnis speichern",
+    "savedProject": "Im Gedächtnis von {{name}} gespeichert",
+    "savedGlobal": "Im globalen Gedächtnis gespeichert"
+  },
+  "subagents": {
+    "title": "Subagenten",
+    "toggleTitle": "Zeigen, was die Subagenten tun",
+    "closeAria": "Subagenten-Panel schließen",
+    "count_one": "{{count}} Aufgabe",
+    "count_other": "{{count}} Aufgaben",
+    "empty": "In dieser Unterhaltung gibt es noch keine Subagenten."
   }
 }

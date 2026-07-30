@@ -64,6 +64,8 @@ import { DataFlowCard } from "@/components/settings/DataFlowCard";
 import { ModelBrowser } from "@/components/settings/ModelBrowser";
 import { fallbackDefaultModel } from "@/components/settings/modelCatalog";
 import { ProviderManagerCard } from "@/components/settings/ProviderManagerCard";
+import { AgentModelsCard } from "@/components/settings/AgentModelsCard";
+import { MemoryCard } from "@/components/settings/MemoryCard";
 import { Row, Section, Switch } from "@/components/settings/Section";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { resolveSection } from "@/components/settings/sections";
@@ -959,6 +961,12 @@ export function SettingsPage() {
           )}
         </Section>
         )}
+
+        {/* ---- One model per agent (a fast reviewer, a strong main agent) ---- */}
+        {section === "models" && isTauri && <AgentModelsCard providers={providers} />}
+
+        {/* ---- Persistent memory layers ---- */}
+        {section === "memory" && <MemoryCard />}
 
         {/* ---- Providers ---- */}
         {section === "models" && (

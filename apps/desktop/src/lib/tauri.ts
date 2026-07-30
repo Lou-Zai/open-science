@@ -125,6 +125,87 @@ export async function setApprovalMode(mode: ApprovalMode): Promise<void> {
   await invoke("set_approval_mode", { mode });
 }
 
+/** Write one exported conversation into a folder the user picked. Returns the
+ *  file that was actually written — the name is derived from the title and
+ *  de-duplicated, so nothing is silently overwritten. */
+export async function writeExportFile(
+  directory: string,
+  name: string,
+  contents: string,
+): Promise<string> {
+  if (!isTauri) throw new Error("Exporting needs the desktop app");
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string>("write_export_file", { directory, name, contents });
+}
+
+/** The two memory layers. "global" is one Markdown file the runtime loads into
+ *  every conversation; "project" is that folder's own AGENTS.md, loaded only
+ *  for sessions working inside it. Session-only context is the conversation
+ *  itself — it needs no file. */
+export type MemoryScope = "global" | "project";
+
+/** A memory layer's text; "" when it was never written. */
+export async function readMemory(
+  scope: MemoryScope,
+  directory?: string | null,
+): Promise<string> {
+  if (!isTauri) return "";
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<string>("read_memory", { scope, directory: directory ?? null });
+}
+
+/** Replace a memory layer. Saving an empty document clears it. */
+export async function writeMemory(
+  scope: MemoryScope,
+  directory: string | null,
+  text: string,
+): Promise<void> {
+  if (!isTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("write_memory", { scope, directory, text });
+}
+
+/** Add a block to a memory layer, keeping what is already there. */
+export async function appendMemory(
+  scope: MemoryScope,
+  directory: string | null,
+  text: string,
+): Promise<void> {
+  if (!isTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("append_memory", { scope, directory, text });
+}
+
+/** Whether memory is applied to conversations at all. */
+export async function getMemoryEnabled(): Promise<boolean> {
+  if (!isTauri) return false;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<boolean>("get_memory_enabled");
+}
+
+/** Apply / stop applying memory; the sidecar restarts, so the caller reconnects. */
+export async function setMemoryEnabled(enabled: boolean): Promise<void> {
+  if (!isTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("set_memory_enabled", { enabled });
+}
+
+/** Per-agent model overrides, `{ agent: "provider/model" }`. Agents that are
+ *  absent follow the default model. */
+export async function getAgentModels(): Promise<Record<string, string>> {
+  if (!isTauri) return {};
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<Record<string, string>>("get_agent_models");
+}
+
+/** Pin one agent to a model, or pass "" to clear the override. Restarts the
+ *  sidecar — agents are built when it loads its config. */
+export async function setAgentModel(agent: string, model: string): Promise<void> {
+  if (!isTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("set_agent_model", { agent, model });
+}
+
 /** Network proxy for the sidecar: follow the OS, a fixed URL, or direct. */
 export type ProxyMode = "system" | "custom" | "none";
 export interface ProxySetting {

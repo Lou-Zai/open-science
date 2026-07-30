@@ -56,6 +56,11 @@ interface Row {
  *  back past it re-expands. Sits below SIDEBAR_MIN so there is a clear "snap". */
 const COLLAPSE_BELOW = 140;
 
+/** Session rows shown per group in the rail. The runtime now hands the app its
+ *  WHOLE history (it used to stop at 100 — #65), which would otherwise turn the
+ *  sidebar into an endless list; the overflow is one click away on /history. */
+const ROW_LIMIT = 12;
+
 /** Projects the user folded shut (ids). Projects default to open — a
  *  researcher has a handful, and their sessions ARE the sidebar's content. */
 const COLLAPSED_KEY = "ai4s.collapsedProjects";
@@ -89,6 +94,7 @@ export function Sidebar({ project }: { project: Project }) {
   const importProject = useRuntimeStore((s) => s.importProject);
   const refreshProjects = useRuntimeStore((s) => s.refreshProjects);
   const deleteSession = useRuntimeStore((s) => s.deleteSession);
+  const renameSession = useRuntimeStore((s) => s.renameSession);
   const hideExample = useRuntimeStore((s) => s.hideExample);
   // Which sessions are working right now — so a background session (or its
   // subagent) shows it's busy without opening it. A running subagent surfaces
@@ -156,6 +162,7 @@ export function Sidebar({ project }: { project: Project }) {
   const [importBusy, setImportBusy] = useState(false);
   const [pendingImportPath, setPendingImportPath] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renamingSession, setRenamingSession] = useState<string | null>(null);
 
   const toggleProject = (id: string) =>
     setCollapsedProjects((prev) => {
@@ -292,6 +299,21 @@ export function Sidebar({ project }: { project: Project }) {
 
   const sessionRow = (row: Row) => {
     const running = row.kind === "session" && activeRoots.has(row.id);
+    // A session the runtime never auto-titled stays "New session - <stamp>"
+    // (#63); double-clicking the row is the way out, matching project rename.
+    if (renamingSession === row.id)
+      return (
+        <div key={row.to} className="py-0.5 pl-2 pr-1">
+          <InlineNameInput
+            defaultValue={row.title}
+            onSubmit={(v) => {
+              setRenamingSession(null);
+              void renameSession(row.id, v);
+            }}
+            onCancel={() => setRenamingSession(null)}
+          />
+        </div>
+      );
     return (
     <div key={row.to} className="group relative">
       <NavLink
@@ -331,9 +353,12 @@ export function Sidebar({ project }: { project: Project }) {
           }
         }}
         className={cn(
+          // The selected row was only a shade of the hover background, which
+          // several themes made near-invisible (#63): give it the accent tint,
+          // an inset accent ring and medium weight so it reads at a glance.
           "flex items-center gap-2 rounded-input py-1 pl-2 pr-8 text-[13px] hover:bg-surface-2",
           location.pathname === row.to
-            ? "bg-surface-2 text-text"
+            ? "bg-accent/15 font-medium text-text ring-1 ring-inset ring-accent/40"
             : "text-text/90",
         )}
       >
@@ -351,7 +376,18 @@ export function Sidebar({ project }: { project: Project }) {
             )}
           />
         )}
-        <span className="flex-1 truncate">{row.title}</span>
+        <span
+          className="flex-1 truncate"
+          title={row.kind === "session" ? t("history.renameHint") : undefined}
+          onDoubleClick={(e) => {
+            if (row.kind !== "session" || webReadOnly) return;
+            e.preventDefault();
+            e.stopPropagation();
+            setRenamingSession(row.id);
+          }}
+        >
+          {row.title}
+        </span>
         {row.kind === "example" && (
           <span className="shrink-0 rounded-full bg-surface-2 px-1.5 text-[10px] uppercase tracking-wide text-muted ring-1 ring-border">
             {t("history.exampleTag")}
@@ -685,7 +721,14 @@ export function Sidebar({ project }: { project: Project }) {
                           {t("projects.noSessions")}
                         </div>
                       )}
-                      {rows.map(sessionRow)}
+                      {rows.slice(0, ROW_LIMIT).map(sessionRow)}
+                      {rows.length > ROW_LIMIT && (
+                        <MoreRow
+                          count={rows.length - ROW_LIMIT}
+                          label={t("history.seeAll")}
+                          onClick={() => navigate("/history")}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -701,15 +744,36 @@ export function Sidebar({ project }: { project: Project }) {
               <span className="text-[10px] tabular-nums text-muted">+{hiddenProjectCount}</span>
             </button>
           )}
-          <div className="mt-3 px-2 py-1 text-xs font-medium uppercase tracking-wider text-muted">
-            {t("history.heading")}
+          <div className="mt-3 flex items-center gap-1 px-2 py-1">
+            <span className="flex-1 truncate text-xs font-medium uppercase tracking-wider text-muted">
+              {t("history.heading")}
+            </span>
+            {/* Every conversation ever, searchable — the rail only shows recent
+                work, so this is how older sessions are found (#65). */}
+            <button
+              onClick={() => navigate("/history")}
+              title={t("history.seeAll")}
+              className={cn(
+                "shrink-0 rounded px-1 text-[11px] outline-none hover:bg-surface-2 hover:text-text",
+                location.pathname === "/history" ? "text-text" : "text-muted",
+              )}
+            >
+              {t("history.seeAll")}
+            </button>
           </div>
           {looseRows.length === 0 && exampleRows.length === 0 && (
             <div className="px-2 py-2 text-xs text-muted">
               {t("history.empty")}
             </div>
           )}
-          {looseRows.map(sessionRow)}
+          {looseRows.slice(0, ROW_LIMIT).map(sessionRow)}
+          {looseRows.length > ROW_LIMIT && (
+            <MoreRow
+              count={looseRows.length - ROW_LIMIT}
+              label={t("history.seeAll")}
+              onClick={() => navigate("/history")}
+            />
+          )}
           {exampleRows.map(sessionRow)}
         </div>
 
@@ -855,6 +919,27 @@ function ImportProjectDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+/** "+N · All sessions" tail of a truncated session list. */
+function MoreRow({
+  count,
+  label,
+  onClick,
+}: {
+  count: number;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full items-center gap-2 rounded-input py-1 pl-2 pr-2 text-[13px] text-muted hover:bg-surface-2 hover:text-text"
+    >
+      <span className="truncate">{label}</span>
+      <span className="ml-auto shrink-0 text-[10px] tabular-nums">+{count}</span>
+    </button>
   );
 }
 
