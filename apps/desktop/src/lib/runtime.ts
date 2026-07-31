@@ -1481,23 +1481,25 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
             ev,
             { shellTurn: !!s.shellTurns[sid] },
           );
+          const threads = { ...s.threads, [sid]: { ...cur, ...folded, loaded: true } };
           // The turn is over — unlock the composer and drop the "Working…" row.
           // The shell flag clears HERE (not when the POST settles): within the
           // SSE stream the bash-output event always precedes session.idle.
+          //
+          // ONLY session.idle may touch these three maps. Cloning them on every
+          // folded event handed a NEW identity to every whole-map subscriber on
+          // every streamed token — repainting every pane and the sidebar for a
+          // BACKGROUND session's stream, which is exactly what #34's per-field
+          // selectors exist to prevent. With concurrent subagents that fan-out
+          // multiplied per live child and starved the main thread (#50).
+          if (ev.type !== "session.idle") return { threads };
           const runningSessions = { ...s.runningSessions };
           const shellTurns = { ...s.shellTurns };
           const stepCounts = { ...s.stepCounts };
-          if (ev.type === "session.idle") {
-            delete runningSessions[sid];
-            delete shellTurns[sid];
-            delete stepCounts[sid];
-          }
-          return {
-            runningSessions,
-            shellTurns,
-            stepCounts,
-            threads: { ...s.threads, [sid]: { ...cur, ...folded, loaded: true } },
-          };
+          delete runningSessions[sid];
+          delete shellTurns[sid];
+          delete stepCounts[sid];
+          return { runningSessions, shellTurns, stepCounts, threads };
         });
       // A running bash tool streams its stdout tail on every write — dozens
       // of events per second under a progress bar. Fold at most one partial

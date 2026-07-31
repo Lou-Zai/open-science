@@ -41,6 +41,19 @@ import { SessionFilesPane } from "@/app/routes/FilesPage";
 import { RunsPane } from "@/app/routes/RunsPage";
 import { cn } from "@/lib/cn";
 
+type ThreadBlocks = NonNullable<ReturnType<typeof useRuntimeStore.getState>["threads"][string]>["blocks"];
+type ToolCallBlock = Extract<ThreadBlocks[number], { kind: "tool-call" }>;
+
+/** The newest still-running tool step, or undefined. Allocation-free: a live
+ *  pane re-derives this on every render, so it must not copy the block list. */
+function findLastRunningTool(blocks?: ThreadBlocks): ToolCallBlock | undefined {
+  for (let i = (blocks?.length ?? 0) - 1; i >= 0; i--) {
+    const b = blocks![i];
+    if (b.kind === "tool-call" && b.status === "running") return b;
+  }
+  return undefined;
+}
+
 /**
  * One agent session — header + conversation + composer + optional right pane.
  * Bound to `sessionId` (null = the single draft pane), NOT the global
@@ -95,10 +108,14 @@ export function SessionView({
   const status = useRuntimeStore((s) => s.status);
   const switching = useRuntimeStore((s) => s.switching);
   const webReadOnly = useRuntimeStore((s) => s.webReadOnly);
-  const sendingSessions = useRuntimeStore((s) => s.sendingSessions);
-  const runningSessions = useRuntimeStore((s) => s.runningSessions);
-  const stepCounts = useRuntimeStore((s) => s.stepCounts);
-  const retryNotices = useRuntimeStore((s) => s.retryNotices);
+  // Session-keyed maps are read PER SESSION, never as the whole map: they churn
+  // as any session streams (background panes and invisible subagents included),
+  // so subscribing to the map itself repaints this pane on every foreign token.
+  // Selecting the scalar lets Zustand's identity check bail out instead (#34).
+  const sending = useRuntimeStore((s) => !!s.sendingSessions[key]);
+  const running = useRuntimeStore((s) => !!(eid && s.runningSessions[eid]));
+  const step = useRuntimeStore((s) => (eid ? (s.stepCounts[eid] ?? 0) : 0));
+  const retryNotice = useRuntimeStore((s) => (eid ? s.retryNotices[eid] : undefined));
   const serverUrl = useRuntimeStore((s) => s.serverUrl);
   const sessions = useRuntimeStore((s) => s.sessions);
   const error = useRuntimeStore((s) => s.error);
@@ -209,19 +226,10 @@ export function SessionView({
   const historyLoading = connected && !!eid && !thread?.loaded;
   const title = sessions.find((s) => s.id === eid)?.title;
   const isEmpty = !thread || thread.blocks.length === 0;
-  const sending = !!sendingSessions[key];
-  const running = !!(eid && runningSessions[eid]);
   const working = sending || running;
-  const retryNotice = eid ? retryNotices[eid] : undefined;
-  const step = eid ? (stepCounts[eid] ?? 0) : 0;
-  const currentTool = working
-    ? [...(thread?.blocks ?? [])]
-        .reverse()
-        .find(
-          (b): b is Extract<typeof b, { kind: "tool-call" }> =>
-            b.kind === "tool-call" && b.status === "running",
-        )
-    : undefined;
+  // Scan backwards in place: copying + reversing the whole block list ran on
+  // every render of a live pane, allocating a fresh array per streamed token.
+  const currentTool = working ? findLastRunningTool(thread?.blocks) : undefined;
   const lastBlock = thread?.blocks[thread.blocks.length - 1];
   const liveReasoningIndex =
     running && thread && lastBlock?.kind === "reasoning" ? thread.blocks.length - 1 : undefined;
@@ -250,11 +258,14 @@ export function SessionView({
       ? (sessions.find((s) => s.id === activeRequest.sessionId)?.title ?? t("live.subagentFallback"))
       : undefined;
 
-  const sessionNotebooks = (thread?.blocks ?? []).filter(
-    (b): b is Extract<typeof b, { kind: "artifact" }> =>
-      b.kind === "artifact" && b.filename.endsWith(".ipynb"),
-  );
-  const uniqueNotebooks = [...new Map(sessionNotebooks.map((b) => [b.path, b])).values()];
+  // Derived from the block list, so recompute only when the blocks change — not
+  // on every unrelated re-render of a live pane.
+  const uniqueNotebooks = useMemo(() => {
+    const byPath = new Map<string, Extract<ThreadBlocks[number], { kind: "artifact" }>>();
+    for (const b of thread?.blocks ?? [])
+      if (b.kind === "artifact" && b.filename.endsWith(".ipynb")) byPath.set(b.path, b);
+    return [...byPath.values()];
+  }, [thread?.blocks]);
 
   const pane = panes[key];
   const planAvailable = agents.some((a) => a.name === "plan");
@@ -328,7 +339,11 @@ export function SessionView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uniqueNotebooks.length]);
 
-  const { sidebarCollapsed, setSidebarCollapsed } = useUiStore();
+  // Per field, for the same reason as the runtime selectors above: a bare
+  // `useUiStore()` subscribes this pane to the whole UI store, so anything that
+  // lands there later (a per-keystroke value, say) would repaint every pane.
+  const sidebarCollapsed = useUiStore((s) => s.sidebarCollapsed);
+  const setSidebarCollapsed = useUiStore((s) => s.setSidebarCollapsed);
   const isMac = navigator.userAgent.includes("Mac");
   const overlayTitlebar = useOverlayTitlebar();
   // Only the primary pane clears the traffic lights / hosts the expand button.

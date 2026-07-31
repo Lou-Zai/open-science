@@ -464,6 +464,35 @@ describe("per-session workspace folders", () => {
     expect(s.threads["ses_new"].blocks.slice(-1)[0]).toMatchObject({ kind: "status-line", tone: "done" });
   });
 
+  // A streamed event must leave every session-keyed map byte-identical, so a
+  // pane/sidebar that reads one of those maps does not repaint for a FOREIGN
+  // session's tokens. Cloning them per event made concurrent subagents starve
+  // the main thread — the UI froze for minutes at a time (#50).
+  it("a streamed event does not churn the identity of session-keyed maps", async () => {
+    await useRuntimeStore.getState().sendPrompt("hi");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_new" });
+    // First sign of life from a background session legitimately takes its
+    // running lock; the steady state that follows is what must stay stable.
+    mocks.fireEvent({ type: "text.updated", sessionId: "ses_other", text: "tok" });
+    const before = useRuntimeStore.getState();
+    expect(before.runningSessions["ses_other"]).toBe(true);
+    // That session now streams on: more tokens, a tool step. Hundreds of these
+    // arrive per turn, per concurrent subagent.
+    mocks.fireEvent({ type: "text.updated", sessionId: "ses_other", text: "tok tok" });
+    mocks.fireEvent({
+      type: "tool.updated",
+      sessionId: "ses_other",
+      callId: "call_1",
+      tool: "bash",
+      status: "running",
+    });
+    const after = useRuntimeStore.getState();
+    expect(after.threads["ses_other"]).toBeDefined(); // the fold DID happen
+    expect(after.runningSessions).toBe(before.runningSessions);
+    expect(after.stepCounts).toBe(before.stepCounts);
+    expect(after.shellTurns).toBe(before.shellTurns);
+  });
+
   it("a session error lands as a red line in the thread and unlocks the turn", async () => {
     await useRuntimeStore.getState().sendPrompt("hi");
     mocks.fireEvent({ type: "error", sessionId: "ses_new", message: "model unavailable" });
