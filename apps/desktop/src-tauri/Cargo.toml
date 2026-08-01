@@ -1,6 +1,6 @@
 [package]
 name = "ai4s-workbench"
-version = "0.3.0"
+version = "0.3.1"
 description = "Open Science Desktop"
 authors = ["AI4S Workbench contributors"]
 edition = "2021"
