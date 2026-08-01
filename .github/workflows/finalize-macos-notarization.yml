@@ -55,6 +55,7 @@ jobs:
                 )
               | {
                   tag: $release.tag_name,
+                  release_id: $release.id,
                   asset_id: .id,
                   asset_name: .name,
                   stage: (
@@ -83,12 +84,13 @@ jobs:
 
           while IFS= read -r item; do
             tag=$(jq -r '.tag' <<<"$item")
+            release_id=$(jq -r '.release_id' <<<"$item")
             asset_id=$(jq -r '.asset_id' <<<"$item")
             asset_name=$(jq -r '.asset_name' <<<"$item")
             stage=$(jq -r '.stage' <<<"$item")
             final_name=$(jq -r '.final_name' <<<"$item")
 
-            existing=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" \
+            existing=$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" \
               --jq ".assets[] | select(.name == \"$final_name\") | .id")
             if [ -n "$existing" ]; then
               echo "Final DMG already exists for $asset_name; removing the queue asset."
