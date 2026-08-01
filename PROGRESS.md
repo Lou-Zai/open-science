@@ -1,5 +1,7 @@
 # Progress
 
+2026-08-01 07:11 · release: published Open Science Desktop v0.3.1 as the latest GitHub Release with six cross-platform installers; both Apple Silicon and Intel DMGs are Developer ID signed, notarized and stapled, the public release URL returns HTTP 200, and all uploaded assets have GitHub-recorded SHA-256 digests.
+
 2026-08-01 06:53 · fix(release): the asynchronous notarization finalizer now addresses draft releases by release ID, because GitHub's release-by-tag endpoint returns 404 for an existing draft; the first real v0.3.1 queue run reproduced the failure before downloading or mutating any queued asset, and workflow syntax, expressions and diff checks pass after the fix.
 
 2026-08-01 06:33 · chore(release): prepared v0.3.1 from the current master with every package, Tauri, Cargo and citation version synchronized, the GitHub Release title aligned to the Open Science Desktop brand, and the complete two-stage macOS App/DMG notarization path enabled; 762 frontend tests, typecheck, lint, Cargo metadata, workflow validation and diff checks pass.
