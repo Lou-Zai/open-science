@@ -1,5 +1,7 @@
 # Progress
 
+2026-08-01 08:45 · fix(release): pruned source, declarations, source maps and documentation from the bundled OpenCode plugin SDK while preserving production modules and licenses, reducing the goal-plugin resource from 62 MiB to 19 MiB and a real ARM DMG from 125.3 MiB to 80.7 MiB; a 24 MiB dependency ceiling, runtime-entry imports, offline OpenCode health/SSE/tool checks, the production desktop build, 762 frontend tests and lint pass.
+
 2026-08-01 07:11 · release: published Open Science Desktop v0.3.1 as the latest GitHub Release with six cross-platform installers; both Apple Silicon and Intel DMGs are Developer ID signed, notarized and stapled, the public release URL returns HTTP 200, and all uploaded assets have GitHub-recorded SHA-256 digests.
 
 2026-08-01 06:53 · fix(release): the asynchronous notarization finalizer now addresses draft releases by release ID, because GitHub's release-by-tag endpoint returns 404 for an existing draft; the first real v0.3.1 queue run reproduced the failure before downloading or mutating any queued asset, and workflow syntax, expressions and diff checks pass after the fix.
