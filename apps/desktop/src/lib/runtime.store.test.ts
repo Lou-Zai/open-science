@@ -266,7 +266,7 @@ beforeEach(async () => {
   mocks.createSessionSpy.mockClear();
   useRuntimeStore.setState({
     currentId: null,
-    workspacePinned: false,
+    draftWorkspaces: {},
     threads: {},
     error: null,
     sending: false,
@@ -357,10 +357,89 @@ describe("per-session workspace folders", () => {
   });
 
   it("keeps a pinned folder: no dated folder is created", async () => {
-    useRuntimeStore.setState({ workspacePinned: true });
+    useRuntimeStore.setState({ draftWorkspaces: { [DRAFT_KEY]: "/ws/base" }, workspace: "/ws/base" });
     const id = await useRuntimeStore.getState().sendPrompt("hello");
     expect(id).toBe("ses_new");
     expect(mocks.newDatedWorkspace).not.toHaveBeenCalled();
+  });
+
+  // #69: "new session in project X" is expressed on click, but the folder is
+  // decided at send time from a global pin. Anything that re-blanks the draft
+  // view in between — LiveSessionPage's focus effect does exactly that when a
+  // pane loses its session — silently unpinned the folder, so the session was
+  // created in a fresh dated folder instead of the project. It then rendered
+  // under "Sessions" rather than the project, permanently.
+  it("keeps a project folder when the draft view is re-blanked before the first message", async () => {
+    await useRuntimeStore.getState().startDraftInWorkspace("/ws/毕设");
+    expect(useRuntimeStore.getState().draftWorkspaces[DRAFT_KEY]).toBe("/ws/毕设");
+
+    // The user glances at another session and comes back to the empty pane.
+    useRuntimeStore.setState({ currentId: "ses_old" });
+    useRuntimeStore.getState().resetDraftView();
+
+    await useRuntimeStore.getState().sendPrompt("hello");
+    expect(mocks.newDatedWorkspace).not.toHaveBeenCalled();
+  });
+
+  // The other half of #69: a draft that was never aimed anywhere must NOT
+  // inherit the folder of whatever the user was just reading. Opening a new
+  // screen is a layout action that touches no runtime state, so the pane's own
+  // draft slot is simply empty — and an empty slot means a fresh dated folder.
+  it("gives an unaimed pane its own dated folder, not the project just viewed", async () => {
+    // Reading a session in a project: the active folder followed it there.
+    useRuntimeStore.setState({
+      workspace: "/ws/毕设",
+      draftWorkspaces: { [DRAFT_KEY]: "/ws/毕设" },
+    });
+
+    // A new screen's pane has its own draft slot, which nobody aimed.
+    await useRuntimeStore.getState().sendPrompt("hello", undefined, "draft:leaf-new");
+    expect(mocks.newDatedWorkspace).toHaveBeenCalledTimes(1);
+    expect(mocks.setWorkspace).not.toHaveBeenCalledWith("/ws/毕设");
+  });
+
+  // "+ new session in project X" opens its own pane, and that pane's composer
+  // sends under `draft:<leafId>` — so the project folder must be aimed at THAT
+  // slot, not the global one, or the send finds nothing and dates a folder.
+  it("aims the pane's own draft slot, so its first send lands in the project", async () => {
+    await useRuntimeStore.getState().startDraftInWorkspace("/ws/毕设", "draft:leaf-7");
+    expect(useRuntimeStore.getState().draftWorkspaces["draft:leaf-7"]).toBe("/ws/毕设");
+
+    await useRuntimeStore.getState().sendPrompt("hello", undefined, "draft:leaf-7");
+    expect(mocks.newDatedWorkspace).not.toHaveBeenCalled();
+  });
+
+  // Once the draft becomes a session the destination has served its purpose.
+  // Leaving it behind would aim the pane's NEXT draft at the same project long
+  // after the user moved on — the same class of stale-global bug as #69 itself.
+  it("forgets a draft's destination once its session exists", async () => {
+    await useRuntimeStore.getState().startDraftInWorkspace("/ws/毕设", "draft:leaf-7");
+    await useRuntimeStore.getState().sendPrompt("hello", undefined, "draft:leaf-7");
+
+    expect(useRuntimeStore.getState().draftWorkspaces["draft:leaf-7"]).toBeUndefined();
+
+    // A later draft in that same pane goes back to the default.
+    mocks.newDatedWorkspace.mockClear();
+    await useRuntimeStore.getState().sendPrompt("second", undefined, "draft:leaf-7");
+    expect(mocks.newDatedWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it("restores the draft's folder when the active one wandered off", async () => {
+    await useRuntimeStore.getState().startDraftInWorkspace("/ws/毕设");
+    // Opening another session follows it into ITS folder (openSession does this).
+    useRuntimeStore.setState({ workspace: "/ws/other-project" });
+    mocks.setWorkspace.mockClear();
+
+    await useRuntimeStore.getState().sendPrompt("hello");
+    expect(mocks.setWorkspace).toHaveBeenCalledWith("/ws/毕设");
+    expect(mocks.newDatedWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("still unpins for an explicit New session (that is what New means)", async () => {
+    await useRuntimeStore.getState().startDraftInWorkspace("/ws/毕设");
+    useRuntimeStore.getState().startDraft();
+    await useRuntimeStore.getState().sendPrompt("hello");
+    expect(mocks.newDatedWorkspace).toHaveBeenCalledTimes(1);
   });
 
   it("does not create another folder for later messages in the same session", async () => {
@@ -603,7 +682,7 @@ describe("per-session workspace folders", () => {
   it("/clear starts a new draft in the same folder without calling OpenCode command", async () => {
     useRuntimeStore.setState({
       currentId: "ses_old",
-      workspacePinned: false,
+      draftWorkspaces: {},
       threads: {
         ses_old: { blocks: [{ kind: "user", text: "old context" }], index: {}, loaded: true },
       },
@@ -614,7 +693,7 @@ describe("per-session workspace folders", () => {
 
     const cleared = useRuntimeStore.getState();
     expect(cleared.currentId).toBe(null);
-    expect(cleared.workspacePinned).toBe(true);
+    expect(cleared.draftWorkspaces[DRAFT_KEY]).toBe(cleared.workspace);
     expect(cleared.threads.ses_old.blocks).toEqual([{ kind: "user", text: "old context" }]);
     expect(cleared.threads[DRAFT_KEY].blocks).toEqual([
       {
@@ -651,26 +730,30 @@ describe("per-session workspace folders", () => {
   it("switchWorkspace pins the chosen folder; startDraft un-pins it", async () => {
     await useRuntimeStore.getState().switchWorkspace({ path: "/ws/mine" });
     expect(mocks.setWorkspace).toHaveBeenCalledWith("/ws/mine");
-    expect(useRuntimeStore.getState().workspacePinned).toBe(true);
+    expect(useRuntimeStore.getState().draftWorkspaces[DRAFT_KEY]).toBe("/ws/mine");
     useRuntimeStore.getState().startDraft();
-    expect(useRuntimeStore.getState().workspacePinned).toBe(false);
+    expect(useRuntimeStore.getState().draftWorkspaces[DRAFT_KEY]).toBeUndefined();
   });
 
   it("ensureDraftWorkspace materializes a fresh draft's dated folder before files are written", async () => {
     // A brand-new, unpinned draft → creates+pins its dated folder, so a pasted
     // or attached file lands in the same workspace the session will run in.
-    useRuntimeStore.setState({ currentId: null, workspacePinned: false });
+    useRuntimeStore.setState({ currentId: null, draftWorkspaces: {} });
     mocks.newDatedWorkspace.mockClear();
     await useRuntimeStore.getState().ensureDraftWorkspace();
     expect(mocks.newDatedWorkspace).toHaveBeenCalledTimes(1);
-    expect(useRuntimeStore.getState().workspacePinned).toBe(true);
+    // The draft is now aimed at the folder it just materialized, so the send
+    // reuses it instead of creating a second one and orphaning the file.
+    expect(useRuntimeStore.getState().draftWorkspaces[DRAFT_KEY]).toMatch(
+      /^\/ws\/\d{4}-\d{2}-\d{2}-\d{4}$/,
+    );
 
-    // Idempotent: an already-pinned draft (or a live session) is left alone, so
+    // Idempotent: a draft that already has its folder (or a live session) is left alone, so
     // send does not create a second dated folder that would orphan the file.
     mocks.newDatedWorkspace.mockClear();
     await useRuntimeStore.getState().ensureDraftWorkspace();
     expect(mocks.newDatedWorkspace).not.toHaveBeenCalled();
-    useRuntimeStore.setState({ currentId: "ses_1", workspacePinned: false });
+    useRuntimeStore.setState({ currentId: "ses_1", draftWorkspaces: {} });
     await useRuntimeStore.getState().ensureDraftWorkspace();
     expect(mocks.newDatedWorkspace).not.toHaveBeenCalled();
   });
@@ -1579,8 +1662,8 @@ describe("skill install", () => {
       ephemeralGroupId: null,
     });
 
-    // Pinned into a project folder, as if the user were working in one.
-    useRuntimeStore.setState({ workspacePinned: true });
+    // Aimed at a project folder, as if the user were working in one.
+    useRuntimeStore.setState({ draftWorkspaces: { [DRAFT_KEY]: "/ws/proj" }, workspace: "/ws/proj" });
 
     await useRuntimeStore.getState().installSkill("找到 dbs 这个 skills，安装");
     await new Promise((r) => setTimeout(r, 0));
@@ -1588,7 +1671,7 @@ describe("skill install", () => {
     // An install is not part of that project: it gets its own plain dated
     // folder, and does not leave the folder pinned behind it.
     expect(mocks.newDatedWorkspace).toHaveBeenCalledTimes(1);
-    expect(useRuntimeStore.getState().workspacePinned).toBe(false);
+    expect(useRuntimeStore.getState().draftWorkspaces[DRAFT_KEY]).toBeUndefined();
 
     const layout = useLayoutStore.getState();
     expect(layout.groups).toHaveLength(2);

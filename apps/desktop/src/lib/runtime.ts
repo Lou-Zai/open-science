@@ -213,6 +213,9 @@ interface RuntimeState {
   disconnect: () => void;
   refreshSessions: () => Promise<void>;
   startDraft: () => void;
+  /** Blank the draft view WITHOUT unpinning the folder the next session
+   *  will be created in — only an explicit New may do that (#69). */
+  resetDraftView: () => void;
   startDraftInCurrentWorkspace: (key?: string) => void;
   /** Projects: named shared workspaces under `<base>/projects`. Sessions group
    *  under a project by `directory`; multiple sessions share the folder. */
@@ -223,17 +226,26 @@ interface RuntimeState {
   importProject: (path: string, mode: ProjectImportMode) => Promise<ProjectInfo | null>;
   setProjectPinned: (id: string, pinned: boolean) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
-  /** Fresh draft pinned inside `path` (a project folder), so the next new
-   *  session lands there. Skips the reconnect when the folder is already active. */
-  startDraftInWorkspace: (path: string) => Promise<void>;
+  /** Fresh draft aimed at `path` (a project folder), so the session it creates
+   *  lands there. `key` is the draft slot the composer sends under — a pane's
+   *  own `draft:<leafId>` when the caller opened one. Skips the reconnect when
+   *  the folder is already active. */
+  startDraftInWorkspace: (path: string, key?: string) => Promise<void>;
   /** Active workspace folder (absolute path); null in the browser. */
   workspace: string | null;
   /** Web client only: the gateway token is read-only (GET-only) — every write
    *  (new session, prompt, approval) would 403, so the UI hides/disables them. */
   webReadOnly: boolean;
-  /** True when the user explicitly picked the active folder for the next new
-   *  session; false means a new session gets its own fresh dated folder. */
-  workspacePinned: boolean;
+  /** Folder a pending draft's session must be created in, keyed by draft slot
+   *  (`DRAFT_KEY`, or a pane's `draft:<leafId>`). Set when the user picks one —
+   *  "+ new session in project X", or the folder picker. A draft with no entry
+   *  gets its own fresh dated folder.
+   *
+   *  Per draft and holding the PATH, not a global boolean (#69): the active
+   *  folder follows whatever session was last opened, so a bare "pinned" flag
+   *  neither survived a glance at another session (the send landed in that
+   *  session's folder) nor stayed out of the way of an unrelated new screen. */
+  draftWorkspaces: Record<string, string>;
   /** A deliberate workspace move is in flight (event-stream reconnect into the
    *  new folder). The UI must not present it as a disconnection — no status
    *  flip, no Connect button, no help card. Real failures surface after the
@@ -263,8 +275,12 @@ interface RuntimeState {
    *  provider from looking like a silent "Working…" forever. Cleared by the
    *  session's next sign of life (stream events, idle, error). */
   retryNotices: Record<string, { attempt: number; message: string }>;
-  /** Switch to an existing folder, or (with `dated`) create a new dated one. */
-  switchWorkspace: (target: { path: string } | { dated: string }) => Promise<void>;
+  /** Switch to an existing folder, or (with `dated`) create a new dated one.
+   *  `key` is the draft slot the switch was made for — the folder becomes that
+   *  draft's destination. Defaults to the global slot. */
+  switchWorkspace: (
+    target: ({ path: string } | { dated: string }) & { key?: string },
+  ) => Promise<void>;
   /** Ensure a brand-new draft already has its own (pinned) dated folder before
    *  composer files are written into it — otherwise a file added to a draft
    *  lands in the pre-send folder while send would create a different dated one,
@@ -431,6 +447,28 @@ function clientForSession(get: StoreGet, sid: string): AgentRuntime | null {
   return client;
 }
 const emptyThread = (): Thread => ({ blocks: [], index: {}, loaded: false });
+
+/** Forget a draft's chosen folder — its session was created, or the user asked
+ *  for a plain New. Absent means "give the next session a fresh dated folder". */
+function forgetDraftFolder(s: RuntimeState, key: string) {
+  if (!(key in s.draftWorkspaces)) return {};
+  const draftWorkspaces = { ...s.draftWorkspaces };
+  delete draftWorkspaces[key];
+  return { draftWorkspaces };
+}
+
+/** Drop the global draft slot's leftovers: an aborted first message, its pane
+ *  and its Build/Plan mode. Deliberately says nothing about the draft's folder —
+ *  see `startDraft` vs `resetDraftView` (#69). */
+function blankDraft(s: RuntimeState, key: string = DRAFT_KEY) {
+  const threads = { ...s.threads };
+  delete threads[key];
+  const panes = { ...s.panes };
+  delete panes[key];
+  const sessionAgents = { ...s.sessionAgents };
+  delete sessionAgents[key];
+  return { currentId: null, threads, panes, sessionAgents };
+}
 /** Threads key for the draft conversation — its blocks move to the real
  *  session id once the session exists, so the page never visibly resets. */
 export const DRAFT_KEY = "draft";
@@ -659,29 +697,28 @@ async function performTurn(
     // race the focus effect. Only a legacy (no-draftKey) send reuses currentId.
     let id = target ?? (draftKey ? null : get().currentId);
     if (!id) {
-      // Lazy-create the session on the first message (#3). Unless the user
-      // pinned a folder via the workspace switcher, a new session gets its
-      // own fresh dated folder (~/Documents/OpenScience/sessions/<date-time>) first,
-      // so its files never pile up in the bare base folder.
-      if (isTauri && !get().workspacePinned) {
+      // Lazy-create the session on the first message (#3), in THIS draft's own
+      // folder. A draft the user aimed at a project carries that folder; one
+      // that does not gets its own fresh dated folder
+      // (~/Documents/OpenScience/sessions/<date-time>) so its files never pile
+      // up in the bare base folder.
+      const chosen = isTauri ? get().draftWorkspaces[draftSrc] : undefined;
+      if (isTauri) {
         set({ switching: true });
         try {
-          await newDatedWorkspace(datedWorkspaceName());
-          await kernelReset().catch(() => {});
-          await get().connectRetry();
-        } finally {
-          set({ switching: false });
-        }
-        if (get().status !== "ready" || !client) {
-          throw new Error("Runtime did not reconnect after creating the session folder.");
-        }
-      } else if (isTauri && get().workspacePinned) {
-        // /new and /clear intentionally keep the same folder, but the old
-        // session route may have just torn down/reopened directory-scoped SSE.
-        // Rebuild the scoped client before creating the next session so first
-        // send cannot hang on a stale workspace instance.
-        set({ switching: true });
-        try {
+          if (!chosen) {
+            await newDatedWorkspace(datedWorkspaceName());
+            await kernelReset().catch(() => {});
+          } else if (chosen !== get().workspace) {
+            // The active folder wandered off — opening any session follows it
+            // into that session's folder. Go back to the one this draft was
+            // aimed at, or the session lands wherever the user last looked (#69).
+            await setWorkspace(chosen);
+            await kernelReset().catch(() => {});
+          }
+          // Always rebuild the scoped client: /new and /clear keep the folder,
+          // but the old session route may have just torn down directory-scoped
+          // SSE, and a first send must not hang on a stale workspace instance.
           await get().connectRetry();
         } finally {
           set({ switching: false });
@@ -706,6 +743,10 @@ async function performTurn(
           sessionAgents[id!] = sessionAgents[draftSrc];
           delete sessionAgents[draftSrc];
         }
+        // The destination has done its job: the session now carries its own
+        // folder. Leaving the entry would silently aim this pane's NEXT draft
+        // at the same project long after the user moved on.
+        const { draftWorkspaces = s.draftWorkspaces } = forgetDraftFolder(s, draftSrc);
         // Move the in-flight send lock too, so a pane keyed on the new id (the
         // draft pane follows currentId onto the real session) still reads itself
         // as sending across the graft — no flicker to an unlocked composer.
@@ -725,7 +766,16 @@ async function performTurn(
           sessionVariants[id!] = sessionVariants[draftSrc];
           delete sessionVariants[draftSrc];
         }
-        return { currentId: id, threads, panes, sessionAgents, sendingSessions, sessionModels, sessionVariants };
+        return {
+          currentId: id,
+          threads,
+          panes,
+          sessionAgents,
+          sendingSessions,
+          sessionModels,
+          sessionVariants,
+          draftWorkspaces,
+        };
       });
       lockKey = id;
       // The draft's model/effort override moved onto the real id — repersist so
@@ -950,7 +1000,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
   projects: [],
   workspace: null,
   webReadOnly: false,
-  workspacePinned: false,
+  draftWorkspaces: {},
   switching: false,
   sending: false,
   sendingSessions: {},
@@ -1812,16 +1862,15 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
 
   // "New" opens a blank draft — no session is created until the first message (#3).
   // A fresh draft also drops any pinned folder: back to the dated-folder default.
-  startDraft: () =>
-    set((s) => {
-      const threads = { ...s.threads };
-      delete threads[DRAFT_KEY]; // leftovers from an aborted first message
-      const panes = { ...s.panes };
-      delete panes[DRAFT_KEY]; // a fresh draft starts with a closed pane
-      const sessionAgents = { ...s.sessionAgents };
-      delete sessionAgents[DRAFT_KEY]; // and in Build mode
-      return { currentId: null, workspacePinned: false, threads, panes, sessionAgents };
-    }),
+  startDraft: () => set((s) => ({ ...blankDraft(s), ...forgetDraftFolder(s, DRAFT_KEY) })),
+
+  // Re-blank the draft VIEW without touching where the next session will live.
+  // The folder is chosen at send time from the draft's own entry, but the user picks
+  // it much earlier ("+ new session in project X"). Anything between the two
+  // that merely resets the view — the focus effect when a pane loses its
+  // session — must not reroute the session to a dated folder (#69); only an
+  // explicit New may unpin.
+  resetDraftView: () => set((s) => blankDraft(s)),
 
   // Local /new and /clear: clear the visible chat context, but keep the active
   // folder. The first next message creates a new OpenCode session in that same
@@ -1847,7 +1896,12 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       delete panes[key];
       const sessionAgents = { ...s.sessionAgents };
       delete sessionAgents[key];
-      return { currentId: null, workspacePinned: true, threads, panes, sessionAgents };
+      // /new and /clear deliberately stay put: aim this draft at the folder
+      // it is already in, so the next session lands there and not in a dated one.
+      const draftWorkspaces = s.workspace
+        ? { ...s.draftWorkspaces, [key]: s.workspace }
+        : s.draftWorkspaces;
+      return { currentId: null, draftWorkspaces, threads, panes, sessionAgents };
     }),
 
   refreshProjects: async () => {
@@ -1903,41 +1957,46 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     void get().refreshProjects();
   },
 
-  startDraftInWorkspace: async (path) => {
+  startDraftInWorkspace: async (path, key = DRAFT_KEY) => {
+    // Aim the draft slot the composer will actually send under. "+ new session
+    // in project X" opens its own pane, so that is `draft:<leafId>`, not the
+    // global slot — aiming the wrong one sent the session to a dated folder.
+    const aim = (s: RuntimeState) => ({
+      draftWorkspaces: { ...s.draftWorkspaces, [key]: path },
+    });
     if (get().workspace === path) {
-      // Already inside the project — a clean pinned draft, no reconnect.
-      set((s) => {
-        const threads = { ...s.threads };
-        delete threads[DRAFT_KEY];
-        const panes = { ...s.panes };
-        delete panes[DRAFT_KEY];
-        const sessionAgents = { ...s.sessionAgents };
-        delete sessionAgents[DRAFT_KEY];
-        return { currentId: null, workspacePinned: true, threads, panes, sessionAgents };
-      });
+      // Already inside the project — a clean draft, no reconnect.
+      set((s) => ({ ...blankDraft(s, key), ...aim(s) }));
       return;
     }
-    await get().switchWorkspace({ path });
+    await get().switchWorkspace({ path, key });
   },
 
   ensureDraftWorkspace: async () => {
     const s = get();
-    // A session already has its folder; a pinned draft's folder is reused on
-    // send. Only a fresh, unpinned draft needs its dated folder materialized now
-    // so composer files and the eventual session share one workspace.
-    if (!isTauri || s.currentId || s.workspacePinned) return;
+    // A session already has its folder; a draft aimed at one reuses it on send.
+    // Only a draft with no folder of its own needs its dated folder materialized
+    // now, so composer files and the eventual session share one workspace.
+    if (!isTauri || s.currentId || s.draftWorkspaces[DRAFT_KEY]) return;
     await get().switchWorkspace({ dated: datedWorkspaceName() });
   },
 
   switchWorkspace: async (target) => {
     set({ switching: true });
     try {
-      if ("dated" in target) await newDatedWorkspace(target.dated);
-      else await setWorkspace(target.path);
+      // Either way the draft ends up aimed at a real folder: the one the user
+      // picked, or the dated one just materialized (so a file pasted into the
+      // draft and the eventual session share it, rather than the send creating
+      // a second dated folder and orphaning the file).
+      // Both commands answer with the canonical path the runtime resolved —
+      // which is exactly what the session's own `directory` will report, so aim
+      // the draft at that, not at the raw string the caller passed.
+      const landed =
+        "dated" in target ? await newDatedWorkspace(target.dated) : await setWorkspace(target.path);
       // Reset the local kernel so it respawns in the new folder, then reconnect
       // the event stream scoped to it (connect() re-reads the active folder —
-      // the sidecar itself keeps running). An explicit switch pins the folder,
-      // so the next new session lands exactly there.
+      // the sidecar itself keeps running). The switch aims the draft at that
+      // folder, so the next new session lands exactly there.
       await kernelReset().catch(() => {});
       set((s) => {
         // Back to a draft in the new folder — the draft pane must not carry
@@ -1946,7 +2005,8 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         delete panes[DRAFT_KEY];
         const sessionAgents = { ...s.sessionAgents };
         delete sessionAgents[DRAFT_KEY];
-        return { currentId: null, panes, workspacePinned: true, sessionAgents };
+        const draftWorkspaces = { ...s.draftWorkspaces, [target.key ?? DRAFT_KEY]: landed };
+        return { currentId: null, panes, draftWorkspaces, sessionAgents };
       });
       await get().connectRetry();
       await Promise.all([get().refreshSessions(), get().loadCatalog()]);
@@ -2355,7 +2415,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       // folder, so the user's next new session goes back to the default.
       if (isTauri) {
         await get().switchWorkspace({ dated: datedWorkspaceName() });
-        set({ workspacePinned: false });
+        set((s) => forgetDraftFolder(s, DRAFT_KEY));
         if (get().status !== "ready" || !client) {
           throw new Error("Runtime did not reconnect after creating the install folder.");
         }

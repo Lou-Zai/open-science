@@ -137,6 +137,7 @@ export function Composer({
   showModelPicker,
   modelSessionId,
   showWorkspaceChip = true,
+  draftKey,
   sessionDir,
   currentSessionId,
   onInteract,
@@ -168,6 +169,8 @@ export function Composer({
   /** Show the draft workspace-folder chip. Only the draft pane opts in — in a
    *  split layout the other panes already have a bound session/folder. */
   showWorkspaceChip?: boolean;
+  /** This pane's draft slot, so the folder chip names THIS draft's destination. */
+  draftKey?: string;
   /** Workspace folder the `@` picker lists files from; omit to offer none. */
   sessionDir?: string;
   /** This pane's session, excluded from the `#` picker (referencing the
@@ -887,7 +890,7 @@ export function Composer({
         )}
         {/* Folder picker for a fresh draft — renders nothing once the session
             exists (its folder then shows in the header's Files toggle). */}
-        {showWorkspaceChip && <WorkspaceChip />}
+        {showWorkspaceChip && <WorkspaceChip draftKey={draftKey} />}
         {agentMode && onAgentModeChange && (
           <div className="relative shrink-0" ref={agentRef}>
             {agentOpen && (
