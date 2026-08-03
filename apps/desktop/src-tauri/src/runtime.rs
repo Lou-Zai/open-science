@@ -702,6 +702,17 @@ pub(crate) fn enriched_path() -> String {
     parts.join(";")
 }
 
+/// On-disk path of a bundled sidecar (`externalBin`), if it is there. Tauri
+/// places them next to the app executable with the target-triple suffix
+/// stripped. Needed whenever something other than `ShellExt::sidecar` has to
+/// reach one: OpenCode spawning an MCP server by path, or a synchronous probe.
+pub(crate) fn sidecar_bin(name: &str) -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let file = if cfg!(windows) { format!("{name}.exe") } else { name.to_string() };
+    let bin = exe.parent()?.join(file);
+    bin.exists().then_some(bin)
+}
+
 /// A `std::process::Command` that never pops a console window on Windows.
 /// A GUI app spawning a console-subsystem child (python.exe, taskkill, git…)
 /// otherwise flashes a black window per spawn — every direct spawn in this

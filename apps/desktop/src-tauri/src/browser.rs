@@ -48,25 +48,13 @@ struct ProfilesEnvelope {
 /// executable with the target-triple suffix stripped.
 #[tauri::command]
 pub fn agent_browser_bin(_app: AppHandle) -> Result<String, String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let dir = exe
-        .parent()
-        .ok_or("cannot resolve the app executable directory")?;
-    let name = if cfg!(windows) {
-        "agent-browser.exe"
-    } else {
-        "agent-browser"
-    };
-    let bin = dir.join(name);
-    if bin.exists() {
-        Ok(bin.to_string_lossy().to_string())
-    } else {
-        Err(format!(
-            "agent-browser sidecar not found next to the app ({}). \
-             Run scripts/dev/fetch-agent-browser.sh and rebuild.",
-            bin.display()
-        ))
-    }
+    crate::runtime::sidecar_bin("agent-browser")
+        .map(|p| p.to_string_lossy().to_string())
+        .ok_or_else(|| {
+            "agent-browser sidecar not found next to the app. \
+             Run scripts/dev/fetch-agent-browser.sh and rebuild."
+                .to_string()
+        })
 }
 
 /// List the user's Chrome profiles via `agent-browser profiles --json`. Returns

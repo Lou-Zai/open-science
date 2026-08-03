@@ -1,5 +1,7 @@
 # Progress
 
+2026-08-01 09:20 · fix(#68): the Skills-page environment probe now falls back to the app's own binaries when the host PATH has none — the managed Jupyter env (`jupyter-lab`, matching `jupyter_status().installed`) and its Python, plus the bundled `uv` sidecar, which had the same false negative — each row labelled `app-managed`, the "Python/R/Jupyter are not bundled" note corrected in all 7 locales; 155 Rust and 764 frontend tests, lint, typecheck and an ARM DMG build pass.
+
 2026-08-01 08:45 · fix(release): pruned source, declarations, source maps and documentation from the bundled OpenCode plugin SDK while preserving production modules and licenses, reducing the goal-plugin resource from 62 MiB to 19 MiB and a real ARM DMG from 125.3 MiB to 80.7 MiB; a 24 MiB dependency ceiling, runtime-entry imports, offline OpenCode health/SSE/tool checks, the production desktop build, 762 frontend tests and lint pass.
 
 2026-08-01 07:11 · release: published Open Science Desktop v0.3.1 as the latest GitHub Release with six cross-platform installers; both Apple Silicon and Intel DMGs are Developer ID signed, notarized and stapled, the public release URL returns HTTP 200, and all uploaded assets have GitHub-recorded SHA-256 digests.

@@ -747,6 +747,8 @@ export interface ToolStatus {
   name: string;
   found: boolean;
   version?: string | null;
+  /** The app's own copy (bundled uv / managed Jupyter env), not one on the user's PATH. */
+  managed?: boolean;
 }
 
 /** Detect scientific/runtime tools on the user's system (desktop only). */
