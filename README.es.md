@@ -35,6 +35,8 @@ Formerly Open Science. Una alternativa desktop open source a Claude Science y wo
 
 ## Novedades
 
+- **2026-08-01** — 🗂️ **Proyectos, memoria e historial completo.** Agrupa sesiones en proyectos con nombre (un repositorio existente se importa *en su sitio*, sin copiarlo), da al agente memoria persistente global y por proyecto, y alcanza cualquier conversación pasada desde un historial buscable con archivar, restaurar y exportar. *(v0.3.1)*
+- **2026-07-24** — 🪟 **Paneles divididos.** Coloca sesiones en mosaico, arrastra paneles para reacomodarlos, mantén varias pantallas independientes y usa un modelo distinto en cada panel. *(v0.3.0)*
 - **2026-07-21** — 🌐 **Acceso desde cualquier lugar — incluso desde tu teléfono.** Un gateway autenticado por token sirve la UI de escritorio *real* a una CLI, un navegador en tu LAN o tu teléfono (loopback por defecto; la LAN es opcional). Inicia una ejecución en tu escritorio y lee la figura y el informe terminados desde tu teléfono. *(v0.2.3)*
 - **2026-07-21** — 🧭 **Control del navegador.** El agente puede manejar tu propio Chrome — con tu perfil y sesiones intactos — para leer la web en vivo como lo harías tú, o un navegador privado aislado cuando lo necesites. *(v0.2.3)*
 - **2026-07-09** — 🎉 **#1 en ResearchClawBench.** Open Science Desktop ocupa el puesto #1 por promedio de tareas puntuadas en [ResearchClawBench](https://internscience.github.io/ResearchClawBench-Home/), un benchmark end-to-end para agentes autónomos de investigación científica (leaderboard Pass@1).
@@ -123,7 +125,13 @@ Vienen en el pack `ai4s-skills`, junto a las skills de revisión propias y las s
 | --- | --- |
 | Escritorio | Tauri 2 + React + TypeScript + Vite, con objetivos de build para macOS, Windows y Linux. |
 | Runtime | Sidecar OpenCode incluido, iniciado por la app y aislado de la configuración/datos OpenCode del usuario. |
-| Sesiones | Chat multi-sesión, historial, carpetas fechadas, historial global entre workspaces, comandos `/` y modo shell `!`. |
+| Proyectos | Workspaces de proyecto con nombre que agrupan sus sesiones; importa una carpeta existente en su sitio (nunca se copia) o adopta una que ya esté en el workspace; mueve una sesión existente a un proyecto. |
+| Sesiones | Chat multi-sesión, historial buscable con archivar/restaurar/exportar, carpetas fechadas, referencias `@` a archivos y `#` a conversaciones, comandos `/` y modo shell `!`. |
+| Disposición | Mosaico de paneles n-ario con arrastrar para reacomodar, pantallas independientes, modelo y esfuerzo de razonamiento por panel, y arrastre de paneles entre pantallas. |
+| Modos del agente | `/plan` para planificar y luego ejecutar, `/goal` para objetivo y criterios de aceptación, estado de subagentes en su propio panel, y Detener que refleja el estado real del servidor. |
+| Memoria | Capas de memoria global y por proyecto, conmutables, más compactación automática del contexto al acercarse a la ventana del modelo. |
+| Cómputo remoto | Registra máquinas desde tu `~/.ssh/config`, compruébalas y envía, sigue o cancela trabajos desde la app. |
+| Apariencia | Temas Light, Warm y Dark con acentos propios, y zoom de la interfaz. |
 | Archivos | Navegación global y por sesión, menú contextual, abrir/revelar en el sistema, copiar ruta y servidor local de previsualización. |
 | Acceso remoto | Gateway autenticado por token que sirve la UI real a una CLI, un navegador web en la LAN o tu teléfono (loopback por defecto, LAN opcional); modos de solo lectura frente a acceso completo; copia un enlace con el token incrustado para conectarte con un toque. Las API keys nunca cruzan la red. |
 | Control del navegador | El agente maneja tu propio Chrome — con el perfil y el estado de sesión preservados — leyendo las páginas a través del árbol de accesibilidad, o un navegador aislado/privado cuando lo pidas. |
