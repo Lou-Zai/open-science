@@ -147,11 +147,7 @@ Formerly Open Science. Claude Science などの AI-for-science ワークベン�
 - **Windows**: NSIS `.exe` と `.msi`、Windows 10/11 x64。
 - **Linux**: x86_64 Linux 向け `.deb` と `.rpm`。
 
-まだコード署名/Notarization はありません。macOS でブロックされた場合:
-
-```bash
-xattr -cr "/Applications/Open Science.app"
-```
+macOS パッケージは Developer ID 署名・Notarization・staple 済みで、そのまま開けます（`xattr` の回避策は不要）。Windows と Linux のビルドはまだ署名されていません。
 
 Windows では SmartScreen の **More info -> Run anyway** を選択します。
 
@@ -195,7 +191,7 @@ pnpm lint
 
 ## 状態
 
-現在の実装ログは [`PROGRESS.md`](./PROGRESS.md) を参照してください。近い作業は署名済みリリース、Windows/Linux 検証、自動更新、コネクタの堅牢化、再現性レビューの継続です。議論には [Open Science Discord](https://discord.gg/fWNMDKcd5P) も使えます。
+現在の実装ログは [`PROGRESS.md`](./PROGRESS.md) を参照してください。近い作業は Windows のコード署名、自動更新、Windows/Linux 検証の拡大、コネクタの堅牢化、再現性レビューの継続です。macOS リリースは署名・Notarization 済みです。議論には [Open Science Discord](https://discord.gg/fWNMDKcd5P) も使えます。
 
 [MIT](./LICENSE). Open Science Desktop は beta の研究ツールです。出力は草稿として扱い、公開や意思決定の前に数字、引用、コード、結論を検証してください。
 

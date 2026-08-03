@@ -147,11 +147,7 @@ Formerly Open Science. Claude Science 및 유사한 AI-for-science 워크벤치�
 - **Windows**: NSIS `.exe` 및 `.msi`, Windows 10/11 x64.
 - **Linux**: x86_64용 `.deb` 및 `.rpm`.
 
-아직 코드 서명/공증이 없습니다. macOS에서 앱이 차단되면:
-
-```bash
-xattr -cr "/Applications/Open Science.app"
-```
+macOS 패키지는 Developer ID 서명·공증·스테이플이 완료되어 그대로 열립니다. `xattr` 우회는 필요하지 않습니다. Windows와 Linux 빌드는 아직 서명되지 않았습니다.
 
 Windows에서는 SmartScreen에서 **More info -> Run anyway**를 선택합니다.
 
@@ -195,7 +191,7 @@ pnpm lint
 
 ## 상태
 
-가장 신뢰할 수 있는 구현 로그는 [`PROGRESS.md`](./PROGRESS.md)입니다. 가까운 작업은 서명/공증된 릴리스, Windows/Linux 검증 확대, 자동 업데이트, 커넥터 강화, 재현성 리뷰 지속입니다. 토론은 [Open Science Discord](https://discord.gg/fWNMDKcd5P)에서도 할 수 있습니다.
+가장 신뢰할 수 있는 구현 로그는 [`PROGRESS.md`](./PROGRESS.md)입니다. 가까운 작업은 Windows 코드 서명, 자동 업데이트, Windows/Linux 검증 확대, 커넥터 강화, 재현성 리뷰 지속입니다. macOS 릴리스는 이미 서명·공증되었습니다. 토론은 [Open Science Discord](https://discord.gg/fWNMDKcd5P)에서도 할 수 있습니다.
 
 [MIT](./LICENSE). Open Science Desktop은 beta 연구 도구입니다. 출력은 초안으로 보고, 공개나 의사결정 전에 숫자, 인용, 코드, 결론을 검증하세요.
 

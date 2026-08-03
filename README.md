@@ -206,23 +206,17 @@ Download the latest installer from the
 - **Windows**: NSIS `.exe` and `.msi`, Windows 10/11 x64.
 - **Linux**: `.deb` and `.rpm` on x86_64 Linux.
 
-Builds are not code-signed or notarized yet.
-
-**macOS**: if Gatekeeper says the app is damaged or from an unidentified developer,
-install it into Applications and run:
-
-```bash
-xattr -cr "/Applications/Open Science.app"
-```
+The macOS packages are Developer ID signed, notarized, and stapled, so they open
+normally — no `xattr` workaround needed. Windows and Linux builds are not signed yet.
 
 **Windows**: if SmartScreen appears, choose **More info -> Run anyway**.
 
 **Linux**:
 
 ```bash
-sudo apt install ./OpenScience_*.deb
+sudo apt install ./Open.Science_*.deb
 # or
-sudo rpm -i OpenScience_*.rpm
+sudo rpm -i Open.Science-*.rpm
 ```
 
 ## Build from source
@@ -292,9 +286,9 @@ live in [`docs/PRD.md`](./docs/PRD.md) and
 [`docs/TECHNICAL_DESIGN.md`](./docs/TECHNICAL_DESIGN.md), but those documents include
 target design as well as historical status notes.
 
-Near-term work is focused on signed/notarized releases, broader Windows/Linux
-verification, auto-update, richer connector hardening, and continued reproducibility
-review.
+Near-term work is focused on Windows code signing, auto-update, broader
+Windows/Linux verification, richer connector hardening, and continued
+reproducibility review. macOS releases are already signed and notarized.
 
 ## Contributing
 

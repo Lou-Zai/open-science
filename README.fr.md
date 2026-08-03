@@ -147,11 +147,7 @@ Téléchargez la dernière version depuis [Releases](https://github.com/ai4s-res
 - **Windows** : `.exe` NSIS et `.msi`, Windows 10/11 x64.
 - **Linux** : `.deb` et `.rpm` pour x86_64.
 
-Les builds ne sont pas encore signés. Si macOS bloque l'app :
-
-```bash
-xattr -cr "/Applications/Open Science.app"
-```
+Les paquets macOS sont signés avec un Developer ID, notarisés et agrafés : ils s'ouvrent normalement, sans passer par `xattr`. Les builds Windows et Linux ne sont pas encore signés.
 
 Sous Windows, choisissez **More info -> Run anyway** dans SmartScreen.
 
@@ -195,7 +191,7 @@ Les fichiers du workspace, données brutes, historique, provenance, notebooks et
 
 ## État
 
-Le journal d'implémentation le plus fiable est [`PROGRESS.md`](./PROGRESS.md). Les prochains travaux portent sur les releases signées/notarisées, la vérification Windows/Linux, l'auto-update, le durcissement des connecteurs et la revue de reproductibilité. Pour discuter du projet, rejoignez le [Discord Open Science](https://discord.gg/fWNMDKcd5P).
+Le journal d'implémentation le plus fiable est [`PROGRESS.md`](./PROGRESS.md). Les prochains travaux portent sur la signature de code Windows, l'auto-update, une vérification Windows/Linux plus large, le durcissement des connecteurs et la revue de reproductibilité. Les releases macOS sont déjà signées et notarisées. Pour discuter du projet, rejoignez le [Discord Open Science](https://discord.gg/fWNMDKcd5P).
 
 [MIT](./LICENSE). Open Science Desktop est un outil de recherche beta : traitez les sorties comme des brouillons et vérifiez nombres, citations, code et conclusions avant publication ou décision.
 

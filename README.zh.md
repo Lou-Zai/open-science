@@ -174,22 +174,16 @@
 - **Windows**：NSIS `.exe` 和 `.msi`，Windows 10/11 x64。
 - **Linux**：x86_64 Linux 的 `.deb` 和 `.rpm`。
 
-当前构建尚未代码签名或 notarize。
-
-**macOS**：如果 Gatekeeper 提示应用已损坏或来自未知开发者，把应用安装到 Applications 后运行：
-
-```bash
-xattr -cr "/Applications/Open Science.app"
-```
+macOS 安装包已使用 Developer ID 签名、公证并 staple，可直接打开，无需 `xattr` 之类的绕过操作。Windows 与 Linux 构建尚未签名。
 
 **Windows**：如果出现 SmartScreen，选择 **更多信息 -> 仍要运行**。
 
 **Linux**：
 
 ```bash
-sudo apt install ./OpenScience_*.deb
+sudo apt install ./Open.Science_*.deb
 # 或
-sudo rpm -i OpenScience_*.rpm
+sudo rpm -i Open.Science-*.rpm
 ```
 
 ## 从源码构建
@@ -251,7 +245,7 @@ pnpm lint
 产品和架构说明位于 [`docs/PRD.md`](./docs/PRD.md) 和
 [`docs/TECHNICAL_DESIGN.md`](./docs/TECHNICAL_DESIGN.md)，但这些文档同时包含目标设计和历史状态说明。
 
-近期工作集中在签名/notarize 发布、更广的 Windows/Linux 验证、自动更新、连接器加固，以及继续强化可复现性审查。
+近期工作集中在 Windows 代码签名、自动更新、更广的 Windows/Linux 验证、连接器加固，以及继续强化可复现性审查。macOS 发布版已完成签名与公证。
 
 ## 参与贡献
 
