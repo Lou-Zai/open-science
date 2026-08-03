@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import type { Project } from "@ai4s/shared";
 import { cn } from "@/lib/cn";
-import { rootSessionOf, useRuntimeStore } from "@/lib/runtime";
+import { draftKeyFor, rootSessionOf, useRuntimeStore } from "@/lib/runtime";
 import {
   openProjectFolder,
   pickFolder,
@@ -245,10 +245,15 @@ export function Sidebar({ project }: { project: Project }) {
   };
 
   const newSessionIn = async (p: ProjectInfo) => {
-    await startDraftInWorkspace(p.path);
     // Same rule as "New": its own Screen, so starting work in a project does not
-    // replace the pane the user is reading.
-    if (!isMobile && !isGatewayWeb) useLayoutStore.getState().openInNewGroup(null, p.name);
+    // replace the pane the user is reading. Open it FIRST — the new pane's own
+    // draft slot is what the composer sends under, and that is the slot the
+    // project folder has to be aimed at (#69).
+    const leafId =
+      !isMobile && !isGatewayWeb
+        ? useLayoutStore.getState().openInNewGroup(null, p.name)
+        : null;
+    await startDraftInWorkspace(p.path, leafId ? draftKeyFor(leafId) : undefined);
     navigate("/live");
   };
 

@@ -783,6 +783,7 @@ export function SessionView({
               onAgentModeChange={planAvailable ? (mode) => setAgentMode(mode, key) : undefined}
               showModelPicker={connected && !webReadOnly}
               modelSessionId={key}
+              draftKey={draftKey}
               showWorkspaceChip={eid === null}
               sessionDir={sessionDir ?? undefined}
               currentSessionId={eid}
