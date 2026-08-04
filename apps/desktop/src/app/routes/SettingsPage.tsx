@@ -19,6 +19,7 @@ import type {
   ProviderCatalogEntry,
   ProviderInfo,
 } from "@ai4s/sdk";
+import { OPENCODE_VERSION } from "@ai4s/sdk";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import { useUiStore, ZOOM_MAX, ZOOM_MIN } from "@/lib/store";
@@ -832,6 +833,15 @@ export function SettingsPage() {
                     <>
                       <span className="text-border">·</span>
                       <span className="font-mono">{defaultModel}</span>
+                    </>
+                  )}
+                  {/* The bundled agent runtime, so a user with their own OpenCode
+                      install can tell the two apart (#74). Shown on the desktop
+                      only: the web client talks to whatever the host bundles. */}
+                  {isTauri && (
+                    <>
+                      <span className="text-border">·</span>
+                      <span className="font-mono">{`OpenCode ${OPENCODE_VERSION}`}</span>
                     </>
                   )}
                 </span>

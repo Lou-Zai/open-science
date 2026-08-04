@@ -1494,6 +1494,36 @@ describe("reasoning-effort variant", () => {
     );
   });
 
+  it("forwards `max` on a model whose catalog reaches it (#74)", async () => {
+    // The bundled 1.17.13 never offered `max`, so nothing exercised the top of
+    // the range. Now that the runtime reports it, selecting it must reach the
+    // turn — the guard is "does this model expose it", not a hardcoded ceiling.
+    mocks.providers = [
+      {
+        id: "openai",
+        name: "OpenAI",
+        models: [
+          {
+            id: "gpt-5.6-sol",
+            name: "GPT-5.6 Sol",
+            variants: ["none", "low", "medium", "high", "xhigh", "max"],
+          },
+        ],
+      },
+    ];
+    mocks.currentModel = "openai/gpt-5.6-sol";
+    await useRuntimeStore.getState().loadCatalog();
+    useRuntimeStore.setState({ reasoningVariant: "max" });
+    await useRuntimeStore.getState().sendPrompt("hi");
+    expect(mocks.sendPromptFullSpy).toHaveBeenLastCalledWith(
+      "ses_new",
+      "hi",
+      undefined,
+      "openai/gpt-5.6-sol",
+      "max",
+    );
+  });
+
   it("drops a variant the current model does not expose (would error server-side)", async () => {
     await primeModel("max"); // gpt-5 has only low/medium/high
     await useRuntimeStore.getState().sendPrompt("hi");

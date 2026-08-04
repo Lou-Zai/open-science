@@ -37,10 +37,16 @@ export function AgentModelsCard({ providers }: { providers: ProviderInfo[] }) {
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [efforts, setEfforts] = useState<Record<string, string>>({});
   const [busyAgent, setBusyAgent] = useState<string | null>(null);
+  // Both come from the same config file; reconciliation below needs BOTH, since
+  // an agent's effective model decides which efforts are legal.
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    void getAgentModels().then(setOverrides);
-    void getAgentVariants().then(setEfforts);
+    void Promise.all([getAgentModels(), getAgentVariants()]).then(([models, variants]) => {
+      setOverrides(models);
+      setEfforts(variants);
+      setLoaded(true);
+    });
   }, []);
 
   const options = useMemo(() => flattenModelOptions(providers), [providers]);
@@ -63,6 +69,30 @@ export function AgentModelsCard({ providers }: { providers: ProviderInfo[] }) {
 
   const variantsFor = (agent: string) =>
     variantsByKey.get(overrides[agent] ?? defaultModel ?? "") ?? [];
+
+  // A pinned effort can stop existing under the runtime it was chosen for: from
+  // 1.18 a model's efforts come from the catalog's own `reasoning_options`, and
+  // some models lost levels the previous runtime synthesized (verified on the
+  // bundled binaries: `deepseek-v4-flash-free` lost `medium`, two models lost
+  // their efforts entirely — #74). The runtime accepts such a value without
+  // complaint and then silently applies nothing, so reconcile it away: the row
+  // must not display an effort that no longer applies, and the config must not
+  // keep one. A model absent from the catalog is left alone — that is a dangling
+  // model, not a dropped level, and its effort is still meaningful if it returns.
+  useEffect(() => {
+    if (!loaded || providers.length === 0) return;
+    for (const [agent, effort] of Object.entries(efforts)) {
+      if (!effort) continue;
+      const known = variantsByKey.get(overrides[agent] ?? defaultModel ?? "");
+      if (!known || known.includes(effort)) continue;
+      void setAgentVariant(agent, "");
+      setEfforts((prev) => {
+        const next = { ...prev };
+        delete next[agent];
+        return next;
+      });
+    }
+  }, [loaded, providers, efforts, overrides, defaultModel, variantsByKey]);
 
   const choose = async (agent: string, model: string) => {
     setBusyAgent(agent);

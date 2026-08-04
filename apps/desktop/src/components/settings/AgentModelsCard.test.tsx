@@ -79,6 +79,32 @@ describe("AgentModelsCard", () => {
     expect(setAgentModel).toHaveBeenCalledWith("reviewer", "anthropic/haiku");
   });
 
+  it("reconciles away an effort the runtime upgrade removed (#74)", async () => {
+    // A level pinned under the old runtime can simply cease to exist: from 1.18
+    // OpenCode derives a model's efforts from the catalog, and models really did
+    // lose levels the previous runtime synthesized. The runtime accepts the stale
+    // value and then applies nothing, so the row must not keep showing it.
+    variants.current = { reviewer: "medium" }; // opus now offers only low/high
+    render(<AgentModelsCard providers={providers} />);
+    await screen.findByLabelText("Model for reviewer");
+    await waitFor(() => expect(setAgentVariant).toHaveBeenCalledWith("reviewer", ""));
+    expect(
+      (screen.getByLabelText("Reasoning effort for reviewer") as HTMLSelectElement).value,
+    ).toBe("");
+  });
+
+  it("leaves a pinned effort alone when its model is not in the catalog", async () => {
+    // A dangling model (provider signed out, endpoint removed) tells us nothing
+    // about which efforts are legal — clearing here would silently discard a
+    // setting that becomes valid again the moment the provider returns.
+    models.current = { reviewer: "openai/gpt-5.6-sol" };
+    variants.current = { reviewer: "max" };
+    render(<AgentModelsCard providers={providers} />);
+    await screen.findByLabelText("Model for reviewer");
+    await waitFor(() => expect(setAgentModel).not.toHaveBeenCalled());
+    expect(setAgentVariant).not.toHaveBeenCalled();
+  });
+
   it("keeps a pinned effort the new model still offers", async () => {
     variants.current = { reviewer: "low" };
     const withBoth: ProviderInfo[] = [

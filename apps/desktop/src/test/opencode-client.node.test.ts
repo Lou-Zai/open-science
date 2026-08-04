@@ -111,6 +111,51 @@ describe("OpenCodeClient ↔ OpenCode server", () => {
     expect(models.find((m) => m.id === "gpt-4")?.variants).toEqual([]);
   });
 
+  it("surfaces a model's whole effort vocabulary including `max` (#74)", async () => {
+    // From 1.18 on, OpenCode builds a model's variants from the catalog's own
+    // `reasoning_options`, so the top of the range is whatever the catalog says —
+    // `max` for the GPT-5.6 family. The bundled 1.17.13 stopped at `xhigh`, which
+    // is why the app's effort control did too. Nothing here is an allowlist: the
+    // names come from the runtime and only their ORDER is ours.
+    const body = {
+      providers: [
+        {
+          id: "openai",
+          name: "OpenAI",
+          models: {
+            "gpt-5.6-sol": {
+              name: "GPT-5.6 Sol",
+              // Scrambled, and `max` deliberately not last on the wire.
+              variants: { max: {}, low: {}, none: {}, xhigh: {}, high: {}, medium: {} },
+            },
+            // An unknown level must survive rather than be dropped — a future
+            // runtime may name one we have never heard of.
+            "future-model": { name: "Future", variants: { low: {}, ultra: {}, high: {} } },
+          },
+        },
+      ],
+    };
+    const fetchImpl: typeof fetch = async () =>
+      new Response(JSON.stringify(body), { status: 200 });
+    const client = new OpenCodeClient({ baseUrl: "http://127.0.0.1:1", fetchImpl });
+
+    const models = (await client.listProviders())[0].models;
+    expect(models.find((m) => m.id === "gpt-5.6-sol")?.variants).toEqual([
+      "none",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+    // Known levels keep their progression; the unrecognized one lands after them.
+    expect(models.find((m) => m.id === "future-model")?.variants).toEqual([
+      "low",
+      "high",
+      "ultra",
+    ]);
+  });
+
   it("runs a shell command: bash tool part + session.idle stream back", async () => {
     const events: OpenCodeEvent[] = [];
     const client = new OpenCodeClient({ baseUrl: `http://127.0.0.1:${server.port}` });
