@@ -92,13 +92,26 @@ pub(crate) fn sessions_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(base_workspace_dir(app)?.join(SESSIONS_DIR_NAME))
 }
 
+/// A workspace path read back from disk. Installs predating #76 wrote the Windows
+/// `\\?\` verbatim form here, which then flowed to the UI and could never match a
+/// session's `directory`; unwrapping on read repairs them without a re-pick. The
+/// transform is Windows-only — elsewhere `\` is a legal filename character.
+fn persisted_path(raw: &str) -> String {
+    #[cfg(target_os = "windows")]
+    return crate::artifact_file::strip_windows_verbatim(raw);
+    #[cfg(not(target_os = "windows"))]
+    return raw.to_owned();
+}
+
 /// The active workspace folder OpenCode / the kernel / previews / provenance all
 /// operate in. Defaults to the base folder (`~/Documents/OpenScience`) until the
 /// user opens or creates another one; the choice persists across restarts.
 pub fn workspace_dir(app: &AppHandle) -> Result<PathBuf, String> {
     if let Ok(f) = active_workspace_file(app) {
         if let Ok(s) = std::fs::read_to_string(&f) {
-            let dir = PathBuf::from(s.trim());
+            // Installs from before #76 persisted the Windows `\\?\` verbatim path;
+            // unwrap it on read so those users are repaired without a re-pick.
+            let dir = PathBuf::from(persisted_path(s.trim()));
             if dir.is_dir() {
                 return ensure_base_layout(dir);
             }
@@ -114,7 +127,7 @@ pub fn workspace_dir(app: &AppHandle) -> Result<PathBuf, String> {
 pub fn base_workspace_dir(app: &AppHandle) -> Result<PathBuf, String> {
     if let Ok(f) = base_workspace_file(app) {
         if let Ok(s) = std::fs::read_to_string(&f) {
-            let dir = PathBuf::from(s.trim());
+            let dir = PathBuf::from(persisted_path(s.trim()));
             if dir.is_dir() {
                 return Ok(dir);
             }
@@ -1246,10 +1259,9 @@ pub fn set_workspace_base(app: AppHandle, path: String) -> Result<String, String
         return Err("workspace base must be absolute".into());
     }
     ensure_base_layout(dir.clone()).map_err(|e| format!("could not create folder: {e}"))?;
-    let canon = dir.canonicalize().map_err(|e| e.to_string())?;
-    std::fs::write(base_workspace_file(&app)?, canon.to_string_lossy().as_bytes())
-        .map_err(|e| e.to_string())?;
-    Ok(canon.to_string_lossy().to_string())
+    let canon = crate::artifact_file::native_path(&dir.canonicalize().map_err(|e| e.to_string())?);
+    std::fs::write(base_workspace_file(&app)?, canon.as_bytes()).map_err(|e| e.to_string())?;
+    Ok(canon)
 }
 
 /// Reveal the base workspace folder in the OS file manager. (The sandboxed
@@ -1278,8 +1290,10 @@ pub fn set_workspace(
     }
     std::fs::create_dir_all(&dir).map_err(|e| format!("could not create folder: {e}"))?;
     let canon = dir.canonicalize().map_err(|e| e.to_string())?;
-    std::fs::write(active_workspace_file(&app)?, canon.to_string_lossy().as_bytes())
-        .map_err(|e| e.to_string())?;
+    // Persisted and returned in native form — on Windows the verbatim `\\?\`
+    // path `canonicalize()` produces matches nothing the sidecar reports (#76).
+    let native = crate::artifact_file::native_path(&canon);
+    std::fs::write(active_workspace_file(&app)?, native.as_bytes()).map_err(|e| e.to_string())?;
 
     // Follow the active folder with the snapshot watcher so out-of-app edits
     // (external editor, detached process) in the new workspace are captured too.
@@ -1296,7 +1310,7 @@ pub fn set_workspace(
     // canonical base file, so a machine configured in Settings is visible to
     // every session's agent without reaching outside the workspace.
     crate::compute::materialize_active(&app);
-    Ok(canon.to_string_lossy().to_string())
+    Ok(native)
 }
 
 /// Record which session owns the active workspace, so bundled skill helpers

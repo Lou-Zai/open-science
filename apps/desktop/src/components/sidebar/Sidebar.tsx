@@ -46,6 +46,7 @@ import { useDragDivider } from "@/lib/useDragDivider";
 import { useLayoutStore } from "@/lib/layout";
 import { startPaneDrag } from "@/lib/dragPane";
 import { isGatewayWeb } from "@/lib/webMode";
+import { pathKey, samePath } from "@/lib/workspacePath";
 import { StatusPills } from "./StatusPills";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import {
@@ -272,7 +273,10 @@ export function Sidebar({ project }: { project: Project }) {
   // Subagent child sessions are internals of their parent conversation —
   // their asks and progress surface there, so they get no row of their own.
   const topSessions = sessions.filter((s) => !s.parentId);
-  const projectByPath = new Map(projects.map((p) => [p.path, p]));
+  // Keyed by comparison key, not the raw string: a project's path comes from Rust
+  // and a session's `directory` from the sidecar, and on Windows those spell the
+  // same folder differently (#76).
+  const projectByPath = new Map(projects.map((p) => [pathKey(p.path), p]));
   const sessionsByProject = new Map<string, Row[]>(
     projects.map((p) => [p.id, []]),
   );
@@ -284,7 +288,7 @@ export function Sidebar({ project }: { project: Project }) {
       to: `/live/${s.id}`,
       kind: "session",
     };
-    const owner = s.directory ? projectByPath.get(s.directory) : undefined;
+    const owner = s.directory ? projectByPath.get(pathKey(s.directory)) : undefined;
     if (owner) sessionsByProject.get(owner.id)!.push(row);
     else looseRows.push(row);
   }
@@ -292,7 +296,7 @@ export function Sidebar({ project }: { project: Project }) {
   const updatedByProject = new Map<string, number>();
   for (const s of topSessions) {
     if (!s.directory || s.updated == null) continue;
-    const owner = projectByPath.get(s.directory);
+    const owner = projectByPath.get(pathKey(s.directory));
     if (owner)
       updatedByProject.set(owner.id, Math.max(updatedByProject.get(owner.id) ?? 0, s.updated));
   }
@@ -388,7 +392,7 @@ export function Sidebar({ project }: { project: Project }) {
               {projects.map((p) => (
                 <ContextMenuItem
                   key={p.id}
-                  disabled={p.path === sessionDirOf(row.id)}
+                  disabled={samePath(p.path, sessionDirOf(row.id))}
                   onSelect={() => void moveSessionToWorkspace(row.id, p.path)}
                 >
                   {p.name}
@@ -728,7 +732,7 @@ export function Sidebar({ project }: { project: Project }) {
           )}
           {visibleProjects.map((p) => {
             const open = !collapsedProjects.includes(p.id);
-            const active = p.path === workspace;
+            const active = samePath(p.path, workspace);
             const rows = sessionsByProject.get(p.id) ?? [];
             return (
               <div key={p.id}>

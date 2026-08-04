@@ -140,7 +140,10 @@ fn info_of(meta: ProjectMeta, dir: &Path) -> ProjectInfo {
         name: meta.name,
         description: meta.description,
         created_at: meta.created_at,
-        path: canon.to_string_lossy().to_string(),
+        // Native form, never the `\\?\` verbatim path `canonicalize()` returns on
+        // Windows: this string is matched against the `directory` OpenCode reports
+        // for a session, and the verbatim prefix could never match (#76).
+        path: crate::artifact_file::native_path(&canon),
         imported,
         imported_from,
         import_mode,

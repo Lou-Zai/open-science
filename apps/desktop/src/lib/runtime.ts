@@ -45,6 +45,7 @@ import {
   type ToolStatus,
 } from "./tauri";
 import { isGatewayWeb, gatewayToken, gatewayOrigin } from "./webMode";
+import { samePath } from "./workspacePath";
 import { kernelReset } from "./kernel";
 import { moveScrollMemory } from "./scrollMemory";
 import { deriveArtifact, deriveArtifactPresentation } from "./artifacts";
@@ -2140,7 +2141,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
     const aim = (s: RuntimeState) => ({
       draftWorkspaces: { ...s.draftWorkspaces, [key]: path },
     });
-    if (get().workspace === path) {
+    if (samePath(get().workspace, path)) {
       // Already inside the project — a clean draft, no reconnect.
       set((s) => ({ ...blankDraft(s, key), ...aim(s) }));
       return;
