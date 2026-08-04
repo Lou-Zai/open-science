@@ -317,7 +317,13 @@
     "toast": {
       "couldNotCancel": "无法取消 {{id}}",
       "jobCanceled": "任务 {{id}} 已取消"
-    }
+    },
+    "signIn": "登录",
+    "signInRequired": "需要登录——这台机器要求密码或验证码",
+    "signedIn": "已登录",
+    "signOut": "断开",
+    "signOutTitle": "关闭与这台机器的共享连接",
+    "sharingUnavailable": "需要密码或验证码，而这依赖 OpenSSH 连接复用（Windows 不支持）"
   },
   "remote": {
     "title": "远程访问",
@@ -376,5 +382,16 @@
     "modelFor": "{{agent}} 使用的模型",
     "defaultEffort": "默认强度",
     "effortFor": "{{agent}} 的思考强度"
+  },
+  "ssh": {
+    "title": "登录 {{host}}",
+    "hint": "这台机器需要交互式认证。登录一次后，之后所有命令——你的和智能体的——都复用同一条连接。",
+    "connecting": "正在连接…",
+    "failed": "登录失败。",
+    "submit": "继续",
+    "close": "关闭",
+    "reveal": "显示输入内容",
+    "hide": "隐藏输入内容",
+    "privacy": "只发送给本机的 ssh。不会被保存、记录日志，也不会写入溯源记录。"
   }
 }

@@ -319,7 +319,13 @@
     "toast": {
       "couldNotCancel": "Could not cancel {{id}}",
       "jobCanceled": "Job {{id}} canceled"
-    }
+    },
+    "signIn": "Sign in",
+    "signInRequired": "sign-in required — this machine asks for a password or a code",
+    "signedIn": "signed in",
+    "signOut": "Sign out",
+    "signOutTitle": "Close the shared connection to this machine",
+    "sharingUnavailable": "needs a password or code, which requires OpenSSH connection sharing (unavailable on Windows)"
   },
   "remote": {
     "title": "Remote Access",
@@ -378,5 +384,16 @@
     "modelFor": "Model for {{agent}}",
     "defaultEffort": "Default effort",
     "effortFor": "Reasoning effort for {{agent}}"
+  },
+  "ssh": {
+    "title": "Sign in to {{host}}",
+    "hint": "This machine authenticates interactively. Sign in once and every later command — yours and the agent's — reuses the same connection.",
+    "connecting": "Connecting…",
+    "failed": "Sign-in failed.",
+    "submit": "Continue",
+    "close": "Close",
+    "reveal": "Show what you typed",
+    "hide": "Hide what you typed",
+    "privacy": "Sent only to ssh on this machine. Never stored, logged, or written to provenance."
   }
 }

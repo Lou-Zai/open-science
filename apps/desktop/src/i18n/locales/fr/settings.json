@@ -319,7 +319,13 @@
     "toast": {
       "couldNotCancel": "Impossible d'annuler {{id}}",
       "jobCanceled": "Tâche {{id}} annulée"
-    }
+    },
+    "signIn": "Se connecter",
+    "signInRequired": "connexion requise — cette machine demande un mot de passe ou un code",
+    "signedIn": "connecté",
+    "signOut": "Déconnecter",
+    "signOutTitle": "Fermer la connexion partagée vers cette machine",
+    "sharingUnavailable": "demande un mot de passe ou un code, ce qui nécessite le partage de connexion OpenSSH (indisponible sous Windows)"
   },
   "remote": {
     "title": "Accès distant",
@@ -378,5 +384,16 @@
     "modelFor": "Modèle pour {{agent}}",
     "defaultEffort": "Effort par défaut",
     "effortFor": "Effort de raisonnement pour {{agent}}"
+  },
+  "ssh": {
+    "title": "Se connecter à {{host}}",
+    "hint": "Cette machine s’authentifie de manière interactive. Connectez-vous une fois : toutes les commandes suivantes, les vôtres comme celles de l’agent, réutilisent la même connexion.",
+    "connecting": "Connexion…",
+    "failed": "Échec de la connexion.",
+    "submit": "Continuer",
+    "close": "Fermer",
+    "reveal": "Afficher la saisie",
+    "hide": "Masquer la saisie",
+    "privacy": "Transmis uniquement au ssh de cette machine. Jamais stocké, journalisé, ni inscrit dans la provenance."
   }
 }

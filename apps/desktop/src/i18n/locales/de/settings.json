@@ -319,7 +319,13 @@
     "toast": {
       "couldNotCancel": "{{id}} konnte nicht abgebrochen werden",
       "jobCanceled": "Job {{id}} abgebrochen"
-    }
+    },
+    "signIn": "Anmelden",
+    "signInRequired": "Anmeldung erforderlich — diese Maschine verlangt ein Passwort oder einen Code",
+    "signedIn": "angemeldet",
+    "signOut": "Trennen",
+    "signOutTitle": "Die geteilte Verbindung zu dieser Maschine schließen",
+    "sharingUnavailable": "verlangt Passwort oder Code; das setzt OpenSSH-Verbindungsteilung voraus (unter Windows nicht verfügbar)"
   },
   "remote": {
     "title": "Fernzugriff",
@@ -378,5 +384,16 @@
     "modelFor": "Modell für {{agent}}",
     "defaultEffort": "Standardaufwand",
     "effortFor": "Denkaufwand für {{agent}}"
+  },
+  "ssh": {
+    "title": "Bei {{host}} anmelden",
+    "hint": "Diese Maschine authentifiziert interaktiv. Melden Sie sich einmal an — jeder weitere Befehl, Ihrer wie der des Agenten, nutzt dieselbe Verbindung.",
+    "connecting": "Verbinden…",
+    "failed": "Anmeldung fehlgeschlagen.",
+    "submit": "Weiter",
+    "close": "Schließen",
+    "reveal": "Eingabe anzeigen",
+    "hide": "Eingabe verbergen",
+    "privacy": "Geht nur an das ssh auf diesem Rechner. Wird nie gespeichert, protokolliert oder in die Provenienz geschrieben."
   }
 }

@@ -317,7 +317,13 @@
     "toast": {
       "couldNotCancel": "{{id}}을(를) 취소할 수 없습니다",
       "jobCanceled": "작업 {{id}}이(가) 취소되었습니다"
-    }
+    },
+    "signIn": "로그인",
+    "signInRequired": "로그인이 필요합니다 — 이 머신은 비밀번호나 코드를 요구합니다",
+    "signedIn": "로그인됨",
+    "signOut": "연결 해제",
+    "signOutTitle": "이 머신과의 공유 연결 닫기",
+    "sharingUnavailable": "비밀번호나 코드가 필요하며, 이는 OpenSSH 연결 공유를 요구합니다(Windows에서는 사용할 수 없음)"
   },
   "remote": {
     "title": "원격 접속",
@@ -376,5 +382,16 @@
     "modelFor": "{{agent}}의 모델",
     "defaultEffort": "기본 강도",
     "effortFor": "{{agent}}의 추론 강도"
+  },
+  "ssh": {
+    "title": "{{host}}에 로그인",
+    "hint": "이 머신은 대화식으로 인증합니다. 한 번 로그인하면 이후 모든 명령 — 사용자와 에이전트 모두 — 이 같은 연결을 재사용합니다.",
+    "connecting": "연결 중…",
+    "failed": "로그인에 실패했습니다.",
+    "submit": "계속",
+    "close": "닫기",
+    "reveal": "입력 내용 표시",
+    "hide": "입력 내용 숨기기",
+    "privacy": "이 컴퓨터의 ssh 로만 전송됩니다. 저장·기록되지 않으며 provenance에도 기록되지 않습니다."
   }
 }

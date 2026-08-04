@@ -52,6 +52,7 @@ import { useLayoutStore } from "./layout";
 import { provenanceInputsFromEvent, recordProvenance } from "./provenance";
 import { recordRun, runInputFromEvent } from "./runs";
 import { splitReview } from "./review";
+import { useSshStore } from "./ssh";
 import {
   AUTO_REVIEW_KEY,
   AUTO_REVIEW_PROMPT,
@@ -1664,6 +1665,18 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       // (questions, searches, plain analysis) has nothing to audit.
       if (event.type === "tool.updated" && isMutatingTool(event.tool, event.status)) {
         dirtyTurns.add(sid);
+      }
+      // The agent reached a compute host that authenticates interactively and
+      // asked us to sign in (#73). The dialog opens here, in the conversation the
+      // user is already watching, and the tool waits for the shared connection —
+      // so the run continues instead of dying on "Permission denied".
+      if (
+        event.type === "tool.updated" &&
+        event.tool === "ssh_connect" &&
+        (event.status === "running" || event.status === "pending")
+      ) {
+        const host = str(event.input?.host);
+        if (host) void useSshStore.getState().connect(host);
       }
       // A task tool names the subagent session it spawned — remember the
       // parent link so the child's permission/question asks surface in THIS

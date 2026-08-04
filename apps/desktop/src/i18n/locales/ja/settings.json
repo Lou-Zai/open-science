@@ -317,7 +317,13 @@
     "toast": {
       "couldNotCancel": "{{id}} をキャンセルできませんでした",
       "jobCanceled": "ジョブ {{id}} をキャンセルしました"
-    }
+    },
+    "signIn": "サインイン",
+    "signInRequired": "サインインが必要です — このマシンはパスワードかコードを求めています",
+    "signedIn": "サインイン済み",
+    "signOut": "切断",
+    "signOutTitle": "このマシンとの共有接続を閉じる",
+    "sharingUnavailable": "パスワードかコードが必要ですが、これには OpenSSH の接続共有が必要です（Windows では利用できません）"
   },
   "remote": {
     "title": "リモートアクセス",
@@ -376,5 +382,16 @@
     "modelFor": "{{agent}} のモデル",
     "defaultEffort": "既定の強度",
     "effortFor": "{{agent}} の推論の強度"
+  },
+  "ssh": {
+    "title": "{{host}} にサインイン",
+    "hint": "このマシンは対話的に認証します。一度サインインすれば、以降のコマンドは——あなたのものもエージェントのものも——同じ接続を再利用します。",
+    "connecting": "接続中…",
+    "failed": "サインインに失敗しました。",
+    "submit": "続行",
+    "close": "閉じる",
+    "reveal": "入力内容を表示",
+    "hide": "入力内容を隠す",
+    "privacy": "このマシンの ssh にのみ送られます。保存もログ記録もされず、来歴にも書き込まれません。"
   }
 }

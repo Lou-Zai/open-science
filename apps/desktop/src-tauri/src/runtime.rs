@@ -1124,6 +1124,13 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<CommandChild, String> {
         .current_dir(workspace);
     // GUI-launched apps get a minimal PATH; give the agent the user's real tools.
     let mut cmd = cmd.env("PATH", enriched_path());
+    // The agent's own `ssh`/`rsync`/`sbatch` calls ride the app's shared
+    // connection through this config, so a host the user signed in to once needs
+    // no further password or one-time code (#73). The bundled remote-compute
+    // skill and the ssh_connect tool both pass `-F "$OPENSCIENCE_SSH_CONFIG"`.
+    if let Some(ssh_config) = crate::ssh_session::config_path(app) {
+        cmd = cmd.env("OPENSCIENCE_SSH_CONFIG", ssh_config.to_string_lossy().to_string());
+    }
     // Apply the network-proxy setting so provider logins and API calls work
     // where direct connections are blocked (see resolve_proxy_env).
     let (proxy_mode, proxy_url) = read_proxy_setting(app);

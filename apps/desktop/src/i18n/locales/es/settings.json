@@ -319,7 +319,13 @@
     "toast": {
       "couldNotCancel": "No se pudo cancelar {{id}}",
       "jobCanceled": "Trabajo {{id}} cancelado"
-    }
+    },
+    "signIn": "Iniciar sesión",
+    "signInRequired": "requiere iniciar sesión: esta máquina pide una contraseña o un código",
+    "signedIn": "sesión iniciada",
+    "signOut": "Desconectar",
+    "signOutTitle": "Cerrar la conexión compartida con esta máquina",
+    "sharingUnavailable": "pide contraseña o código, lo que requiere conexión compartida de OpenSSH (no disponible en Windows)"
   },
   "remote": {
     "title": "Acceso remoto",
@@ -378,5 +384,16 @@
     "modelFor": "Modelo para {{agent}}",
     "defaultEffort": "Esfuerzo predeterminado",
     "effortFor": "Esfuerzo de razonamiento para {{agent}}"
+  },
+  "ssh": {
+    "title": "Iniciar sesión en {{host}}",
+    "hint": "Esta máquina autentica de forma interactiva. Inicia sesión una vez y cada comando posterior — tuyo o del agente — reutiliza la misma conexión.",
+    "connecting": "Conectando…",
+    "failed": "No se pudo iniciar sesión.",
+    "submit": "Continuar",
+    "close": "Cerrar",
+    "reveal": "Mostrar lo escrito",
+    "hide": "Ocultar lo escrito",
+    "privacy": "Solo se envía al ssh de este equipo. Nunca se guarda, ni se registra, ni entra en la procedencia."
   }
 }

@@ -791,6 +791,9 @@ export interface GpuInfo {
 export interface ComputeProbe {
   reachable: boolean;
   message: string | null;
+  /** The host answered but wants a password or a one-time code — offer a
+   *  sign-in rather than an ssh error the user cannot act on (#73). */
+  needs_sign_in: boolean;
   os: string | null;
   cores: number | null;
   load1: number | null;
@@ -863,6 +866,58 @@ export async function computeCancel(host: string, jobId: string): Promise<void> 
   if (!isTauri) throw new Error("not running in the desktop app");
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("compute_cancel", { host, jobId });
+}
+
+// ---- Interactive SSH sign-in (#73) ----
+
+/** One host's shared-connection state. `prompt` is the server's own question,
+ *  verbatim (Duo, PAM and campus OTP flows all word it differently), and
+ *  `notice` the non-secret lines around it. */
+export interface SshSession {
+  host: string;
+  status: "connecting" | "prompt" | "connected" | "failed";
+  prompt: string | null;
+  notice: string | null;
+  error: string | null;
+}
+
+/** Whether this platform can share one authenticated connection across every
+ *  later command. False on Windows, whose bundled OpenSSH has no ControlMaster —
+ *  a sign-in there would have to be repeated for every single command. */
+export async function sshSharingSupported(): Promise<boolean> {
+  if (!isTauri) return false;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<boolean>("ssh_sharing_supported");
+}
+
+export async function sshSessions(): Promise<SshSession[]> {
+  if (!isTauri) return [];
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<SshSession[]>("ssh_sessions");
+}
+
+/** Start (or adopt) the shared connection for a host. Returns as soon as ssh is
+ *  running — the sign-in itself reports progress through `ssh:state` events,
+ *  because a pushed second factor waits on a human. */
+export async function sshConnect(host: string): Promise<void> {
+  if (!isTauri) throw new Error("not running in the desktop app");
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("ssh_connect", { host });
+}
+
+/** Answer the pending question. The secret goes straight into ssh's terminal:
+ *  never a process argument, never logged, never stored. */
+export async function sshAnswer(host: string, secret: string): Promise<void> {
+  if (!isTauri) throw new Error("not running in the desktop app");
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("ssh_answer", { host, secret });
+}
+
+/** Close the shared connection (also the cancel path for a dismissed dialog). */
+export async function sshDisconnect(host: string): Promise<void> {
+  if (!isTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("ssh_disconnect", { host });
 }
 
 export interface ModalStatus {
