@@ -49,6 +49,8 @@
       "../../../runtime/skills/external/ai4s-skills": "skills/",
       "../../../runtime/skills/external/anthropic-skills": "skills-office/",
       "../../../runtime/skills/core": "skills-core/",
+      "../../../runtime/opencode-profile/agent": "profile/agent/",
+      "../../../runtime/opencode-profile/command": "profile/command/",
       "../../../runtime/harness": "harness/",
       "../../../examples/climate-trends": "examples/climate-trends/"
     },

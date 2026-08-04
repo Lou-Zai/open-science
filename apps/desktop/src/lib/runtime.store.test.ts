@@ -276,6 +276,7 @@ beforeEach(async () => {
     sessionParents: {},
     panes: {},
     sessionAgents: {},
+    autoReview: false,
   });
   await useRuntimeStore.getState().connect();
   expect(useRuntimeStore.getState().status).toBe("ready");
@@ -1802,5 +1803,176 @@ describe("session rename and project filing", () => {
       "/work/projects/bci",
       "/work/projects/bci",
     ]);
+  });
+});
+
+// #72: a turn that changed workspace files earns one read-only reviewer turn,
+// whose findings render in the same thread. Every guard below is a case where
+// reviewing would be waste, a loop, or a second concurrent stream (#50).
+describe("auto-review on turn completion", () => {
+  const REVIEWER_AGENTS = [
+    { name: "build", description: "", mode: "primary" as const },
+    { name: "reviewer", description: "", mode: "all" as const },
+  ];
+
+  // The review queue and its single slot are module state (deliberately: store
+  // writes on streamed events repaint every subscriber — #50). `disconnect` is
+  // what clears them in production, so each test starts from a runtime that
+  // owes no review, instead of inheriting the previous test's in-flight one.
+  beforeEach(async () => {
+    useRuntimeStore.getState().disconnect();
+    await useRuntimeStore.getState().connect();
+  });
+
+  /** Enable auto-review with the reviewer agent present and `ids` listed. */
+  function armed(ids: string[], extra: Record<string, unknown> = {}) {
+    useRuntimeStore.setState({
+      autoReview: true,
+      agents: REVIEWER_AGENTS,
+      sessions: ids.map((id) => ({ id, title: id })),
+      ...extra,
+    } as never);
+  }
+
+  /** One turn that wrote a file, then went idle. */
+  function wroteAFile(sid: string) {
+    mocks.fireEvent({
+      type: "tool.updated",
+      sessionId: sid,
+      callId: `c-${sid}`,
+      tool: "write",
+      status: "success",
+      title: "",
+      input: { filePath: "analysis.py" },
+    });
+  }
+
+  const reviewCalls = () =>
+    mocks.sendPromptFullSpy.mock.calls.filter((c) => c[2] === "reviewer");
+
+  it("sends one reviewer turn, with no model of its own, after a file changed", async () => {
+    armed(["ses_1"]);
+    wroteAFile("ses_1");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_1" });
+    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(1));
+
+    const [sid, text, agent, model, variant] = reviewCalls()[0]!;
+    expect(sid).toBe("ses_1");
+    expect(text).toContain("Review the work just completed");
+    expect(agent).toBe("reviewer");
+    // No per-turn model or effort: those come from the reviewer's own per-agent
+    // config (#71), which an explicit model would override.
+    expect(model).toBeUndefined();
+    expect(variant).toBeUndefined();
+    // The review holds the session's running lock, so the UI shows it working.
+    expect(useRuntimeStore.getState().runningSessions["ses_1"]).toBe(true);
+
+    // Its own idle ends the review and must not start another one.
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_1" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reviewCalls()).toHaveLength(1);
+    expect(useRuntimeStore.getState().runningSessions["ses_1"]).toBeUndefined();
+  });
+
+  it("stays off until the user opts in", async () => {
+    useRuntimeStore.setState({ agents: REVIEWER_AGENTS } as never);
+    wroteAFile("ses_1");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_1" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reviewCalls()).toHaveLength(0);
+  });
+
+  it("skips a read-only turn", async () => {
+    armed(["ses_1"]);
+    mocks.fireEvent({
+      type: "tool.updated",
+      sessionId: "ses_1",
+      callId: "c-read",
+      tool: "read",
+      status: "success",
+      title: "",
+      input: { filePath: "analysis.py" },
+    });
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_1" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reviewCalls()).toHaveLength(0);
+  });
+
+  it("leaves a subagent's own turn to its parent", async () => {
+    armed(["ses_parent", "ses_child"], { sessionParents: { ses_child: "ses_parent" } });
+    wroteAFile("ses_child");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_child" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reviewCalls()).toHaveLength(0);
+  });
+
+  it("does nothing when the runtime exposes no reviewer agent", async () => {
+    useRuntimeStore.setState({
+      autoReview: true,
+      agents: [{ name: "build", description: "", mode: "primary" }],
+    } as never);
+    wroteAFile("ses_1");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_1" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reviewCalls()).toHaveLength(0);
+  });
+
+  it("does not review a turn the user interrupted", async () => {
+    armed(["ses_1"]);
+    wroteAFile("ses_1");
+    // The abort's own trailing idle is what would otherwise look like a
+    // finished turn.
+    mocks.abortTrailing = [{ type: "session.idle", sessionId: "ses_1" }];
+    await useRuntimeStore.getState().interrupt("ses_1");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reviewCalls()).toHaveLength(0);
+  });
+
+  it("does not review a turn that died, and frees the slot when a review dies", async () => {
+    armed(["ses_a", "ses_b"]);
+    // A turn that wrote a file and then failed (rate limit, dangling model):
+    // the work is half-finished, so it is not reviewed.
+    wroteAFile("ses_a");
+    mocks.fireEvent({ type: "error", sessionId: "ses_a", message: "model not found" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reviewCalls()).toHaveLength(0);
+    // Its trailing idle must not review it either — the error consumed the change.
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_a" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reviewCalls()).toHaveLength(0);
+
+    // A review that dies the same way hands its slot back, so the next session
+    // is still reviewed instead of waiting forever.
+    wroteAFile("ses_a");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_a" });
+    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    mocks.fireEvent({ type: "error", sessionId: "ses_a", message: "provider exploded" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(useRuntimeStore.getState().runningSessions["ses_a"]).toBeUndefined();
+
+    wroteAFile("ses_b");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_b" });
+    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(2));
+    expect(reviewCalls()[1]![0]).toBe("ses_b");
+  });
+
+  it("runs one review at a time and gets to the second session afterwards", async () => {
+    armed(["ses_a", "ses_b"]);
+    wroteAFile("ses_a");
+    wroteAFile("ses_b");
+    // Both panes finish at once: only one review starts.
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_a" });
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_b" });
+    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    expect(reviewCalls()[0]![0]).toBe("ses_a");
+
+    // The first review ends → the queued session is reviewed, not dropped.
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_a" });
+    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(2));
+    expect(reviewCalls()[1]![0]).toBe("ses_b");
+
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_b" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reviewCalls()).toHaveLength(2);
   });
 });

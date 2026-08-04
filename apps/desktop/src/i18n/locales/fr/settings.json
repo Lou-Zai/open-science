@@ -201,6 +201,12 @@
     "change": "Changer…",
     "reveal": "Afficher"
   },
+  "review": {
+    "title": "Relecture",
+    "hint": "Un agent relecteur en lecture seule qui audite le travail terminé : traçabilité, statistiques, unités et provenance.",
+    "autoTitle": "Relire après chaque tour qui modifie des fichiers",
+    "autoHint": "Coûte un tour de modèle supplémentaire par modification. Les tours en lecture seule sont ignorés, et vous pouvez toujours demander une relecture avec /science-review."
+  },
   "python": {
     "title": "Noyau Python local",
     "hint": "Exécute les cellules de notebook dans l'application. Utilise votre environnement Jupyter s'il est configuré (même Python que l'agent), sinon détection automatique — ou définissez un interpréteur explicite ci-dessous",
@@ -364,11 +370,13 @@
     "disabledNote": "La mémoire est désactivée : ce fichier n’est pas chargé pour l’instant."
   },
   "agentModels": {
-    "title": "Modèle par agent",
-    "hint": "Faites tourner un relecteur ou un explorateur sur un modèle rapide pendant que l’agent principal raisonne sur un modèle puissant.",
+    "title": "Modèle et effort par agent",
+    "hint": "Faites tourner un relecteur ou un explorateur sur un modèle rapide pendant que l’agent principal raisonne sur un modèle puissant, et fixez l’intensité de réflexion de chacun.",
     "noModels": "Connectez un fournisseur pour choisir des modèles.",
     "followDefault": "Modèle par défaut",
     "followDefaultNamed": "Par défaut ({{model}})",
-    "modelFor": "Modèle pour {{agent}}"
+    "modelFor": "Modèle pour {{agent}}",
+    "defaultEffort": "Effort par défaut",
+    "effortFor": "Effort de raisonnement pour {{agent}}"
   }
 }

@@ -425,6 +425,51 @@ fn deploy_workbench_tools(app: &AppHandle) {
     }
 }
 
+/// App-owned prompt files deployed into the OpenCode profile: the `reviewer`
+/// agent and the commands that invoke it (#72). `(resource dir, profile dir)`.
+const PROFILE_PROMPTS: &[(&str, &str)] =
+    &[("profile/agent", "agent"), ("profile/command", "command")];
+
+/// Ship the app's own agent and command definitions into the global profile
+/// (`<xdg-config>/opencode/{agent,command}/`), which OpenCode scans for
+/// `**/*.md` in every workspace. Refreshed on every sidecar start so app
+/// upgrades replace them in place; files the user added themselves are left
+/// alone, since only our own names are written.
+fn deploy_profile_prompts(app: &AppHandle) {
+    let Ok(config_home) = xdg_config_home(app) else {
+        return;
+    };
+    for (resource, dir) in PROFILE_PROMPTS {
+        let Ok(src) = app
+            .path()
+            .resolve(resource, tauri::path::BaseDirectory::Resource)
+        else {
+            continue;
+        };
+        if !src.is_dir() {
+            continue; // dev run without the bundled resources
+        }
+        let dst = config_home.join("opencode").join(dir);
+        if let Err(e) = std::fs::create_dir_all(&dst) {
+            eprintln!("failed to create profile {dir} directory: {e}");
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&src) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() || path.extension() != Some(std::ffi::OsStr::new("md")) {
+                continue;
+            }
+            let Some(name) = path.file_name() else { continue };
+            if let Err(e) = std::fs::copy(&path, dst.join(name)) {
+                eprintln!("failed to deploy profile {dir} {}: {e}", path.display());
+            }
+        }
+    }
+}
+
 /// Remove every SKILL.md-bearing directory in `dst` whose name is not in
 /// `bundled` (the set just deployed). Non-skill directories — including the
 /// reserved `user/` tree of installed skills — are left untouched.
@@ -998,6 +1043,8 @@ fn spawn_sidecar(app: &AppHandle, port: u16) -> Result<CommandChild, String> {
     // Host presentation tools are global to the app-owned OpenCode profile and
     // available in every session workspace.
     deploy_workbench_tools(app);
+    // The reviewer agent and its commands, same profile, same refresh-on-start.
+    deploy_profile_prompts(app);
     // Safety default (AGENTS.md non-negotiable): on first run, seed the
     // "approve" permission mode so dangerous shell commands prompt for
     // approval. A mode the user chose (approve or full) is never overridden.
@@ -1904,6 +1951,40 @@ pub fn get_agent_models(app: AppHandle) -> Result<serde_json::Value, String> {
     Ok(serde_json::Value::Object(map))
 }
 
+/// Per-agent reasoning-effort overrides as `{ agent: "high" }` (#71).
+#[tauri::command]
+pub fn get_agent_variants(app: AppHandle) -> Result<serde_json::Value, String> {
+    let existing = std::fs::read_to_string(effective_config_file(&app)?).unwrap_or_default();
+    let map: serde_json::Map<String, serde_json::Value> =
+        crate::opencode_config::agent_variants(&existing)
+            .into_iter()
+            .map(|(k, v)| (k, serde_json::Value::String(v)))
+            .collect();
+    Ok(serde_json::Value::Object(map))
+}
+
+/// Persist one rewritten config and restart the sidecar, unless the rewrite is a
+/// no-op. Shared by the per-agent model and effort writers.
+fn write_agent_config(
+    app: &AppHandle,
+    state: &State<'_, RuntimeState>,
+    rewrite: impl FnOnce(&str) -> String,
+) -> Result<(), String> {
+    let path = effective_config_file(app)?;
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let updated = rewrite(&existing);
+    if updated == existing {
+        return Ok(());
+    }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, updated).map_err(|e| e.to_string())?;
+    tighten_private(&path);
+    restart_sidecar_if_running(app, state)?;
+    Ok(())
+}
+
 /// Pin one agent to its own model, or clear the override with an empty model.
 /// Restarts the sidecar: agent definitions are built when it loads its config.
 #[tauri::command(async)]
@@ -1913,20 +1994,25 @@ pub fn set_agent_model(
     agent: String,
     model: String,
 ) -> Result<(), String> {
-    let path = effective_config_file(&app)?;
-    let existing = std::fs::read_to_string(&path).unwrap_or_default();
-    let want = if model.is_empty() { None } else { Some(model.as_str()) };
-    let updated = crate::opencode_config::set_agent_model(&existing, &agent, want);
-    if updated == existing {
-        return Ok(());
-    }
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&path, updated).map_err(|e| e.to_string())?;
-    tighten_private(&path);
-    restart_sidecar_if_running(&app, &state)?;
-    Ok(())
+    write_agent_config(&app, &state, |existing| {
+        let want = if model.is_empty() { None } else { Some(model.as_str()) };
+        crate::opencode_config::set_agent_model(existing, &agent, want)
+    })
+}
+
+/// Pin one agent to a reasoning-effort variant, or clear it with an empty string.
+/// Restarts the sidecar for the same reason `set_agent_model` does.
+#[tauri::command(async)]
+pub fn set_agent_variant(
+    app: AppHandle,
+    state: State<'_, RuntimeState>,
+    agent: String,
+    variant: String,
+) -> Result<(), String> {
+    write_agent_config(&app, &state, |existing| {
+        let want = if variant.is_empty() { None } else { Some(variant.as_str()) };
+        crate::opencode_config::set_agent_variant(existing, &agent, want)
+    })
 }
 
 /// The persisted proxy setting plus the proxy the sidecar would use right now.

@@ -128,6 +128,8 @@ pub fn run() {
             runtime::set_memory_enabled,
             runtime::get_agent_models,
             runtime::set_agent_model,
+            runtime::get_agent_variants,
+            runtime::set_agent_variant,
             runtime::get_proxy_setting,
             runtime::set_proxy_setting,
             runtime::get_mirror_setting,

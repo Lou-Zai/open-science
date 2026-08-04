@@ -201,6 +201,12 @@
     "change": "Cambiar…",
     "reveal": "Mostrar"
   },
+  "review": {
+    "title": "Revisión",
+    "hint": "Un agente revisor de solo lectura que audita el trabajo terminado: trazabilidad, estadística, unidades y procedencia.",
+    "autoTitle": "Revisar tras cada turno que cambie archivos",
+    "autoHint": "Cuesta un turno de modelo extra por cambio. Los turnos de solo lectura se omiten, y siempre puedes pedir una revisión con /science-review."
+  },
   "python": {
     "title": "Kernel local de Python",
     "hint": "Ejecuta las celdas del cuaderno en la app. Usa tu entorno de Jupyter cuando está configurado (el mismo Python que el agente); si no, se detecta automáticamente, o puedes indicar un intérprete explícito abajo",
@@ -364,11 +370,13 @@
     "disabledNote": "La memoria está desactivada, así que este archivo no se carga ahora mismo."
   },
   "agentModels": {
-    "title": "Modelo por agente",
-    "hint": "Ejecuta un revisor o explorador en un modelo rápido mientras el agente principal razona en uno potente.",
+    "title": "Modelo y esfuerzo por agente",
+    "hint": "Ejecuta un revisor o explorador en un modelo rápido mientras el agente principal razona en uno potente, y fija cuánto piensa cada uno.",
     "noModels": "Conecta un proveedor para elegir modelos.",
     "followDefault": "Modelo predeterminado",
     "followDefaultNamed": "Predeterminado ({{model}})",
-    "modelFor": "Modelo para {{agent}}"
+    "modelFor": "Modelo para {{agent}}",
+    "defaultEffort": "Esfuerzo predeterminado",
+    "effortFor": "Esfuerzo de razonamiento para {{agent}}"
   }
 }

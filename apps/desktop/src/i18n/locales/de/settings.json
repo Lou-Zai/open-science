@@ -201,6 +201,12 @@
     "change": "Ändern…",
     "reveal": "Anzeigen"
   },
+  "review": {
+    "title": "Prüfung",
+    "hint": "Ein rein lesender Prüfagent, der fertige Arbeit auf Nachvollziehbarkeit, Statistik, Einheiten und Herkunft prüft.",
+    "autoTitle": "Nach jedem Zug prüfen, der Dateien ändert",
+    "autoHint": "Kostet pro Änderung einen zusätzlichen Modellzug. Rein lesende Züge werden übersprungen, und Sie können jederzeit mit /science-review prüfen lassen."
+  },
   "python": {
     "title": "Lokaler Python-Kernel",
     "hint": "Führt Notebook-Zellen in der App aus. Nutzt Ihre Jupyter-Umgebung, falls eingerichtet (gleiches Python wie der Agent), sonst automatische Erkennung — oder unten einen expliziten Interpreter festlegen",
@@ -364,11 +370,13 @@
     "disabledNote": "Das Gedächtnis ist ausgeschaltet, diese Datei wird derzeit nicht geladen."
   },
   "agentModels": {
-    "title": "Modell je Agent",
-    "hint": "Lassen Sie Prüf- oder Rechercheagenten auf einem schnellen Modell laufen, während der Hauptagent auf einem starken denkt.",
+    "title": "Modell und Denkaufwand je Agent",
+    "hint": "Lassen Sie Prüf- oder Rechercheagenten auf einem schnellen Modell laufen, während der Hauptagent auf einem starken denkt, und legen Sie je Agent fest, wie intensiv er denkt.",
     "noModels": "Verbinden Sie einen Anbieter, um Modelle zu wählen.",
     "followDefault": "Standardmodell",
     "followDefaultNamed": "Standard ({{model}})",
-    "modelFor": "Modell für {{agent}}"
+    "modelFor": "Modell für {{agent}}",
+    "defaultEffort": "Standardaufwand",
+    "effortFor": "Denkaufwand für {{agent}}"
   }
 }

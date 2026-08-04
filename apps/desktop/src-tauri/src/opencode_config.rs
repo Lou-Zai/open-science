@@ -247,9 +247,9 @@ pub fn set_memory_enabled(existing: &str, global_path: &str, enabled: bool) -> O
     serde_json::to_string_pretty(&root).ok()
 }
 
-/// Which model each agent runs, from `agent.<name>.model`. Agents with no
-/// override are absent — they follow the global default model.
-pub fn agent_models(existing: &str) -> Vec<(String, String)> {
+/// One string field of `agent.<name>`, for every agent that sets it. Agents with
+/// no override are absent — they follow the global default.
+fn agent_field(existing: &str, field: &str) -> Vec<(String, String)> {
     let root = as_object(existing);
     let Some(agents) = root.get("agent").and_then(|v| v.as_object()) else {
         return Vec::new();
@@ -257,18 +257,18 @@ pub fn agent_models(existing: &str) -> Vec<(String, String)> {
     let mut out: Vec<(String, String)> = agents
         .iter()
         .filter_map(|(name, cfg)| {
-            let model = cfg.get("model")?.as_str()?;
-            Some((name.clone(), model.to_string()))
+            let value = cfg.get(field)?.as_str()?;
+            Some((name.clone(), value.to_string()))
         })
         .collect();
     out.sort();
     out
 }
 
-/// Pin one agent to its own model (`None` clears the override so it follows the
-/// default again). Lets a reviewer subagent run a fast model while the main
-/// agent reasons on a strong one (#63).
-pub fn set_agent_model(existing: &str, agent: &str, model: Option<&str>) -> String {
+/// Write one string field of `agent.<name>` (`None` clears it). Only the key we
+/// own is touched, and the agent wrapper is removed only once it empties, so an
+/// agent config the user wrote themselves survives.
+fn set_agent_field(existing: &str, agent: &str, field: &str, value: Option<&str>) -> String {
     let mut root = as_object(existing);
     let obj = root.as_object_mut().unwrap();
     let agents = obj.entry("agent").or_insert_with(|| json!({}));
@@ -276,8 +276,8 @@ pub fn set_agent_model(existing: &str, agent: &str, model: Option<&str>) -> Stri
         *agents = json!({});
     }
     let aobj = agents.as_object_mut().unwrap();
-    match model {
-        Some(m) if !m.is_empty() => {
+    match value {
+        Some(v) if !v.is_empty() => {
             let entry = aobj.entry(agent).or_insert_with(|| json!({}));
             if !entry.is_object() {
                 *entry = json!({});
@@ -285,13 +285,11 @@ pub fn set_agent_model(existing: &str, agent: &str, model: Option<&str>) -> Stri
             entry
                 .as_object_mut()
                 .unwrap()
-                .insert("model".to_string(), json!(m));
+                .insert(field.to_string(), json!(v));
         }
         _ => {
-            // Clearing the model must not delete an agent config the user
-            // wrote — only the key we own, and the wrapper only if it empties.
             if let Some(entry) = aobj.get_mut(agent).and_then(|v| v.as_object_mut()) {
-                entry.remove("model");
+                entry.remove(field);
                 if entry.is_empty() {
                     aobj.remove(agent);
                 }
@@ -302,6 +300,33 @@ pub fn set_agent_model(existing: &str, agent: &str, model: Option<&str>) -> Stri
         obj.remove("agent");
     }
     serde_json::to_string_pretty(&root).unwrap_or_else(|_| existing.to_string())
+}
+
+/// Which model each agent runs, from `agent.<name>.model`. Agents with no
+/// override are absent — they follow the global default model.
+pub fn agent_models(existing: &str) -> Vec<(String, String)> {
+    agent_field(existing, "model")
+}
+
+/// Pin one agent to its own model (`None` clears the override so it follows the
+/// default again). Lets a reviewer subagent run a fast model while the main
+/// agent reasons on a strong one (#63).
+pub fn set_agent_model(existing: &str, agent: &str, model: Option<&str>) -> String {
+    set_agent_field(existing, agent, "model", model)
+}
+
+/// Which reasoning-effort variant each agent runs at, from `agent.<name>.variant`
+/// — the same vocabulary the composer's per-turn effort slider uses ("low",
+/// "high", …), named per model. Agents with no override run the model default.
+pub fn agent_variants(existing: &str) -> Vec<(String, String)> {
+    agent_field(existing, "variant")
+}
+
+/// Pin one agent to a reasoning-effort variant (`None` clears it). The composer's
+/// effort slider only reaches the turn the user sends; subagents get their effort
+/// from here (#71), so a reviewer can think hard while a titler stays cheap.
+pub fn set_agent_variant(existing: &str, agent: &str, variant: Option<&str>) -> String {
+    set_agent_field(existing, agent, "variant", variant)
 }
 
 #[cfg(test)]
@@ -373,6 +398,42 @@ mod tests {
         let cleared = set_agent_model(start, "plan", None);
         let v: Value = serde_json::from_str(&cleared).unwrap();
         assert_eq!(v["agent"]["plan"], json!({ "temperature": 0.2 }));
+    }
+
+    #[test]
+    fn per_agent_variants_are_set_read_and_cleared() {
+        let out = set_agent_variant("{}", "reviewer", Some("high"));
+        assert_eq!(
+            agent_variants(&out),
+            vec![("reviewer".to_string(), "high".to_string())]
+        );
+        let cleared = set_agent_variant(&out, "reviewer", None);
+        assert!(agent_variants(&cleared).is_empty());
+        let v: Value = serde_json::from_str(&cleared).unwrap();
+        assert!(v.get("agent").is_none());
+    }
+
+    #[test]
+    fn model_and_variant_are_independent_on_the_same_agent() {
+        // Both live under one agent entry, and clearing either leaves the other
+        // — the Settings row writes them with two separate calls.
+        let with_model = set_agent_model("{}", "reviewer", Some("anthropic/claude-haiku-4-5"));
+        let both = set_agent_variant(&with_model, "reviewer", Some("low"));
+        let v: Value = serde_json::from_str(&both).unwrap();
+        assert_eq!(
+            v["agent"]["reviewer"],
+            json!({ "model": "anthropic/claude-haiku-4-5", "variant": "low" })
+        );
+        let no_model = set_agent_model(&both, "reviewer", None);
+        assert_eq!(
+            agent_variants(&no_model),
+            vec![("reviewer".to_string(), "low".to_string())]
+        );
+        assert!(agent_models(&no_model).is_empty());
+        // Dropping the last key we own takes the wrapper with it.
+        let neither = set_agent_variant(&no_model, "reviewer", None);
+        let v: Value = serde_json::from_str(&neither).unwrap();
+        assert!(v.get("agent").is_none());
     }
 
     #[test]

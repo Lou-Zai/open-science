@@ -200,6 +200,12 @@
     "change": "更改…",
     "reveal": "在文件管理器中显示"
   },
+  "review": {
+    "title": "审阅",
+    "hint": "一个只读的审阅智能体，检查已完成的工作是否可溯源，以及统计、单位与产物出处是否站得住。",
+    "autoTitle": "每次改动文件后自动审阅",
+    "autoHint": "每次改动会多花一轮模型调用；只读回合会跳过，你也可以随时用 /science-review 手动触发。"
+  },
   "python": {
     "title": "本地 Python 内核",
     "hint": "在应用内运行笔记本单元格。若已设置 Jupyter 环境则使用它（与代理共用同一 Python），否则自动检测——或在下方指定解释器",
@@ -362,11 +368,13 @@
     "disabledNote": "记忆已关闭，该文件当前不会被加载。"
   },
   "agentModels": {
-    "title": "各智能体的模型",
-    "hint": "让主智能体用强模型推理，同时把审阅、探索类子智能体放在快模型上。",
+    "title": "各智能体的模型与思考强度",
+    "hint": "让主智能体用强模型推理，同时把审阅、探索类子智能体放在快模型上，并分别固定各自的思考强度。",
     "noModels": "请先接入一个供应商再选择模型。",
     "followDefault": "默认模型",
     "followDefaultNamed": "默认（{{model}}）",
-    "modelFor": "{{agent}} 使用的模型"
+    "modelFor": "{{agent}} 使用的模型",
+    "defaultEffort": "默认强度",
+    "effortFor": "{{agent}} 的思考强度"
   }
 }

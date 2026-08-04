@@ -52,6 +52,13 @@ import { useLayoutStore } from "./layout";
 import { provenanceInputsFromEvent, recordProvenance } from "./provenance";
 import { recordRun, runInputFromEvent } from "./runs";
 import { splitReview } from "./review";
+import {
+  AUTO_REVIEW_KEY,
+  AUTO_REVIEW_PROMPT,
+  REVIEWER_AGENT,
+  isMutatingTool,
+  shouldAutoReview,
+} from "./autoReview";
 import { notifyPermissionRequest } from "./systemNotification";
 import { fallbackDefaultModel } from "@/components/settings/modelCatalog";
 import { toast } from "@/lib/toast";
@@ -103,6 +110,10 @@ function initialReasoningVariant(): string | null {
   if (typeof window === "undefined") return null;
   return window.localStorage.getItem(REASONING_KEY) || null;
 }
+function initialAutoReview(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(AUTO_REVIEW_KEY) === "1";
+}
 
 export interface Thread {
   blocks: ThreadBlock[];
@@ -150,6 +161,12 @@ interface RuntimeState {
    *  actually exposes it — variant vocabularies differ across models. */
   reasoningVariant: string | null;
   setReasoningVariant: (variant: string | null) => void;
+  /** Run the reviewer agent for one read-only turn whenever a turn changed
+   *  workspace files (#72). Off by default: it is a second model turn, so the
+   *  user opts in. Persisted locally (it is app behaviour, not sidecar config),
+   *  which also makes it work in the gateway web client. */
+  autoReview: boolean;
+  setAutoReview: (enabled: boolean) => void;
   /** The last failed model switch's error, or null. While set, the Settings
    *  page keeps the model browser on screen (instead of the connect prompt)
    *  so the user can retry. Cleared by any successful reconnect, a successful
@@ -520,6 +537,32 @@ const handledPresentations = new Set<string>();
  *  and held across every trailing event; the next turn clears it (`turn → sid`). */
 const interruptedSessions = new Set<string>();
 
+// ---- Auto-review (#72) ----
+// All four live outside the store on purpose: they change on tool events, and
+// store writes on streamed events repaint every subscriber (#50). Nothing here
+// is rendered — the review's own turn is what the user sees.
+/** Sessions whose CURRENT turn has written or edited a workspace file. */
+const dirtyTurns = new Set<string>();
+/** Sessions whose current turn IS the auto-review — its idle must not start
+ *  another one, and its prompt is hidden from the thread. */
+const reviewTurns = new Set<string>();
+/** Sessions waiting for the single review slot, oldest first. */
+const reviewQueue: string[] = [];
+/** The session being reviewed right now, or null. Exactly one review runs at a
+ *  time: concurrent reviews across tiled panes are what starved the main thread
+ *  in #50, and a review is never urgent. */
+let reviewInFlight: string | null = null;
+
+/** Forget every trace of a session's review state (session deleted, runtime
+ *  torn down) so a queued id can't resurrect a review for a gone session. */
+function forgetAutoReview(sid: string) {
+  dirtyTurns.delete(sid);
+  reviewTurns.delete(sid);
+  const at = reviewQueue.indexOf(sid);
+  if (at >= 0) reviewQueue.splice(at, 1);
+  if (reviewInFlight === sid) reviewInFlight = null;
+}
+
 /** Server-side truth for "is this session's turn over": the last message is an
  *  assistant message that has finished streaming (time.completed set). A last
  *  USER message means a turn was accepted but not yet answered — still running. */
@@ -878,6 +921,92 @@ async function performTurn(
   }
 }
 
+/** Take `sid` out of the review queue, reporting whether it was waiting there —
+ *  i.e. whether a review is still owed for changes it made earlier. */
+function dequeueReview(sid: string): boolean {
+  const at = reviewQueue.indexOf(sid);
+  if (at < 0) return false;
+  reviewQueue.splice(at, 1);
+  return true;
+}
+
+/**
+ * Send the reviewer's one read-only turn (#72). Deliberately NOT performTurn:
+ * this turn is the app's, not the user's, so it adds no user row to the thread —
+ * what appears is the reviewer's answer and its findings card.
+ */
+async function startAutoReview(set: StoreSet, get: StoreGet, sid: string): Promise<void> {
+  const s = get();
+  // The user started another turn in the meantime: review after THAT one, or the
+  // prompt would land on a busy session.
+  if (s.runningSessions[sid] || s.sendingSessions[sid]) {
+    if (!reviewQueue.includes(sid)) reviewQueue.push(sid);
+    return;
+  }
+  const runtime = clientForSession(get, sid);
+  if (!runtime) return;
+  reviewInFlight = sid;
+  reviewTurns.add(sid);
+  // Same "Working…" state as any other turn — a review that runs invisibly
+  // would look like the app froze.
+  set((st) => ({ runningSessions: { ...st.runningSessions, [sid]: true } }));
+  try {
+    // No model or effort is passed on purpose: the reviewer's own model and
+    // reasoning effort come from its per-agent config (#71), and an explicit
+    // per-turn model would override exactly that setting.
+    await runtime.sendPrompt(sid, AUTO_REVIEW_PROMPT, REVIEWER_AGENT);
+    void logDebug(`auto-review → ${sid}`);
+  } catch (err) {
+    // Best effort: a failed review must not break the session the user is in,
+    // and must not leave the slot or the "Working…" row stuck.
+    void logDebug(`auto-review failed: ${err instanceof Error ? err.message : String(err)}`);
+    reviewTurns.delete(sid);
+    if (reviewInFlight === sid) reviewInFlight = null;
+    set((st) => {
+      const runningSessions = { ...st.runningSessions };
+      delete runningSessions[sid];
+      return { runningSessions };
+    });
+    drainReviewQueue(set, get);
+  }
+}
+
+/** Start the next waiting review, if the single slot is free. */
+function drainReviewQueue(set: StoreSet, get: StoreGet): void {
+  if (reviewInFlight) return;
+  const next = reviewQueue.shift();
+  if (next) void startAutoReview(set, get, next);
+}
+
+/**
+ * Auto-review bookkeeping for one `session.idle`. `reviewable` is false when the
+ * turn ended in a user interrupt: there is nothing to review, but the slot still
+ * has to be released if the interrupted turn WAS the review.
+ */
+function onTurnIdle(set: StoreSet, get: StoreGet, sid: string, reviewable: boolean): void {
+  const wasReview = reviewTurns.delete(sid);
+  if (wasReview && reviewInFlight === sid) reviewInFlight = null;
+  // A review this session was already owed still counts: the files that earned
+  // it are on disk whether or not this turn touched anything.
+  const changedFiles = dirtyTurns.delete(sid) || dequeueReview(sid);
+  const s = get();
+  if (
+    reviewable &&
+    shouldAutoReview({
+      enabled: s.autoReview,
+      changedFiles,
+      wasReview,
+      isSubagent: !!s.sessionParents[sid],
+      hasReviewer: s.agents.some((a) => a.name === REVIEWER_AGENT),
+    })
+  ) {
+    if (reviewInFlight) reviewQueue.push(sid);
+    else void startAutoReview(set, get, sid);
+    return;
+  }
+  if (wasReview) drainReviewQueue(set, get);
+}
+
 /** Shared core of the two destructive "go back to a past message" actions
  *  (edit-and-resend, and plain revert): stop any running turn, revert the
  *  session to `messageID` — OpenCode drops it and every later message and rolls
@@ -970,6 +1099,14 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       else window.localStorage.removeItem(REASONING_KEY);
     }
     set({ reasoningVariant: variant });
+  },
+  autoReview: initialAutoReview(),
+  setAutoReview: (enabled) => {
+    if (typeof window !== "undefined") {
+      if (enabled) window.localStorage.setItem(AUTO_REVIEW_KEY, "1");
+      else window.localStorage.removeItem(AUTO_REVIEW_KEY);
+    }
+    set({ autoReview: enabled });
   },
   modelSwitchError: null,
   approvalMode: "approve",
@@ -1357,6 +1494,11 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
           ? `${event.message} Pick an available model in Settings → Models.`
           : event.message;
         if (sid) {
+          // This path ends the turn instead of session.idle (and returns before
+          // the fold), so it owes the same auto-review bookkeeping: a turn that
+          // died is not reviewed — the work is half-finished — but a REVIEW that
+          // died must hand its slot back, or no session is ever reviewed again.
+          onTurnIdle(set, get, sid, false);
           set((s) => {
             const cur = s.threads[sid] ?? emptyThread();
             const runningSessions = { ...s.runningSessions };
@@ -1473,9 +1615,12 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
           }
           // A user message names its agent. This is how the pill follows
           // OpenCode's own plan_exit "Yes" (it injects a build user message)
-          // — and it self-confirms our own sends.
-          if (event.agent) {
-            const mode: AgentMode = event.agent === "plan" ? "plan" : "build";
+          // — and it self-confirms our own sends. Any OTHER agent (the auto-review
+          // turn's `reviewer`, or a custom primary) is left alone: the pill only
+          // speaks for the two modes it can actually show, and must not claim
+          // "Build" because a turn the user did not send ran on something else.
+          if (event.agent === "plan" || event.agent === "build") {
+            const mode: AgentMode = event.agent;
             if (get().sessionAgents[event.sessionId] !== mode)
               set((s) => ({
                 sessionAgents: { ...s.sessionAgents, [event.sessionId]: mode },
@@ -1508,8 +1653,17 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
           delete shellTurns[sid];
           return { runningSessions, shellTurns };
         });
+        // A turn the user stopped is not reviewed — half-finished work is not
+        // what a review is for — but a stopped REVIEW still has to hand back
+        // its slot.
+        onTurnIdle(set, get, sid, false);
         void get().refreshSessions();
         return;
+      }
+      // Only a file the agent actually wrote earns a review; a read-only turn
+      // (questions, searches, plain analysis) has nothing to audit.
+      if (event.type === "tool.updated" && isMutatingTool(event.tool, event.status)) {
+        dirtyTurns.add(sid);
       }
       // A task tool names the subagent session it spawned — remember the
       // parent link so the child's permission/question asks surface in THIS
@@ -1586,6 +1740,9 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         }
       }
       applyFold(event);
+      // After the fold, which is what clears this session's running lock — the
+      // review claims it again for its own turn.
+      if (event.type === "session.idle") onTurnIdle(set, get, sid, true);
       const presentationEventKey =
         event.type === "tool.updated" ? `${sid}:${event.callId}` : null;
       if (
@@ -1841,6 +1998,12 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
   disconnect: () => {
     teardownClient();
     teardownStreamClients();
+    // Nothing can be reviewed without a runtime; a stale queue would fire into
+    // the next connection.
+    dirtyTurns.clear();
+    reviewTurns.clear();
+    reviewQueue.length = 0;
+    reviewInFlight = null;
     set({ status: "offline", modelSwitchError: null });
   },
 
@@ -2306,6 +2469,10 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         set({ error: err instanceof Error ? err.message : String(err) });
       }
     }
+    // A queued review for a session that no longer exists would send into a
+    // deleted conversation, and one in flight holds the slot forever.
+    forgetAutoReview(id);
+    drainReviewQueue(set, get);
     set((s) => {
       const threads = { ...s.threads };
       delete threads[id];
@@ -2766,7 +2933,11 @@ function mapToolStatus(status?: string): ToolCallStatus {
 export function lastAgentMode(messages: HistoryMessage[]): AgentMode {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
-    if (m.role === "user" && m.agent) return m.agent === "plan" ? "plan" : "build";
+    // Only the two modes the pill can show count. A turn on any other agent —
+    // the auto-review's `reviewer`, a custom primary — says nothing about which
+    // mode the user left the composer in, so it is skipped rather than read as
+    // Build (which would silently drop a session out of Plan mode on reload).
+    if (m.role === "user" && (m.agent === "plan" || m.agent === "build")) return m.agent;
   }
   return "build";
 }
@@ -2819,6 +2990,10 @@ export function historyToThread(messages: HistoryMessage[], commands?: CommandIn
         .map((p) => p.text ?? "")
         .join("")
         .trim();
+      // The app's own auto-review turn (#72): the user never wrote it, so it is
+      // not shown as their message — on reload as well as live. The reviewer's
+      // answer and its findings card stay.
+      if (text === AUTO_REVIEW_PROMPT) continue;
       const command = asTypedCommand(text);
       // Tag with the message id so the row can be edited (revert + resend).
       // A "/command" echo keeps the id too — editing re-runs the command.

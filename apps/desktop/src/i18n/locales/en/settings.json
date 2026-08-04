@@ -201,6 +201,12 @@
     "change": "Change…",
     "reveal": "Reveal"
   },
+  "review": {
+    "title": "Review",
+    "hint": "A read-only reviewer agent that audits finished work for traceability, statistics, units and provenance.",
+    "autoTitle": "Review after every turn that changes files",
+    "autoHint": "Costs one extra model turn per change. Read-only turns are skipped, and you can always ask for a review with /science-review."
+  },
   "python": {
     "title": "Local Python kernel",
     "hint": "Runs notebook cells in the app. Uses your Jupyter environment when set up (same Python as the agent), else auto-detects — or set an explicit interpreter below",
@@ -364,11 +370,13 @@
     "disabledNote": "Memory is switched off, so this file is not loaded right now."
   },
   "agentModels": {
-    "title": "Model per agent",
-    "hint": "Run a reviewer or explorer on a fast model while the main agent reasons on a strong one.",
+    "title": "Model and effort per agent",
+    "hint": "Run a reviewer or explorer on a fast model while the main agent reasons on a strong one, and pin how hard each one thinks.",
     "noModels": "Connect a provider to choose models.",
     "followDefault": "Default model",
     "followDefaultNamed": "Default ({{model}})",
-    "modelFor": "Model for {{agent}}"
+    "modelFor": "Model for {{agent}}",
+    "defaultEffort": "Default effort",
+    "effortFor": "Reasoning effort for {{agent}}"
   }
 }

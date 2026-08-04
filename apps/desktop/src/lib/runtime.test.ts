@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { OpenCodeEvent, HistoryMessage } from "@ai4s/sdk";
+import { AUTO_REVIEW_PROMPT } from "./autoReview";
 import {
   datedWorkspaceName,
   foldCarriageReturns,
   foldEvent,
   historyToThread,
   humanizeCommand,
+  lastAgentMode,
   subagentActivity,
   tidyToolTitle,
   toolPresentation,
@@ -471,5 +473,51 @@ describe("historyToThread", () => {
     ];
     const t = historyToThread(msgs);
     expect(t.blocks.every((b) => b.kind !== "status-line")).toBe(true);
+  });
+
+  // #72: the auto-review turn is the app's, not the user's. On reload it must
+  // not appear as something the user typed — only the findings it produced.
+  it("hides the auto-review prompt but keeps the reviewer's findings", () => {
+    const msgs: HistoryMessage[] = [
+      { role: "user", parts: [{ type: "text", text: "run the analysis" }] },
+      { role: "assistant", parts: [{ type: "text", text: "done" }] },
+      { role: "user", agent: "reviewer", parts: [{ type: "text", text: AUTO_REVIEW_PROMPT }] },
+      {
+        role: "assistant",
+        parts: [
+          {
+            type: "text",
+            text:
+              'Reviewed the changed files.\n\n```review\n{"findings":[{"level":"warn","title":"seed not pinned"}]}\n```',
+          },
+        ],
+      },
+    ];
+    const t = historyToThread(msgs);
+    expect(t.blocks.map((b) => b.kind)).toEqual(["user", "agent", "agent", "reviewer"]);
+    expect(t.blocks[0]).toMatchObject({ text: "run the analysis" });
+    expect(t.blocks[3]).toMatchObject({
+      kind: "reviewer",
+      findings: [{ level: "warn", title: "seed not pinned" }],
+    });
+  });
+});
+
+describe("lastAgentMode", () => {
+  it("reads the last user message's mode", () => {
+    expect(lastAgentMode([{ role: "user", agent: "plan", parts: [] }])).toBe("plan");
+    expect(lastAgentMode([{ role: "user", agent: "build", parts: [] }])).toBe("build");
+    expect(lastAgentMode([])).toBe("build");
+  });
+
+  // An auto-review turn runs on `reviewer`; reading that as Build would drop a
+  // session out of Plan mode on reload.
+  it("ignores turns that ran on another agent", () => {
+    expect(
+      lastAgentMode([
+        { role: "user", agent: "plan", parts: [] },
+        { role: "user", agent: "reviewer", parts: [] },
+      ]),
+    ).toBe("plan");
   });
 });

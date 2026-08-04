@@ -206,6 +206,21 @@ export async function setAgentModel(agent: string, model: string): Promise<void>
   await invoke("set_agent_model", { agent, model });
 }
 
+/** Per-agent reasoning-effort overrides, `{ agent: "high" }`. Agents that are
+ *  absent run their model's default effort (#71). */
+export async function getAgentVariants(): Promise<Record<string, string>> {
+  if (!isTauri) return {};
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<Record<string, string>>("get_agent_variants");
+}
+
+/** Pin one agent to a reasoning-effort variant, or pass "" to clear it. */
+export async function setAgentVariant(agent: string, variant: string): Promise<void> {
+  if (!isTauri) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("set_agent_variant", { agent, variant });
+}
+
 /** Network proxy for the sidecar: follow the OS, a fixed URL, or direct. */
 export type ProxyMode = "system" | "custom" | "none";
 export interface ProxySetting {

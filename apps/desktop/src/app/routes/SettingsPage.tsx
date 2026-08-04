@@ -107,6 +107,8 @@ export function SettingsPage() {
   const disconnect = useRuntimeStore((s) => s.disconnect);
   const defaultModel = useRuntimeStore((s) => s.defaultModel);
   const loadCatalog = useRuntimeStore((s) => s.loadCatalog);
+  const autoReview = useRuntimeStore((s) => s.autoReview);
+  const setAutoReview = useRuntimeStore((s) => s.setAutoReview);
   const connected = status === "ready";
   const updateEnabled = useUpdateStore((s) => s.enabled);
   const setUpdateEnabled = useUpdateStore((s) => s.setEnabled);
@@ -1673,6 +1675,25 @@ export function SettingsPage() {
                 </button>
               </>
             )}
+          </div>
+        </Section>
+        )}
+
+        {/* ---- Review ---- */}
+        {section === "general" && (
+        <Section title={t("review.title")} hint={t("review.hint")} flush>
+          <div className="divide-y divide-faint">
+            <Row
+              title={t("review.autoTitle")}
+              hint={t("review.autoHint")}
+              control={
+                <Switch
+                  checked={autoReview}
+                  onChange={setAutoReview}
+                  label={t("review.autoTitle")}
+                />
+              }
+            />
           </div>
         </Section>
         )}
