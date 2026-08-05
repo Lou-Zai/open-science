@@ -565,6 +565,51 @@ function forgetAutoReview(sid: string) {
   if (reviewInFlight === sid) reviewInFlight = null;
 }
 
+/** Longest error text written to debug.log. The diagnostic value is in the first
+ *  sentence; some providers append an entire response body. */
+const LOG_ERROR_MAX = 300;
+
+/**
+ * An error message made safe to persist in debug.log. Provider errors are echoed
+ * verbatim from an HTTP response, so one could quote back the credential that
+ * failed — and debug.log is a plain file users attach to bug reports, where a key
+ * must never appear (AGENTS.md). Known key shapes go first, then any long
+ * secret-looking run, then a length cap.
+ */
+export function redactForLog(message: string): string {
+  const redacted = message
+    .replace(/\b(sk|pk|rk|ghp|gho|ghs|github_pat|xoxb|xoxp|xapp|glpat|hf)[-_][A-Za-z0-9_-]{6,}/g, "$1-***")
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{12,}/gi, "$1 ***")
+    .replace(/[A-Za-z0-9_-]{40,}/g, "***");
+  return redacted.length > LOG_ERROR_MAX ? `${redacted.slice(0, LOG_ERROR_MAX)}…` : redacted;
+}
+
+/**
+ * A runtime error with the one thing the user cannot work out alone appended.
+ * Only for failures whose text is accurate but leaves no way forward — the
+ * provider's own wording is always kept, never replaced.
+ */
+export function explainRuntimeError(message: string): string {
+  // A dangling default model (its provider removed or renamed) fails every send
+  // the same way — point at where the fix lives.
+  if (/model not found/i.test(message)) {
+    return `${message} Pick an available model in Settings → Models.`;
+  }
+  // OpenAI answers `invalid_prompt` / "Request blocked." when its content filter
+  // rejects the PROMPT — and a prompt is the whole conversation, resent on every
+  // turn. So "try again" reproduces it exactly (observed: three identical
+  // failures in a row), which reads as the app being broken. The way out is to
+  // stop resending the offending history, or to ask a provider that will take it.
+  if (/^request blocked\.?$/i.test(message.trim())) {
+    return (
+      `${message} The provider's content filter rejected this conversation, not just your last message — ` +
+      `every retry resends the same history, so it will keep failing. Edit or delete the recent messages, ` +
+      `start a new session, or switch to another model or provider.`
+    );
+  }
+  return message;
+}
+
 /** Server-side truth for "is this session's turn over": the last message is an
  *  assistant message that has finished streaming (time.completed set). A last
  *  USER message means a turn was accepted but not yet answered — still running. */
@@ -1458,7 +1503,14 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         event.type !== "reasoning.updated" &&
         !(event.type === "tool.updated" && event.status === "running")
       )
-        void logDebug(`event ← ${event.type}${"sessionId" in event ? " " + event.sessionId : ""}`);
+        void logDebug(
+          `event ← ${event.type}${"sessionId" in event ? " " + event.sessionId : ""}` +
+            // An error's TEXT is the whole diagnostic value; logging only "error"
+            // meant a real report ("Request blocked." on every retry) could not be
+            // explained without reading the runtime's SQLite by hand. Redacted and
+            // capped: a provider echoing a credential back must not land on disk.
+            (event.type === "error" ? `: ${redactForLog(event.message)}` : ""),
+        );
       if ("sessionId" in event && event.sessionId) {
         sseLast.set(event.sessionId, ++sseSeq);
         while (sseLast.size > 500) {
@@ -1498,11 +1550,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         // the thread already says "Interrupted"; don't add a second red line.
         if (sid) clearLiveFolds(sid);
         if (sid && interruptedSessions.has(sid)) return;
-        // A dangling default model (its provider removed or renamed) fails
-        // every send the same way — point at where the fix lives.
-        const message = /model not found/i.test(event.message)
-          ? `${event.message} Pick an available model in Settings → Models.`
-          : event.message;
+        const message = explainRuntimeError(event.message);
         if (sid) {
           // This path ends the turn instead of session.idle (and returns before
           // the fold), so it owes the same auto-review bookkeeping: a turn that

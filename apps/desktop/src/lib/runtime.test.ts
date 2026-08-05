@@ -3,11 +3,13 @@ import type { OpenCodeEvent, HistoryMessage } from "@ai4s/sdk";
 import { AUTO_REVIEW_PROMPT } from "./autoReview";
 import {
   datedWorkspaceName,
+  explainRuntimeError,
   foldCarriageReturns,
   foldEvent,
   historyToThread,
   humanizeCommand,
   lastAgentMode,
+  redactForLog,
   subagentActivity,
   tidyToolTitle,
   toolPresentation,
@@ -519,5 +521,50 @@ describe("lastAgentMode", () => {
         { role: "user", agent: "reviewer", parts: [] },
       ]),
     ).toBe("plan");
+  });
+});
+
+describe("runtime error explanations", () => {
+  it("tells the user why retrying a blocked prompt cannot work", () => {
+    // Reproduced from a real report: ChatGPT-Pro (Codex OAuth) answered
+    // POST /v1/responses with 400 {"code":"invalid_prompt","message":"Request
+    // blocked."}, isRetryable false. "Continue" failed identically three times
+    // because the Responses API resends the whole conversation, and only
+    // switching provider recovered — none of which the bare message conveys.
+    const out = explainRuntimeError("Request blocked.");
+    expect(out).toContain("Request blocked."); // the provider's own words survive
+    expect(out).toMatch(/content filter/i);
+    expect(out).toMatch(/every retry resends the same history/i);
+    expect(out).toMatch(/new session|another model/i);
+  });
+
+  it("keeps the dangling-model hint and passes anything else through", () => {
+    expect(explainRuntimeError("model not found: openai/gone")).toContain(
+      "Settings → Models",
+    );
+    // Not a blanket match: an error that merely mentions blocking is untouched.
+    const other = "Upstream blocked the connection at the proxy";
+    expect(explainRuntimeError(other)).toBe(other);
+  });
+});
+
+/** Mirrors LOG_ERROR_MAX in runtime.ts — the cap is internal, the shape is not. */
+const LOG_ERROR_CAP = 300;
+
+describe("redactForLog", () => {
+  it("strips credentials a provider echoed back", () => {
+    expect(redactForLog("bad key sk-abcdef123456 rejected")).not.toContain("abcdef123456");
+    expect(redactForLog("Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6")).not.toContain("eyJhbGci");
+    // Any long opaque run is treated as a secret, whatever its prefix.
+    expect(redactForLog(`token ${"a1B2".repeat(12)} invalid`)).toContain("***");
+  });
+
+  it("leaves an ordinary message intact but caps a huge one", () => {
+    expect(redactForLog("Request blocked.")).toBe("Request blocked.");
+    // Prose, not one opaque run — a long run is redacted to "***" long before
+    // the cap could apply, so the cap is only reachable with real sentences.
+    const long = redactForLog("the upstream provider refused this call. ".repeat(40));
+    expect(long.length).toBeLessThanOrEqual(LOG_ERROR_CAP + 1);
+    expect(long.endsWith("…")).toBe(true);
   });
 });
