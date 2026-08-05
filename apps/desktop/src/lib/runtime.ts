@@ -629,13 +629,23 @@ export function turnStillStreaming(messages: HistoryMessage[]): boolean {
 }
 
 /** Streamed events that prove a session's turn is still in flight. Any of them
- *  re-locks a session whose local running flag is missing — see the handler. */
+ *  re-locks a session whose local running flag is missing — see the handler.
+ *
+ *  Every member is ASSISTANT progress. `message.agent` is deliberately absent
+ *  even though it arrives mid-turn: the SDK emits it only for USER messages, so
+ *  it cannot witness the assistant working — and OpenCode re-emits the turn's
+ *  user message once the turn ENDS, about 40 ms after `session.idle`. Treating
+ *  that as activity re-locked the session the instant it finished, leaving a
+ *  spinner under a completed answer until `reconcileRunning` polled the server
+ *  ~15 s later and rebuilt the whole thread to clear it (observed 62 times in one
+ *  user's log). A turn started by ANOTHER client is still caught: by the events
+ *  below once the assistant does anything, and by `turnStillStreaming` from
+ *  server truth whenever the session is opened. */
 const ACTIVITY_EVENTS: ReadonlySet<OpenCodeEvent["type"]> = new Set([
   "text.updated",
   "reasoning.updated",
   "step.updated",
   "tool.updated",
-  "message.agent",
   "session.retry",
   "question.asked",
   "permission.asked",

@@ -1035,6 +1035,25 @@ describe("stale running locks and interrupt", () => {
     expect(useRuntimeStore.getState().runningSessions[id!]).toBe(true);
   });
 
+  it("the user message re-emitted after a turn ends does not restart the spinner", async () => {
+    // OpenCode re-emits the turn's USER message ~40 ms after session.idle. That
+    // surfaces as `message.agent`, which said nothing about the assistant — but
+    // counting it as activity re-locked the session the instant it finished, so
+    // a completed answer sat under a spinner until the ~15 s server poll cleared
+    // it (and rebuilt the whole thread doing so). Reported as "shows done, then
+    // keeps spinning for a while".
+    const id = await useRuntimeStore.getState().sendPrompt("hi");
+    mocks.fireEvent({ type: "session.idle", sessionId: id! });
+    expect(useRuntimeStore.getState().runningSessions[id!]).toBeUndefined();
+
+    mocks.fireEvent({ type: "message.agent", sessionId: id!, messageID: "msg_1", agent: "build" });
+    expect(useRuntimeStore.getState().runningSessions[id!]).toBeUndefined();
+
+    // Real assistant progress still re-locks (the #59 reload case above).
+    mocks.fireEvent({ type: "step.updated", sessionId: id! });
+    expect(useRuntimeStore.getState().runningSessions[id!]).toBe(true);
+  });
+
   it("an interrupted session's trailing events do not re-lock it", async () => {
     const id = await useRuntimeStore.getState().sendPrompt("hi");
     await useRuntimeStore.getState().interrupt();
