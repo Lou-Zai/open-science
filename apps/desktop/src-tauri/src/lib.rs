@@ -18,6 +18,7 @@ mod opencode_config;
 mod preview_server;
 mod project;
 mod provenance;
+mod acp;
 mod runs;
 mod runs_index;
 mod runtime;
@@ -60,6 +61,7 @@ pub fn run() {
         .manage(runs::RunState::default())
         .manage(gateway::GatewayState::default())
         .manage(ssh_session::SshState::default())
+        .manage(acp::AcpState::default())
         .setup(|app| {
             // Watch the active workspace so changes made outside the app (an
             // external editor, a detached process) still enqueue a debounced
@@ -181,6 +183,10 @@ pub fn run() {
             ssh_session::ssh_disconnect,
             ssh_session::ssh_sessions,
             ssh_session::ssh_sharing_supported,
+            acp::acp_start,
+            acp::acp_send,
+            acp::acp_stop,
+            acp::acp_running,
             modal::modal_status,
             preview_server::preview_url,
             large_file::probe_large_file,
@@ -203,6 +209,8 @@ pub fn run() {
                 // An authenticated ssh channel must not outlive the app that
                 // opened it (#73) — the master lives past our exit otherwise.
                 ssh_session::shutdown(app);
+                // An ACP agent child must not outlive the window that started it.
+                acp::shutdown(app);
             }
         });
 }
