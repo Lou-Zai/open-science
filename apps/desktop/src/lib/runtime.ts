@@ -988,9 +988,13 @@ function drainReviewQueue(set: StoreSet, get: StoreGet): void {
 function onTurnIdle(set: StoreSet, get: StoreGet, sid: string, reviewable: boolean): void {
   const wasReview = reviewTurns.delete(sid);
   if (wasReview && reviewInFlight === sid) reviewInFlight = null;
-  // A review this session was already owed still counts: the files that earned
-  // it are on disk whether or not this turn touched anything.
-  const changedFiles = dirtyTurns.delete(sid) || dequeueReview(sid);
+  // This turn's own changes are settled either way, so clear them. A review the
+  // session was already OWED is different: the files that earned it are on disk
+  // whether or not this turn touched anything, so its queue entry is consumed
+  // only on an idle that can actually act on it — otherwise an interrupted or
+  // errored turn silently cancels a review earned by an earlier one.
+  const dirty = dirtyTurns.delete(sid);
+  const changedFiles = reviewable && (dirty || dequeueReview(sid));
   const s = get();
   if (
     reviewable &&
@@ -1002,8 +1006,12 @@ function onTurnIdle(set: StoreSet, get: StoreGet, sid: string, reviewable: boole
       hasReviewer: s.agents.some((a) => a.name === REVIEWER_AGENT),
     })
   ) {
-    if (reviewInFlight) reviewQueue.push(sid);
-    else void startAutoReview(set, get, sid);
+    // The queue is the SET of sessions owed a review, so an id already waiting
+    // must not be added twice: each duplicate survives the drain that started
+    // its review and becomes a second, redundant paid review of the same state.
+    if (reviewInFlight) {
+      if (!reviewQueue.includes(sid)) reviewQueue.push(sid);
+    } else void startAutoReview(set, get, sid);
     return;
   }
   if (wasReview) drainReviewQueue(set, get);

@@ -2005,4 +2005,56 @@ describe("auto-review on turn completion", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(reviewCalls()).toHaveLength(2);
   });
+
+  it("queues a waiting session once, however many turns it finishes", async () => {
+    // The queue is the SET of sessions owed a review. A pane that keeps working
+    // while another session's review holds the slot used to be pushed once per
+    // finished turn, and each duplicate survived the drain that started its
+    // review — turning into a second paid review of the same state.
+    armed(["ses_a", "ses_b"]);
+    wroteAFile("ses_a");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_a" });
+    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(1));
+
+    // Three more file-changing turns in the other pane while ses_a is reviewed.
+    for (let i = 0; i < 3; i++) {
+      wroteAFile("ses_b");
+      mocks.fireEvent({ type: "session.idle", sessionId: "ses_b" });
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    expect(reviewCalls()).toHaveLength(1); // still just ses_a's
+
+    // The slot frees: ses_b is reviewed exactly once, not once per queued copy.
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_a" });
+    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(2));
+    expect(reviewCalls()[1]![0]).toBe("ses_b");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_b" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reviewCalls()).toHaveLength(2);
+  });
+
+  it("keeps a review owed by an earlier turn when a later turn is interrupted", async () => {
+    // The files that earned the review are on disk. Interrupting a LATER turn
+    // says nothing about them, but the owed entry used to be consumed by the
+    // interrupt's bookkeeping and the review was silently dropped.
+    armed(["ses_a", "ses_b"]);
+    wroteAFile("ses_a");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_a" });
+    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(1)); // ses_a holds the slot
+
+    wroteAFile("ses_b"); // ses_b now owes a review and is queued
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_b" });
+    await new Promise((r) => setTimeout(r, 0));
+
+    // The user starts and interrupts another turn in ses_b.
+    mocks.abortTrailing = [{ type: "session.idle", sessionId: "ses_b" }];
+    await useRuntimeStore.getState().interrupt("ses_b");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reviewCalls()).toHaveLength(1); // the interrupt itself is not reviewed
+
+    // Once the slot frees, the review ses_b was already owed still happens.
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_a" });
+    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(2));
+    expect(reviewCalls()[1]![0]).toBe("ses_b");
+  });
 });
