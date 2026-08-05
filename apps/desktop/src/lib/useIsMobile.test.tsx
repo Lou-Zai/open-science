@@ -42,6 +42,19 @@ describe("useIsMobile", () => {
     expect(renderHook(() => useIsMobile()).result.current).toBe(true);
   });
 
+  it("does not flash phone layout in the frames before a zoom-out applies", () => {
+    // The store's factor lands one render before the webview has resized, so the
+    // new zoom is briefly paired with the OLD innerWidth. An 800 px window going
+    // to 50%: 800 × 0.5 = 400, which alone would read as a phone — on a window
+    // that is about to have MORE room, not less.
+    useUiStore.setState({ zoom: 0.5 });
+    setWidth(800); // not yet 1600
+    expect(renderHook(() => useIsMobile()).result.current).toBe(false);
+    // And once the resize lands, the settled answer is the same.
+    setWidth(1600);
+    expect(renderHook(() => useIsMobile()).result.current).toBe(false);
+  });
+
   it("treats zooming out as more room, not less", () => {
     // 900 px window at 75%: 1200 CSS px. Was already desktop, stays desktop.
     useUiStore.setState({ zoom: 0.75 });

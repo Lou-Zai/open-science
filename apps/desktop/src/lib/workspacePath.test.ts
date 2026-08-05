@@ -30,6 +30,12 @@ describe("pathKey", () => {
     expect(pathKey("C:\\")).toBe("c:/");
   });
 
+  it("absorbs a stray line break but not a meaningful trailing space", () => {
+    expect(pathKey("/w/proj\n")).toBe(pathKey("/w/proj"));
+    // A POSIX folder name may end in a space; these are two real directories.
+    expect(pathKey("/w/proj ")).not.toBe(pathKey("/w/proj"));
+  });
+
   it("keeps different folders apart", () => {
     expect(pathKey("/w/a")).not.toBe(pathKey("/w/b"));
     // A prefix is not a match: `…/proj2` must not group under `…/proj`.

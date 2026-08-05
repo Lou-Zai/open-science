@@ -25,7 +25,11 @@
  * - drops a trailing separator, which carries no meaning outside a root.
  */
 export function pathKey(raw: string): string {
-  let p = raw.trim();
+  // Strip line breaks only, never spaces: a stray newline means a producer wrote
+  // a path badly (the class of mismatch this exists to absorb), while a POSIX
+  // folder name CAN legitimately end in a space, and trimming that would make
+  // "…/notes " and "…/notes" compare equal when they are two real directories.
+  let p = raw.replace(/^[\r\n]+|[\r\n]+$/g, "");
   if (p.startsWith("\\\\?\\UNC\\")) p = `\\\\${p.slice(8)}`;
   else if (p.startsWith("\\\\?\\")) p = p.slice(4);
   p = p.replace(/\\/g, "/");

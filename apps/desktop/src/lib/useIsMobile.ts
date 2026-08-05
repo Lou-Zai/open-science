@@ -33,6 +33,14 @@ function widthSnapshot(): number {
  * The zoom factor only counts in the desktop app: `ZoomProvider` applies it to
  * the webview there, while in a browser the user's own zoom is invisible to us
  * and the stored factor stays 1.
+ *
+ * BOTH widths must be narrow, which is not redundant: the store's factor changes
+ * one render before the webview has applied it, so for a few frames the new zoom
+ * is paired with the old `innerWidth`. On zoom-OUT that product is too small and
+ * a lone check would flash the phone layout on a window that is only getting
+ * roomier. Requiring the un-corrected width to be narrow too makes the pair
+ * safe in either order — the transient can only ever be over-cautious, never
+ * wrong — and it settles to the same answer once `resize` fires.
  */
 export function useIsMobile(): boolean {
   const zoom = useUiStore((s) => s.zoom);
@@ -41,5 +49,6 @@ export function useIsMobile(): boolean {
     widthSnapshot,
     () => Number.POSITIVE_INFINITY,
   );
+  if (cssWidth > MOBILE_MAX_PX) return false;
   return cssWidth * (isTauri ? zoom : 1) <= MOBILE_MAX_PX;
 }
