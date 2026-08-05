@@ -398,9 +398,16 @@ discussion. Shipped versions are kept here as the delivery record.
   interop that speaks someone else's dialect or runs on someone else's host.
   All of them still ride the one runtime-agnostic `AgentRuntime` seam (#24, base
   class #36) rather than adding a surface-specific entity:
+  - **ACP, client direction first** — `AcpRuntime` drives any agent that speaks
+    the Agent Client Protocol (Codex, Gemini CLI, Claude Code, …) as a second
+    `AgentRuntime` beside `OpenCodeClient` (#14, design in
+    `docs/rfc/multi-agent-acp.md`). This is what #14's reporter actually asked
+    for — "I'd like OpenScience to be able to invoke Codex ACP, Cursor Agent
+    ACP" — so it comes before the server direction, which earlier drafts of this
+    section had listed alone. In progress;
   - Open Science *as* an ACP server, so external editors and agents drive the
-    runtime through that seam in ACP's dialect (#14) — the milestone's only
-    open item and the next thing to build;
+    runtime through that seam in ACP's dialect (#14), reusing the shipped
+    gateway rather than a second surface;
   - messaging-platform integrations (Slack / Discord / Telegram / Feishu) — each
     a thin bot client that relays `sendPrompt` → streamed events (#20);
   - cloud tunnel — reach the same gateway + token over a public URL
@@ -411,9 +418,6 @@ discussion. Shipped versions are kept here as the delivery record.
   SSH). This axis shares the seam and base class (#36) with v0.4.0 — a remote
   runtime is literally the v0.4.0 gateway consumed by a `RemoteRuntime` client,
   the two halves of one pipe.
-  - ACP as a *client* transport — one `AcpRuntime` spawns any ACP agent (Codex,
-    Gemini CLI, Claude Code, …) instead of a per-agent adapter (#14, #25; Codex
-    prototype under verification #28);
   - remote agent runtime — run the runtime on another machine, drive it from the
     desktop over the gateway;
   - remote Jupyter + remote-first execution — connect to an existing remote

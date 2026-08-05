@@ -16,6 +16,11 @@ export default defineConfig({
       "@": r("./src"),
       "@ai4s/shared": r("../../packages/shared/src/index.ts"),
       "@ai4s/sdk/mock-server": r("../../packages/sdk/src/mockServer.ts"),
+      // Both ACP entries must precede the bare "@ai4s/sdk" prefix, which would
+      // otherwise swallow them. `acp/stdio` is node-only (it spawns the agent);
+      // nothing in the webview bundle may import it.
+      "@ai4s/sdk/acp/stdio": r("../../packages/sdk/src/acp/stdio.ts"),
+      "@ai4s/sdk/acp": r("../../packages/sdk/src/acp/index.ts"),
       "@ai4s/sdk": r("../../packages/sdk/src/index.ts"),
     },
   },

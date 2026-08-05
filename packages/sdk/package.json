@@ -7,7 +7,9 @@
   "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./mock-server": "./src/mockServer.ts"
+    "./mock-server": "./src/mockServer.ts",
+    "./acp": "./src/acp/index.ts",
+    "./acp/stdio": "./src/acp/stdio.ts"
   },
   "dependencies": {
     "@ai4s/shared": "workspace:*"
