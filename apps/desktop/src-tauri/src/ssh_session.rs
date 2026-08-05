@@ -180,10 +180,20 @@ pub fn ensure_config(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-/// The managed config path, or None when it could not be written — callers fall
-/// back to plain ssh so a config problem degrades to today's behaviour instead
-/// of breaking remote compute entirely.
+/// The managed config path, or None when there is nothing for it to do — callers
+/// fall back to plain ssh, which is exactly the behaviour that predates this
+/// module, rather than losing remote compute over a config problem.
+///
+/// None on Windows: the only thing this config adds is connection sharing, which
+/// Windows' OpenSSH does not implement, and its `ControlMaster`/`ControlPath`
+/// lines would then be pure risk — handed via `-F` to every app- and
+/// agent-initiated `ssh`, `scp` and `sbatch` on the platform (`compute.rs`, and
+/// `OPENSCIENCE_SSH_CONFIG` in `runtime.rs`). Nothing there gains anything, and
+/// an ssh that rejects the options would take all of remote compute down with it.
 pub fn config_path(app: &AppHandle) -> Option<PathBuf> {
+    if !multiplexing_supported() {
+        return None;
+    }
     ensure_config(app).ok()
 }
 
@@ -449,22 +459,27 @@ pub fn ssh_connect(app: AppHandle, host: String) -> Result<(), String> {
     if !multiplexing_supported() {
         return Err("connection sharing is not available on this platform".into());
     }
+    // Claim the host under the lock, BEFORE any of the slow work below. A guard
+    // that only ran ahead of the insert left a window as wide as `is_shared` plus
+    // `openpty` plus `fork`, and two calls land inside it routinely: the UI fires
+    // one for the agent's `ssh_connect` tool on the same `tool.updated` the
+    // Settings card's own Connect can arrive with. Two masters then race for one
+    // ControlPath — the loser continues WITHOUT sharing, so the sign-in the user
+    // completes need not be the connection later commands look for — and the
+    // second insert dropped the first's `Child`, which on unix does not kill it.
     {
         let state = app.state::<SshState>();
-        let map = state.sessions.lock().unwrap();
+        let mut map = state.sessions.lock().unwrap();
         if let Some(s) = map.get(&host) {
             // Already signing in — a second click must not start a second ssh.
             if s.status == "connecting" || s.status == "prompt" {
                 return Ok(());
             }
         }
-    }
-    if is_shared(&app, &host) {
-        let state = app.state::<SshState>();
-        state.sessions.lock().unwrap().insert(
+        map.insert(
             host.clone(),
             Session {
-                status: "connected".into(),
+                status: "connecting".into(),
                 prompt: None,
                 notice: None,
                 error: None,
@@ -472,29 +487,44 @@ pub fn ssh_connect(app: AppHandle, host: String) -> Result<(), String> {
                 child: None,
             },
         );
-        publish(&app);
+    }
+    publish(&app);
+    // From here the claim must never outlive the attempt: a host left sitting in
+    // "connecting" would make every later connect return early, and the sign-in
+    // would be unreachable until the app restarts.
+    if is_shared(&app, &host) {
+        set_status(&app, &host, "connected", None);
         return Ok(());
     }
-    let config = ensure_config(&app)?;
-    let pty = spawn_pty("ssh", &master_args(&config, &host))?;
+    let started = ensure_config(&app).and_then(|config| spawn_pty("ssh", &master_args(&config, &host)));
     let Pty {
         writer,
         child,
         output,
-    } = pty;
+    } = match started {
+        Ok(pty) => pty,
+        Err(e) => {
+            set_status(&app, &host, "failed", Some(e.clone()));
+            return Err(e);
+        }
+    };
     {
         let state = app.state::<SshState>();
-        state.sessions.lock().unwrap().insert(
-            host.clone(),
-            Session {
-                status: "connecting".into(),
-                prompt: None,
-                notice: None,
-                error: None,
-                writer: Some(writer),
-                child: Some(child),
-            },
-        );
+        let mut map = state.sessions.lock().unwrap();
+        match map.get_mut(&host) {
+            // Still our claim: hand it the writer, so an answer reaches THIS ssh.
+            Some(s) => {
+                s.writer = Some(writer);
+                s.child = Some(child);
+            }
+            // Disconnected while we were spawning. Don't resurrect the session,
+            // and don't leave its process behind.
+            None => {
+                let mut child = child;
+                let _ = child.kill();
+                return Ok(());
+            }
+        }
     }
     publish(&app);
     watch_master(app, host, output);

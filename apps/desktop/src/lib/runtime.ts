@@ -532,6 +532,11 @@ const notifiedPermissions = new Set<string>();
 /** A completed presentation tool can be repeated by SSE reconciliation. Layout
  *  mutations are not idempotent, so handle each call exactly once. */
 const handledPresentations = new Set<string>();
+/** `ssh_connect` calls already relayed to the sign-in dialog (#73). One tool call
+ *  emits several `tool.updated` events — the SDK re-emits per part update, so
+ *  "pending" then "running" at least — and starting a sign-in is anything but
+ *  idempotent: each repeat raced another ssh master for the same ControlPath. */
+const relayedSignIns = new Set<string>();
 
 /** Sessions the user just interrupted: the thread already shows "Interrupted",
  *  so the abort's own trailing events (an "aborted" error and one or more
@@ -1049,7 +1054,13 @@ function onTurnIdle(set: StoreSet, get: StoreGet, sid: string, reviewable: boole
   // only on an idle that can actually act on it — otherwise an interrupted or
   // errored turn silently cancels a review earned by an earlier one.
   const dirty = dirtyTurns.delete(sid);
-  const changedFiles = reviewable && (dirty || dequeueReview(sid));
+  // Both are consumed, never one or the other: `dirty || dequeueReview(sid)`
+  // short-circuits, so a session that was dirty AND already owed a review kept
+  // its queue entry — and the moment that review ended early (interrupted, or
+  // dead server-side) the drain turned the leftover into a second paid review of
+  // the same state.
+  const owed = reviewable && dequeueReview(sid);
+  const changedFiles = reviewable && (dirty || owed);
   const s = get();
   if (
     reviewable &&
@@ -1731,7 +1742,12 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       // Only a file the agent actually wrote earns a review; a read-only turn
       // (questions, searches, plain analysis) has nothing to audit.
       if (event.type === "tool.updated" && isMutatingTool(event.tool, event.status)) {
-        dirtyTurns.add(sid);
+        // Credited to the session at the top of the subagent chain, not to the one
+        // that ran the tool. A subagent's own session is never reviewed (see the
+        // `isSubagent` gate) because its parent's turn is what gets reviewed — so
+        // attributing the write to the child meant a turn that delegated ALL of
+        // its file work was reviewed by nobody.
+        dirtyTurns.add(rootSessionOf(get().sessionParents, sid));
       }
       // The agent reached a compute host that authenticates interactively and
       // asked us to sign in (#73). The dialog opens here, in the conversation the
@@ -1743,7 +1759,10 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         (event.status === "running" || event.status === "pending")
       ) {
         const host = str(event.input?.host);
-        if (host) void useSshStore.getState().connect(host);
+        if (host && !relayedSignIns.has(event.callId)) {
+          remember(relayedSignIns, event.callId);
+          void useSshStore.getState().connect(host);
+        }
       }
       // A task tool names the subagent session it spawned — remember the
       // parent link so the child's permission/question asks surface in THIS

@@ -243,6 +243,7 @@ vi.mock("@ai4s/sdk", () => {
 
 import type { ArtifactBlock } from "@ai4s/shared";
 import { DRAFT_KEY, rootSessionOf, useRuntimeStore } from "./runtime";
+import { useSshStore } from "./ssh";
 import { leaves, makeLeaf, useLayoutStore } from "./layout";
 
 beforeEach(async () => {
@@ -1955,6 +1956,56 @@ describe("auto-review on turn completion", () => {
     expect(reviewCalls()).toHaveLength(0);
   });
 
+  it("reviews the parent's turn when a subagent did the writing", async () => {
+    // The child session is never reviewed on its own, so crediting its writes to
+    // it meant a turn that delegated EVERY file change — the `task`-only turn —
+    // was reviewed by nobody, which is the opposite of what the gate promises.
+    armed(["ses_parent", "ses_child"], { sessionParents: { ses_child: "ses_parent" } });
+    wroteAFile("ses_child");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_child" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reviewCalls()).toHaveLength(0);
+
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_parent" });
+    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    expect(reviewCalls()[0]![0]).toBe("ses_parent");
+  });
+
+  // Session ids of its own: interrupting one marks it interrupted for the rest of
+  // the file (module state, by design — the next turn clears it), and reusing an
+  // id afterwards would silence that session's idle events in later tests.
+  it("does not turn one owed review into two when the session is also dirty", async () => {
+    armed(["ses_c", "ses_d"]);
+    wroteAFile("ses_c");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_c" });
+    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(1)); // ses_c holds the slot
+
+    wroteAFile("ses_d");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_d" });
+    await new Promise((r) => setTimeout(r, 0)); // ses_d is queued
+
+    // ses_d is mid-turn when the slot frees, so its review goes back in the queue
+    // rather than landing on a busy session.
+    useRuntimeStore.setState({ runningSessions: { ses_d: true } } as never);
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_c" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reviewCalls()).toHaveLength(1);
+
+    // That turn changed files too, so ses_d is now dirty AND owed. Starting its
+    // review has to consume the queue entry: a leftover used to be drained into a
+    // second review the moment this one ended early.
+    useRuntimeStore.setState({ runningSessions: {} } as never);
+    wroteAFile("ses_d");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_d" });
+    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(2));
+    expect(reviewCalls()[1]![0]).toBe("ses_d");
+
+    mocks.abortTrailing = [{ type: "session.idle", sessionId: "ses_d" }];
+    await useRuntimeStore.getState().interrupt("ses_d");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reviewCalls()).toHaveLength(2);
+  });
+
   it("does nothing when the runtime exposes no reviewer agent", async () => {
     useRuntimeStore.setState({
       autoReview: true,
@@ -2050,6 +2101,38 @@ describe("auto-review on turn completion", () => {
     mocks.fireEvent({ type: "session.idle", sessionId: "ses_b" });
     await new Promise((r) => setTimeout(r, 0));
     expect(reviewCalls()).toHaveLength(2);
+  });
+
+  it("relays one interactive sign-in per ssh_connect call, not one per event", async () => {
+    // #73: the agent reaches the sign-in dialog through its `ssh_connect` tool,
+    // and one tool call streams several `tool.updated` events (the SDK re-emits
+    // per part update). Opening a sign-in is the opposite of idempotent: each
+    // repeat started another ssh master racing the first for one ControlPath, and
+    // the answer the user typed need not have reached the one that won.
+    useRuntimeStore.setState({ sessions: [{ id: "ses_1", title: "s" }] } as never);
+    const connect = vi.spyOn(useSshStore.getState(), "connect").mockResolvedValue(undefined);
+    const asking = (status: string, callId = "call-ssh-1") => ({
+      type: "tool.updated" as const,
+      sessionId: "ses_1",
+      callId,
+      tool: "ssh_connect",
+      status,
+      title: "",
+      input: { host: "login.cluster.edu" },
+    });
+
+    mocks.fireEvent(asking("pending"));
+    mocks.fireEvent(asking("running"));
+    mocks.fireEvent(asking("running"));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(connect).toHaveBeenCalledWith("login.cluster.edu");
+
+    // A genuinely different call still reaches the dialog.
+    mocks.fireEvent(asking("running", "call-ssh-2"));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(connect).toHaveBeenCalledTimes(2);
+    connect.mockRestore();
   });
 
   it("keeps a review owed by an earlier turn when a later turn is interrupted", async () => {
