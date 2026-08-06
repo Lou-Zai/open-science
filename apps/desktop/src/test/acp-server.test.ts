@@ -209,9 +209,14 @@ describe("Open Science as an ACP agent", () => {
     // working. A permission that could only be answered in the desktop window
     // would hang the editor's turn on a window they may not have open.
     const { client, events, fire, calls } = await connectedPair();
+    // The editor is waiting on this turn, which is what makes the approval its
+    // to answer.
+    const sessionId = await client.createSession();
+    void client.sendPrompt(sessionId, "clean the build");
+    await vi.waitFor(() => expect(calls.prompts).toHaveLength(1));
     fire({
       type: "permission.asked",
-      sessionId: "ses_1",
+      sessionId,
       requestId: "req-1",
       action: "bash",
       resources: ["rm -rf build"],
@@ -229,11 +234,56 @@ describe("Open Science as an ACP agent", () => {
     expect(calls.replies[0]).toEqual({ requestId: "req-1", reply: "once" });
   });
 
-  it("rejects rather than infers approval when the editor cancels", async () => {
-    const { client, events, fire, calls } = await connectedPair();
+  it("does not put the desktop's own approvals in front of the editor", async () => {
+    // The runtime's event stream is workspace-scoped, so it also carries
+    // approvals for work the USER started in the app window. An editor that did
+    // not ask for that work must not be asked to approve it — and whichever
+    // side answered first would leave the other holding a dead prompt.
+    const { events, fire, calls } = await connectedPair();
     fire({
       type: "permission.asked",
       sessionId: "ses_1",
+      requestId: "req-desktop",
+      action: "bash",
+      resources: ["rm -rf build"],
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(events.some((e) => e.type === "permission.asked")).toBe(false);
+    // And we never answer on the desktop user's behalf.
+    expect(calls.replies).toEqual([]);
+  });
+
+  it("says when the editor's own MCP servers are not connected", async () => {
+    // Dropping them silently would leave the editor believing tools are
+    // available that never arrive; refusing the session would break the
+    // integration over something optional. So: create it, and say so where an
+    // editor shows agent logs.
+    const notices: string[] = [];
+    const [clientSide, serverSide] = pipe();
+    const stub = stubRuntime();
+    new AcpAgentServer({
+      runtime: stub.runtime,
+      transport: serverSide,
+      workspace: "/ws/project",
+      onNotice: (m) => notices.push(m),
+    });
+    const client = new AcpRuntime({ transport: clientSide, cwd: "/ws/project" });
+    await client.connect();
+    client.setMcpServers([{ name: "filesystem", command: "/bin/mcp", args: [] }]);
+    await client.createSession();
+
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatch(/Not connecting 1 MCP server\(s\) sent by the editor \(filesystem\)/);
+  });
+
+  it("rejects rather than infers approval when the editor cancels", async () => {
+    const { client, events, fire, calls } = await connectedPair();
+    const sessionId = await client.createSession();
+    void client.sendPrompt(sessionId, "write the file");
+    await vi.waitFor(() => expect(calls.prompts).toHaveLength(1));
+    fire({
+      type: "permission.asked",
+      sessionId,
       requestId: "req-2",
       action: "write",
       resources: ["/ws/project/a.py"],

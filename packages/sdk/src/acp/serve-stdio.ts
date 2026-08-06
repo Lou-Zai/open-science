@@ -101,6 +101,9 @@ export async function serveStdio(opts: ServeStdioOptions): Promise<AcpAgentServe
     transport: streamTransport(opts.stdin ?? process.stdin, opts.stdout ?? process.stdout),
     workspace,
     version: opts.version,
+    // stderr is where an editor shows an agent's log; stdout carries protocol
+    // messages only, which the spec is explicit about.
+    onNotice: (message) => process.stderr.write(`${message}\n`),
   });
 }
 

@@ -55,6 +55,10 @@ export interface AcpAgentServerOptions {
   workspace: string;
   /** Version reported in `initialize`. */
   version?: string;
+  /** Somewhere to say what was NOT honoured — stderr, for a spawned agent. ACP
+   *  forbids anything but protocol messages on stdout, and an editor's agent log
+   *  is where a user looks when a tool they configured is missing. */
+  onNotice?: (message: string) => void;
 }
 
 /** One turn the editor is waiting on. */
@@ -73,6 +77,7 @@ export class AcpAgentServer {
   private readonly runtime: AgentRuntime;
   private readonly workspace: string;
   private readonly version: string;
+  private readonly notice: (message: string) => void;
   /** Turns in flight, by session. ACP allows one turn per session at a time. */
   private readonly turns = new Map<string, PendingTurn>();
   /** Permission requests relayed to the editor, so a resolution elsewhere (the
@@ -84,6 +89,7 @@ export class AcpAgentServer {
     this.runtime = opts.runtime;
     this.workspace = opts.workspace;
     this.version = opts.version ?? "0";
+    this.notice = opts.onNotice ?? (() => {});
     this.peer = new JsonRpcPeer(opts.transport, {
       onRequest: (method, params) => this.onRequest(method, params),
       onNotification: (method, params) => this.onNotification(method, params),
@@ -159,6 +165,7 @@ export class AcpAgentServer {
   private async newSession(p: Record<string, unknown>) {
     const cwd = typeof p.cwd === "string" ? p.cwd : "";
     this.requireWorkspace(cwd);
+    this.noteUnusedMcp(p.mcpServers);
     const sessionId = await this.runtime.createSession();
     void this.announceCommands(sessionId);
     return { sessionId };
@@ -256,6 +263,28 @@ export class AcpAgentServer {
     }
   }
 
+  /**
+   * Say so when the editor sent MCP servers we do not connect.
+   *
+   * This runtime brings its OWN connectors (configured in the app, shared by
+   * every session) and has no way to add per-session ones. Silently dropping
+   * them would leave the editor believing tools are available that never
+   * arrive; refusing the session outright would break the integration over
+   * something optional. So the session is created and the omission is stated
+   * where an editor shows agent logs.
+   */
+  private noteUnusedMcp(servers: unknown): void {
+    if (!Array.isArray(servers) || servers.length === 0) return;
+    const names = servers
+      .map((s) => (s && typeof s === "object" ? (s as { name?: string }).name : undefined))
+      .filter((n): n is string => !!n);
+    this.notice(
+      `Not connecting ${servers.length} MCP server(s) sent by the editor` +
+        (names.length > 0 ? ` (${names.join(", ")})` : "") +
+        `: ${AGENT_TITLE} uses the connectors configured in the app.`,
+    );
+  }
+
   private requireSessionId(p: Record<string, unknown>): string {
     const sessionId = p.sessionId;
     if (typeof sessionId !== "string" || !sessionId) {
@@ -288,7 +317,15 @@ export class AcpAgentServer {
     const sessionId = "sessionId" in event ? event.sessionId : undefined;
     if (!sessionId) return;
     if (event.type === "permission.asked") {
-      void this.relayPermission(event.sessionId, event.requestId, event.action, event.resources);
+      // Only for a turn THIS editor is waiting on. The runtime's event stream is
+      // workspace-scoped, so it also carries approvals for work the user started
+      // in the desktop window — relaying those would pop a dialog in an editor
+      // that did not ask for the work, and whichever side answered first would
+      // leave the other holding a dead prompt. An approval must be attributable
+      // to the surface that asked for the action (AGENTS.md).
+      if (this.turns.has(event.sessionId)) {
+        void this.relayPermission(event.sessionId, event.requestId, event.action, event.resources);
+      }
       return;
     }
     if (event.type === "permission.resolved") {
