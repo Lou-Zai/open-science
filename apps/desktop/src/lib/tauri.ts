@@ -269,6 +269,14 @@ export async function getGatewayStatus(): Promise<GatewayStatus | null> {
   return await invoke<GatewayStatus>("gateway_status");
 }
 
+/** Absolute path of the bundled ACP agent script an external editor spawns
+ *  (#14, server direction), or null when it is not present. */
+export async function acpServerScript(): Promise<string | null> {
+  if (!isTauri) return null;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return await invoke<string | null>("acp_server_script");
+}
+
 /** Enable/disable + set binding and access mode; (re)binds the server. */
 export async function setGatewayConfig(
   enabled: boolean,

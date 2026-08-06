@@ -374,7 +374,10 @@
     "copied": "Copié dans le presse-papiers",
     "error": "Échec de la modification de l'accès distant",
     "connect": "Se connecter",
-    "connectPrompt": "Saisis le jeton d'accès de l'app de bureau → Réglages → Accès distant."
+    "connectPrompt": "Saisis le jeton d'accès de l'app de bureau → Réglages → Accès distant.",
+    "acpTitle": "Éditeurs externes (ACP)",
+    "acpHint": "Pilotez cet espace de travail depuis Zed, JetBrains, Neovim ou tout éditeur qui parle l'Agent Client Protocol. Collez cette entrée d'agent dans les réglages de l'éditeur ; elle se connecte via la passerelle ci-dessus, avec les droits du jeton.",
+    "acpNodeHint": "L'éditeur lance ce script avec Node 18+. Le jeton passe par l'environnement, pas par la ligne de commande."
   },
   "memory": {
     "title": "Mémoire",

@@ -374,7 +374,10 @@
     "copied": "Copied to clipboard",
     "error": "Remote access change failed",
     "connect": "Connect",
-    "connectPrompt": "Enter the access token from the desktop app → Settings → Remote Access."
+    "connectPrompt": "Enter the access token from the desktop app → Settings → Remote Access.",
+    "acpTitle": "External editors (ACP)",
+    "acpHint": "Drive this workspace from Zed, JetBrains, Neovim or any editor that speaks the Agent Client Protocol. Paste this agent entry into the editor's settings; it connects over the gateway above, with the access the token allows.",
+    "acpNodeHint": "The editor launches this script with Node 18+. The token is passed in the environment, not on the command line."
   },
   "memory": {
     "title": "Memory",

@@ -414,9 +414,14 @@ discussion. Shipped versions are kept here as the delivery record.
     (`session/resume`). What is left on this half: the agent's own sign-in
     (`authenticate` / `auth.logout` — Codex's ChatGPT login, not our provider
     keys), and `providers`, which is still a draft RFD rather than stable v1;
-  - Open Science *as* an ACP server, so external editors and agents drive the
-    runtime through that seam in ACP's dialect (#14), reusing the shipped
-    gateway rather than a second surface;
+  - **Open Science *as* an ACP agent — shipped.** External editors (Zed,
+    JetBrains, Neovim, …) spawn `acp-server.mjs` from inside the app bundle and
+    drive the runtime in ACP's dialect: sessions, streaming, history replay,
+    listing, cancellation and permission requests answered in the editor. It
+    reuses the shipped gateway and its token rather than adding a second
+    surface, and Settings → Remote Access shows the agent entry to paste in.
+    Still open on this half: image prompts, and the editor's own `fs` /
+    `terminal` client capabilities;
   - messaging-platform integrations (Slack / Discord / Telegram / Feishu) — each
     a thin bot client that relays `sendPrompt` → streamed events (#20);
   - cloud tunnel — reach the same gateway + token over a public URL

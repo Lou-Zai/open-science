@@ -374,7 +374,10 @@
     "copied": "Copiado al portapapeles",
     "error": "Error al cambiar el acceso remoto",
     "connect": "Conectar",
-    "connectPrompt": "Introduce el token de acceso de la app de escritorio → Ajustes → Acceso remoto."
+    "connectPrompt": "Introduce el token de acceso de la app de escritorio → Ajustes → Acceso remoto.",
+    "acpTitle": "Editores externos (ACP)",
+    "acpHint": "Controla este espacio de trabajo desde Zed, JetBrains, Neovim o cualquier editor que hable el Agent Client Protocol. Pega esta entrada de agente en la configuración del editor; se conecta por la pasarela de arriba, con el acceso que permita el token.",
+    "acpNodeHint": "El editor lanza este script con Node 18+. El token se pasa por el entorno, no en la línea de comandos."
   },
   "memory": {
     "title": "Memoria",

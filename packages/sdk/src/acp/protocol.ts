@@ -194,10 +194,17 @@ export class JsonRpcPeer {
       const result = await this.handlers.onRequest(method, params);
       this.write({ jsonrpc: "2.0", id, result: result ?? null });
     } catch (err) {
+      // A handler that names its own code keeps it — the difference between
+      // "bad parameters" and "we broke" is the peer's to act on, and -32603 for
+      // everything would flatten it. Anything else is an internal error.
+      const code =
+        typeof (err as { code?: unknown })?.code === "number"
+          ? (err as { code: number }).code
+          : -32603;
       this.write({
         jsonrpc: "2.0",
         id,
-        error: { code: -32603, message: err instanceof Error ? err.message : String(err) },
+        error: { code, message: err instanceof Error ? err.message : String(err) },
       });
     }
   }

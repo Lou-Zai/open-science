@@ -91,6 +91,7 @@ pub fn run() {
             runtime::start_runtime,
             runtime::runtime_password,
             gateway::gateway_status,
+            gateway::acp_server_script,
             gateway::set_gateway_config,
             gateway::regenerate_gateway_token,
             runtime::stop_runtime,

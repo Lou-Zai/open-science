@@ -1,10 +1,13 @@
-// The ACP client layer's browser-safe barrel (#14, #25).
+// The ACP layer's browser-safe barrel (#14, #25) — both directions.
 //
-// `./stdio` is deliberately NOT re-exported here: it imports `child_process`, so
-// pulling it into this barrel would break the webview bundle. Node callers
-// import `@ai4s/sdk/acp/stdio` directly.
+// `./stdio` (the client's spawning transport) and `./serve-stdio` (the agent
+// process an editor spawns) are deliberately NOT re-exported here: they own
+// `child_process` and `process.stdin`, which the webview does not have. Node
+// callers import `@ai4s/sdk/acp/stdio` and `@ai4s/sdk/acp/serve-stdio`.
 export { AcpRuntime, mapToolStatus, pickPermissionOption } from "./AcpRuntime";
 export { toAcpMcpServers } from "./mcp";
+export { AcpAgentServer, acpToolStatus, historyNotifications } from "./server";
+export type { AcpAgentServerOptions } from "./server";
 export type { AcpMcpServer, AcpRemoteMcpServer, AcpStdioMcpServer } from "./mcp";
 export type { AcpRuntimeOptions } from "./AcpRuntime";
 export {

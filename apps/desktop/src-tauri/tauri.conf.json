@@ -52,6 +52,7 @@
       "../../../runtime/opencode-profile/agent": "profile/agent/",
       "../../../runtime/opencode-profile/command": "profile/command/",
       "../../../runtime/harness": "harness/",
+    "../../../runtime/acp-server": "acp-server/",
       "../../../examples/climate-trends": "examples/climate-trends/"
     },
     "icon": [

@@ -374,7 +374,10 @@
     "copied": "In die Zwischenablage kopiert",
     "error": "Ändern des Fernzugriffs fehlgeschlagen",
     "connect": "Verbinden",
-    "connectPrompt": "Gib das Zugriffstoken aus der Desktop-App ein → Einstellungen → Fernzugriff."
+    "connectPrompt": "Gib das Zugriffstoken aus der Desktop-App ein → Einstellungen → Fernzugriff.",
+    "acpTitle": "Externe Editoren (ACP)",
+    "acpHint": "Diesen Arbeitsbereich aus Zed, JetBrains, Neovim oder jedem Editor steuern, der das Agent Client Protocol spricht. Diesen Agenten-Eintrag in die Editor-Einstellungen einfügen; er verbindet sich über das obige Gateway, mit den Rechten des Tokens.",
+    "acpNodeHint": "Der Editor startet dieses Skript mit Node 18+. Das Token wird über die Umgebung übergeben, nicht auf der Kommandozeile."
   },
   "memory": {
     "title": "Gedächtnis",
