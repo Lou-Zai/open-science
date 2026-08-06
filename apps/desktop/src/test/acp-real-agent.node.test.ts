@@ -147,4 +147,44 @@ describe.skipIf(!COMMAND)("AcpRuntime against a real ACP agent", () => {
     },
     240_000,
   );
+
+  it(
+    "picks a session back up in a NEW agent process",
+    async () => {
+      // The repair `session/resume` exists for: the agent child restarts while
+      // the conversation is still on screen. Two processes here, deliberately —
+      // the second one never created the session and must still be able to
+      // answer in it.
+      const first = new AcpRuntime({
+        transport: stdioTransport({ command: COMMAND!, args: ARGS, cwd: process.cwd() }),
+        cwd: process.cwd(),
+      });
+      await first.connect();
+      const sessionId = await first.createSession("resume check");
+      await first.sendPrompt(sessionId, "Remember the word: pangolin. Reply with exactly: noted");
+      first.close();
+
+      const second = new AcpRuntime({
+        transport: stdioTransport({ command: COMMAND!, args: ARGS, cwd: process.cwd() }),
+        cwd: process.cwd(),
+      });
+      const events: OpenCodeEvent[] = [];
+      second.onEvent((e) => events.push(e));
+      await second.connect();
+      if (!second.supportsSessionResume && !second.supportsSessionReplay) {
+        second.close();
+        return; // nothing to prove against an agent that keeps no sessions
+      }
+
+      // No createSession, no getMessages: straight into a turn on a session
+      // this process has never heard of.
+      await second.sendPrompt(sessionId, "What word did I ask you to remember? One word.");
+      expect(events.filter((e) => e.type === "error")).toEqual([]);
+      const texts = events.filter((e) => e.type === "text.updated") as Array<{ text: string }>;
+      // The context really was restored — the agent still has the word.
+      expect(texts.map((t) => t.text).join(" ").toLowerCase()).toContain("pangolin");
+      second.close();
+    },
+    240_000,
+  );
 });

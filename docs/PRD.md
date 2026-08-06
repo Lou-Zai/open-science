@@ -410,8 +410,10 @@ discussion. Shipped versions are kept here as the delivery record.
     Listing (`session/list`), history (`session/load` replay), the agent's own
     model / reasoning selectors (`session/set_config_option`) and this app's MCP
     connectors all work through it, capability-gated on what each agent
-    advertises. What is left on this half: `session/resume` (a faster reopen
-    than replay) and the agent's own `providers` / `auth` surface;
+    advertises, and a session survives the agent process restarting
+    (`session/resume`). What is left on this half: the agent's own sign-in
+    (`authenticate` / `auth.logout` — Codex's ChatGPT login, not our provider
+    keys), and `providers`, which is still a draft RFD rather than stable v1;
   - Open Science *as* an ACP server, so external editors and agents drive the
     runtime through that seam in ACP's dialect (#14), reusing the shipped
     gateway rather than a second surface;

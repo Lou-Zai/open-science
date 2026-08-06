@@ -468,6 +468,95 @@ describe("AcpRuntime", () => {
     expect((await runtime.listSessions()).map((s) => s.id)).toEqual([sessionId]);
   });
 
+  it("restores a session the agent process no longer knows, without replaying it", async () => {
+    // The case that used to strand a conversation: the agent child restarted
+    // (crash, or the user switched agents and back) while the thread stayed on
+    // screen, and the next prompt went to a session the new process had never
+    // heard of. `session/resume` restores the context and reconnects the MCP
+    // servers WITHOUT replaying history we are already showing.
+    const events: OpenCodeEvent[] = [];
+    const { transport, agent } = fakeAgent((msg, a) => {
+      if (msg.method === "initialize") return a.reply(msg.id, INITIALIZE_RESULT);
+      if (msg.method === "session/list")
+        return a.reply(msg.id, {
+          sessions: [{ sessionId: "from-yesterday", cwd: "/ws/older-project", title: "Trend" }],
+        });
+      if (msg.method === "session/resume") return a.reply(msg.id, {});
+      if (msg.method === "session/prompt") return a.reply(msg.id, { stopReason: "end_turn" });
+    });
+    const runtime = new AcpRuntime({ transport, cwd: "/ws/current" });
+    runtime.onEvent((e) => events.push(e));
+    await runtime.connect();
+    // The sidebar listed it; nothing here created it.
+    await runtime.listSessions();
+
+    await runtime.sendPrompt("from-yesterday", "carry on");
+
+    const resumed = agent.sent.find((m) => m.method === "session/resume");
+    // Restored into the folder it BELONGS to (from session/list), not the one
+    // the app happens to be standing in.
+    expect(resumed?.params).toEqual({
+      sessionId: "from-yesterday",
+      cwd: "/ws/older-project",
+      mcpServers: [],
+    });
+    // It ran: resume came first, then the prompt.
+    expect(agent.sent.filter((m) => m.method === "session/load")).toEqual([]);
+    expect(agent.sent.map((m) => m.method)).toEqual([
+      "initialize",
+      "session/list",
+      "session/resume",
+      "session/prompt",
+    ]);
+    expect(last(events)).toEqual({ type: "session.idle", sessionId: "from-yesterday" });
+  });
+
+  it("loads instead when the agent cannot resume, and keeps that replay out of the thread", async () => {
+    const events: OpenCodeEvent[] = [];
+    const { transport, agent } = fakeAgent((msg, a) => {
+      if (msg.method === "initialize")
+        return a.reply(msg.id, {
+          protocolVersion: 1,
+          agentInfo: { name: "loader" },
+          // Can replay, cannot resume.
+          agentCapabilities: { loadSession: true },
+        });
+      if (msg.method === "session/load") {
+        a.notify("session/update", {
+          sessionId: "old-1",
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            messageId: "a1",
+            content: { type: "text", text: "said this yesterday" },
+          },
+        });
+        return a.reply(msg.id, {});
+      }
+      if (msg.method === "session/prompt") return a.reply(msg.id, { stopReason: "end_turn" });
+    });
+    const runtime = new AcpRuntime({ transport, cwd: "/ws/current" });
+    runtime.onEvent((e) => events.push(e));
+    await runtime.connect();
+
+    await runtime.sendPrompt("old-1", "carry on");
+
+    expect(agent.sent.map((m) => m.method)).toEqual(["initialize", "session/load", "session/prompt"]);
+    // The point of diverting it: yesterday's answer must not arrive as a live
+    // event on top of the thread already showing it.
+    expect(events.filter((e) => e.type === "text.updated")).toEqual([]);
+    expect(last(events)).toEqual({ type: "session.idle", sessionId: "old-1" });
+  });
+
+  it("refuses a session it cannot restore rather than pretending to send", async () => {
+    const { transport } = fakeAgent((msg, a) => {
+      if (msg.method === "initialize")
+        return a.reply(msg.id, { protocolVersion: 1, agentInfo: { name: "plain" } });
+    });
+    const runtime = new AcpRuntime({ transport, cwd: "/ws" });
+    await runtime.connect();
+    await expect(runtime.sendPrompt("ghost", "hi")).rejects.toThrow(/unknown session ghost/);
+  });
+
   it("changes one of the agent's own selectors and takes the answer whole", async () => {
     const OPTIONS = [
       { id: "model", name: "Model", category: "model", type: "select", currentValue: "fast", options: [] },

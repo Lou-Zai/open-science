@@ -115,6 +115,10 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
    *  while the agent process stays. */
   private cwd: string;
   private readonly label?: string;
+  /** Sessions the AGENT told us about (`session/list`), by id: their folder and
+   *  title. Not sessions of ours — this is what lets a conversation created in
+   *  an earlier run be restored into the folder it belongs to. */
+  private readonly known = new Map<string, { cwd: string; title: string }>();
   /** MCP servers every session is created with. ACP takes them per session
    *  where OpenCode holds them globally, so they are set once and sent with
    *  each `session/new` / `session/load`. */
@@ -180,6 +184,13 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
    *  Without it, "delete" can only forget the session locally. */
   get supportsSessionDelete(): boolean {
     return this.agentCapabilities?.sessionCapabilities?.delete !== undefined;
+  }
+
+  /** Whether a session can be restored WITHOUT replaying its history
+   *  (`sessionCapabilities.resume`) — what makes a conversation still on screen
+   *  usable again after the agent process changed. */
+  get supportsSessionResume(): boolean {
+    return this.agentCapabilities?.sessionCapabilities?.resume !== undefined;
   }
 
   /**
@@ -341,6 +352,13 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
           if (!info?.sessionId) continue;
           const known = this.sessions.get(info.sessionId);
           const updated = info.updatedAt ? Date.parse(info.updatedAt) : NaN;
+          // Remember where it lives: restoring it later has to name the folder
+          // it belongs to, which is not the one we happen to be standing in.
+          if (info.cwd)
+            this.known.set(info.sessionId, {
+              cwd: info.cwd,
+              title: info.title || known?.title || "Session",
+            });
           listed.set(info.sessionId, {
             id: info.sessionId,
             title: info.title || known?.title || "Session",
@@ -418,16 +436,8 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
     // title, which have nowhere to land otherwise — this session exists on the
     // agent (it came from `session/list`), this client just never made it.
     if (!state) {
-      this.sessions.set(sessionId, {
-        title: "Session",
-        cwd: this.cwd,
-        configOptions: [],
-        text: new Map(),
-        reasoning: new Map(),
-        models: [],
-        promptRunning: false,
-        turn: 0,
-      });
+      const remembered = this.known.get(sessionId);
+      this.sessions.set(sessionId, this.blankState(remembered?.cwd ?? this.cwd, remembered?.title));
     }
     const collector = new ReplayCollector();
     this.replays.set(sessionId, collector);
@@ -452,6 +462,74 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
     return collector.finish();
   }
 
+  /**
+   * A session this runtime can act on, restoring it first if the agent process
+   * has no record of it.
+   *
+   * That happens routinely, and used to strand the conversation: the agent child
+   * restarts (a crash, switching agents and back), the thread is still on screen
+   * because it lives in this app's memory, and the next prompt went to a session
+   * the new process had never heard of. `session/resume` is the right repair —
+   * it restores the context and reconnects the MCP servers WITHOUT replaying the
+   * history we are already showing. An agent that only offers `session/load` is
+   * loaded instead and its replay discarded, for the same reason.
+   */
+  private async ensureSession(sessionId: string): Promise<SessionState> {
+    const existing = this.sessions.get(sessionId);
+    if (existing) return existing;
+    if (!this.supportsSessionResume && !this.supportsSessionReplay) {
+      throw new Error(`unknown session ${sessionId}`);
+    }
+    const remembered = this.known.get(sessionId);
+    const cwd = remembered?.cwd ?? this.cwd;
+    // Registered BEFORE the call: the agent reports the session's selectors and
+    // title while restoring it, and those updates have nowhere to land
+    // otherwise. Removed again if the restore fails, so a dead id cannot look
+    // like a live session.
+    const state = this.blankState(cwd, remembered?.title);
+    this.sessions.set(sessionId, state);
+    try {
+      if (this.supportsSessionResume) {
+        await this.peer.request("session/resume", {
+          sessionId,
+          cwd,
+          mcpServers: this.mcpForRequest(),
+        });
+      } else {
+        // Load replays the whole conversation; divert it, or the past would
+        // arrive as live events on top of the thread already showing it.
+        this.replays.set(sessionId, new ReplayCollector());
+        try {
+          await this.peer.request("session/load", {
+            sessionId,
+            cwd,
+            mcpServers: this.mcpForRequest(),
+          });
+        } finally {
+          this.replays.delete(sessionId);
+        }
+      }
+    } catch (err) {
+      this.sessions.delete(sessionId);
+      throw err;
+    }
+    return state;
+  }
+
+  /** A session record with nothing learned yet. */
+  private blankState(cwd: string, title = "Session"): SessionState {
+    return {
+      title,
+      cwd,
+      configOptions: [],
+      text: new Map(),
+      reasoning: new Map(),
+      models: [],
+      promptRunning: false,
+      turn: 0,
+    };
+  }
+
   async sendPrompt(
     sessionId: string,
     text: string,
@@ -459,8 +537,7 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
     _model?: string | null,
     _variant?: string | null,
   ): Promise<void> {
-    const state = this.sessions.get(sessionId);
-    if (!state) throw new Error(`unknown session ${sessionId}`);
+    const state = await this.ensureSession(sessionId);
     state.promptRunning = true;
     state.turn += 1;
     // `agent`, `model` and `variant` are deliberately dropped, not silently
