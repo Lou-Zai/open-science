@@ -223,7 +223,7 @@
     "title": "Revisión",
     "hint": "Un agente revisor de solo lectura que audita el trabajo terminado: trazabilidad, estadística, unidades y procedencia.",
     "autoTitle": "Revisar tras cada turno que cambie archivos",
-    "autoHint": "Cuesta un turno de modelo extra por cambio. Los turnos de solo lectura se omiten, y siempre puedes pedir una revisión con /science-review."
+    "autoHint": "Ejecuta un turno de modelo adicional en segundo plano por cambio. La conversación sigue disponible; se omiten los turnos de solo lectura."
   },
   "python": {
     "title": "Kernel local de Python",

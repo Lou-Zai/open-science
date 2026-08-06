@@ -29,11 +29,13 @@ or imply that the work is correct, sound, or error-free.
 
 ## What to look at
 
-Start from what changed. `git status --short` and `git diff` in the workspace
-show the current turn's work (the app commits after file changes, so
-`git diff HEAD~1` is usually the finished turn). Read the files that changed,
-plus whatever they depend on to be judged: the data they load, the script that
-produced a figure, the preregistration or plan they claim to follow.
+Start from the checkpoint and changed-file list in the review request. The
+review session is a fork, so it includes the completed parent conversation and
+approved plan without occupying that conversation. Read the listed files plus
+whatever they depend on to be judged: the data they load, the script that
+produced a figure, the preregistration or plan they claim to follow. Use Git
+diffs when a baseline exists, but an unborn or unavailable `HEAD` is not itself
+a scientific finding; rely on the explicit scope, files and provenance instead.
 
 ## Checks
 

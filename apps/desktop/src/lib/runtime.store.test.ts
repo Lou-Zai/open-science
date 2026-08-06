@@ -23,6 +23,10 @@ const mocks = vi.hoisted(() => ({
   /** Next renameSession call is rejected by the server. */
   failRename: false,
   createSessionSpy: vi.fn(),
+  forkSessionSpy: vi.fn(),
+  appendTextPartSpy: vi.fn(),
+  setSessionArchivedSpy: vi.fn(),
+  reviewSessionCounter: 0,
   sendPromptSpy: vi.fn(),
   /** Captures the FULL sendPrompt arg list (incl. model + variant) — the plain
    *  spy above deliberately ignores those, so existing 3-arg assertions hold. */
@@ -172,6 +176,18 @@ vi.mock("@ai4s/sdk", () => {
       }
       return "ses_new";
     }
+    async forkSession(sid: string, messageId?: string) {
+      mocks.forkSessionSpy(sid, messageId);
+      mocks.reviewSessionCounter++;
+      return `ses_review_${mocks.reviewSessionCounter}`;
+    }
+    async appendTextPart(sid: string, messageId: string, text: string, partId?: string) {
+      mocks.appendTextPartSpy(sid, messageId, text, partId);
+      return partId ?? "prt_mock";
+    }
+    async setSessionArchived(sid: string, archived: boolean) {
+      mocks.setSessionArchivedSpy(sid, archived);
+    }
     async sendPrompt(
       sid: string,
       text: string,
@@ -273,6 +289,7 @@ beforeEach(async () => {
   mocks.failSetModel = false;
   mocks.failRename = false;
   mocks.sessionList = [];
+  mocks.reviewSessionCounter = 0;
   mocks.notifyPermissionRequest.mockResolvedValue(true);
   mocks.createSessionSpy.mockClear();
   useRuntimeStore.setState({
@@ -288,6 +305,7 @@ beforeEach(async () => {
     panes: {},
     sessionAgents: {},
     autoReview: false,
+    backgroundReviews: {},
   });
   await useRuntimeStore.getState().connect();
   expect(useRuntimeStore.getState().status).toBe("ready");
@@ -1866,9 +1884,9 @@ describe("session rename and project filing", () => {
   });
 });
 
-// #72: a turn that changed workspace files earns one read-only reviewer turn,
-// whose findings render in the same thread. Every guard below is a case where
-// reviewing would be waste, a loop, or a second concurrent stream (#50).
+// #72: a file-changing turn forks a read-only background reviewer. Its result
+// is persisted on the parent checkpoint without taking the parent's running
+// lock; only one hidden reviewer streams at a time (#50).
 describe("auto-review on turn completion", () => {
   const REVIEWER_AGENTS = [
     { name: "build", description: "", mode: "primary" as const },
@@ -1886,6 +1904,15 @@ describe("auto-review on turn completion", () => {
 
   /** Enable auto-review with the reviewer agent present and `ids` listed. */
   function armed(ids: string[], extra: Record<string, unknown> = {}) {
+    mocks.messages = [
+      { role: "user", id: "msg_user", completed: 1, parts: [{ type: "text", text: "do it" }] },
+      {
+        role: "assistant",
+        id: "msg_checkpoint",
+        completed: 2,
+        parts: [{ type: "text", text: "done" }],
+      },
+    ];
     useRuntimeStore.setState({
       autoReview: true,
       agents: REVIEWER_AGENTS,
@@ -1910,6 +1937,21 @@ describe("auto-review on turn completion", () => {
   const reviewCalls = () =>
     mocks.sendPromptFullSpy.mock.calls.filter((c) => c[2] === "reviewer");
 
+  function finishReview(index = reviewCalls().length - 1) {
+    const sid = reviewCalls()[index]![0] as string;
+    mocks.fireEvent({
+      type: "text.updated",
+      sessionId: sid,
+      partId: `part-${sid}`,
+      text:
+        "```review\n" +
+        '{"findings":[{"level":"warn","title":"Check the reported value","evidence":"report.md:4"}],"note":"Background review."}' +
+        "\n```",
+    });
+    mocks.fireEvent({ type: "session.idle", sessionId: sid });
+    return sid;
+  }
+
   it("sends one reviewer turn, with no model of its own, after a file changed", async () => {
     armed(["ses_1"]);
     wroteAFile("ses_1");
@@ -1917,21 +1959,120 @@ describe("auto-review on turn completion", () => {
     await vi.waitFor(() => expect(reviewCalls()).toHaveLength(1));
 
     const [sid, text, agent, model, variant] = reviewCalls()[0]!;
-    expect(sid).toBe("ses_1");
+    expect(sid).toBe("ses_review_1");
+    expect(mocks.forkSessionSpy).toHaveBeenCalledWith("ses_1", undefined);
     expect(text).toContain("Review the work just completed");
+    expect(text).toContain("- analysis.py");
     expect(agent).toBe("reviewer");
     // No per-turn model or effort: those come from the reviewer's own per-agent
     // config (#71), which an explicit model would override.
     expect(model).toBeUndefined();
     expect(variant).toBeUndefined();
-    // The review holds the session's running lock, so the UI shows it working.
-    expect(useRuntimeStore.getState().runningSessions["ses_1"]).toBe(true);
-
-    // Its own idle ends the review and must not start another one.
-    mocks.fireEvent({ type: "session.idle", sessionId: "ses_1" });
-    await new Promise((r) => setTimeout(r, 0));
-    expect(reviewCalls()).toHaveLength(1);
+    // The foreground is immediately usable; only a quiet background status is set.
     expect(useRuntimeStore.getState().runningSessions["ses_1"]).toBeUndefined();
+    expect(useRuntimeStore.getState().backgroundReviews["ses_1"]).toBe("running");
+
+    // The hidden fork's result is attached to the parent checkpoint and its own
+    // reasoning/tool transcript is discarded.
+    finishReview();
+    await vi.waitFor(() => expect(mocks.appendTextPartSpy).toHaveBeenCalledTimes(1));
+    expect(reviewCalls()).toHaveLength(1);
+    expect(mocks.appendTextPartSpy).toHaveBeenCalledWith(
+      "ses_1",
+      "msg_checkpoint",
+      expect.stringContaining("Check the reported value"),
+      expect.stringMatching(/^prt_[A-Za-z0-9]+$/),
+    );
+    expect(useRuntimeStore.getState().backgroundReviews["ses_1"]).toBeUndefined();
+    expect(
+      useRuntimeStore.getState().threads["ses_1"].blocks.some((block) => block.kind === "reviewer"),
+    ).toBe(true);
+    expect(useRuntimeStore.getState().threads["ses_review_1"]).toBeUndefined();
+
+    // The server echoes the synthetic part update. It refreshes the card but
+    // must not relock the idle parent as though a new model turn had started.
+    mocks.fireEvent({
+      type: "text.updated",
+      sessionId: "ses_1",
+      partId: mocks.appendTextPartSpy.mock.calls[0]![3],
+      text: mocks.appendTextPartSpy.mock.calls[0]![2],
+    });
+    expect(useRuntimeStore.getState().runningSessions["ses_1"]).toBeUndefined();
+  });
+
+  it("lets the user stop a background review without adding a fake result", async () => {
+    armed(["ses_1"]);
+    wroteAFile("ses_1");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_1" });
+    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(1));
+
+    useRuntimeStore.getState().cancelAutoReview("ses_1");
+    await vi.waitFor(() =>
+      expect(useRuntimeStore.getState().backgroundReviews["ses_1"]).toBeUndefined(),
+    );
+    expect(mocks.abortSession).toHaveBeenCalledWith("ses_review_1");
+    expect(mocks.appendTextPartSpy).not.toHaveBeenCalled();
+    expect(useRuntimeStore.getState().threads["ses_review_1"]).toBeUndefined();
+  });
+
+  it("stops the hidden reviewer when its parent session is deleted", async () => {
+    armed(["ses_1"]);
+    wroteAFile("ses_1");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_1" });
+    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(1));
+
+    await useRuntimeStore.getState().deleteSession("ses_1");
+    expect(mocks.abortSession).toHaveBeenCalledWith("ses_review_1");
+    expect(useRuntimeStore.getState().backgroundReviews["ses_1"]).toBeUndefined();
+
+    // Trailing server events from the aborted hidden child stay invisible and
+    // cannot synthesize a finding for a parent that no longer exists.
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_review_1" });
+    expect(mocks.appendTextPartSpy).not.toHaveBeenCalled();
+    expect(useRuntimeStore.getState().threads["ses_review_1"]).toBeUndefined();
+  });
+
+  it("forks before a newer foreground turn so the reviewed checkpoint is included", async () => {
+    armed(["ses_1"]);
+    useRuntimeStore.setState({
+      threads: {
+        ses_1: {
+          loaded: true,
+          index: {},
+          blocks: [
+            { kind: "user", text: "do it", messageID: "msg_user" },
+            { kind: "agent", markdown: "done" },
+            { kind: "user", text: "continue", messageID: "msg_next_turn" },
+          ],
+        },
+      },
+    } as never);
+    mocks.messages.push({
+      role: "user",
+      id: "msg_next_turn",
+      parts: [{ type: "text", text: "continue" }],
+    });
+    wroteAFile("ses_1");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_1" });
+
+    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(1));
+    expect(mocks.forkSessionSpy).toHaveBeenCalledWith("ses_1", "msg_next_turn");
+    finishReview();
+    await vi.waitFor(() =>
+      expect(mocks.appendTextPartSpy).toHaveBeenCalledWith(
+        "ses_1",
+        "msg_checkpoint",
+        expect.any(String),
+        expect.any(String),
+      ),
+    );
+    const blocks = useRuntimeStore.getState().threads["ses_1"].blocks;
+    const reviewAt = blocks.findIndex((block) => block.kind === "reviewer");
+    const nextTurnAt = blocks.findIndex(
+      (block) => block.kind === "user" && block.messageID === "msg_next_turn",
+    );
+    expect(reviewAt).toBeGreaterThan(0);
+    expect(reviewAt).toBeLessThan(nextTurnAt);
   });
 
   it("stays off until the user opts in", async () => {
@@ -1978,7 +2119,8 @@ describe("auto-review on turn completion", () => {
 
     mocks.fireEvent({ type: "session.idle", sessionId: "ses_parent" });
     await vi.waitFor(() => expect(reviewCalls()).toHaveLength(1));
-    expect(reviewCalls()[0]![0]).toBe("ses_parent");
+    expect(mocks.forkSessionSpy).toHaveBeenCalledWith("ses_parent", undefined);
+    expect(reviewCalls()[0]![0]).toBe("ses_review_1");
   });
 
   // Session ids of its own: interrupting one marks it interrupted for the rest of
@@ -1994,24 +2136,16 @@ describe("auto-review on turn completion", () => {
     mocks.fireEvent({ type: "session.idle", sessionId: "ses_d" });
     await new Promise((r) => setTimeout(r, 0)); // ses_d is queued
 
-    // ses_d is mid-turn when the slot frees, so its review goes back in the queue
-    // rather than landing on a busy session.
-    useRuntimeStore.setState({ runningSessions: { ses_d: true } } as never);
-    mocks.fireEvent({ type: "session.idle", sessionId: "ses_c" });
-    await new Promise((r) => setTimeout(r, 0));
-    expect(reviewCalls()).toHaveLength(1);
-
-    // That turn changed files too, so ses_d is now dirty AND owed. Starting its
-    // review has to consume the queue entry: a leftover used to be drained into a
-    // second review the moment this one ended early.
-    useRuntimeStore.setState({ runningSessions: {} } as never);
+    // Another completed change is coalesced into the same queued review.
     wroteAFile("ses_d");
     mocks.fireEvent({ type: "session.idle", sessionId: "ses_d" });
-    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(2));
-    expect(reviewCalls()[1]![0]).toBe("ses_d");
+    expect(reviewCalls()).toHaveLength(1);
 
-    mocks.abortTrailing = [{ type: "session.idle", sessionId: "ses_d" }];
-    await useRuntimeStore.getState().interrupt("ses_d");
+    finishReview(0);
+    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(2));
+    expect(reviewCalls()[1]![0]).toBe("ses_review_2");
+
+    finishReview(1);
     await new Promise((r) => setTimeout(r, 0));
     expect(reviewCalls()).toHaveLength(2);
   });
@@ -2056,14 +2190,15 @@ describe("auto-review on turn completion", () => {
     wroteAFile("ses_a");
     mocks.fireEvent({ type: "session.idle", sessionId: "ses_a" });
     await vi.waitFor(() => expect(reviewCalls()).toHaveLength(1));
-    mocks.fireEvent({ type: "error", sessionId: "ses_a", message: "provider exploded" });
+    mocks.fireEvent({ type: "error", sessionId: "ses_review_1", message: "provider exploded" });
     await new Promise((r) => setTimeout(r, 0));
     expect(useRuntimeStore.getState().runningSessions["ses_a"]).toBeUndefined();
+    expect(useRuntimeStore.getState().threads["ses_review_1"]).toBeUndefined();
 
     wroteAFile("ses_b");
     mocks.fireEvent({ type: "session.idle", sessionId: "ses_b" });
     await vi.waitFor(() => expect(reviewCalls()).toHaveLength(2));
-    expect(reviewCalls()[1]![0]).toBe("ses_b");
+    expect(reviewCalls()[1]![0]).toBe("ses_review_2");
   });
 
   it("runs one review at a time and gets to the second session afterwards", async () => {
@@ -2074,14 +2209,14 @@ describe("auto-review on turn completion", () => {
     mocks.fireEvent({ type: "session.idle", sessionId: "ses_a" });
     mocks.fireEvent({ type: "session.idle", sessionId: "ses_b" });
     await vi.waitFor(() => expect(reviewCalls()).toHaveLength(1));
-    expect(reviewCalls()[0]![0]).toBe("ses_a");
+    expect(reviewCalls()[0]![0]).toBe("ses_review_1");
 
     // The first review ends → the queued session is reviewed, not dropped.
-    mocks.fireEvent({ type: "session.idle", sessionId: "ses_a" });
+    finishReview(0);
     await vi.waitFor(() => expect(reviewCalls()).toHaveLength(2));
-    expect(reviewCalls()[1]![0]).toBe("ses_b");
+    expect(reviewCalls()[1]![0]).toBe("ses_review_2");
 
-    mocks.fireEvent({ type: "session.idle", sessionId: "ses_b" });
+    finishReview(1);
     await new Promise((r) => setTimeout(r, 0));
     expect(reviewCalls()).toHaveLength(2);
   });
@@ -2105,10 +2240,10 @@ describe("auto-review on turn completion", () => {
     expect(reviewCalls()).toHaveLength(1); // still just ses_a's
 
     // The slot frees: ses_b is reviewed exactly once, not once per queued copy.
-    mocks.fireEvent({ type: "session.idle", sessionId: "ses_a" });
+    finishReview(0);
     await vi.waitFor(() => expect(reviewCalls()).toHaveLength(2));
-    expect(reviewCalls()[1]![0]).toBe("ses_b");
-    mocks.fireEvent({ type: "session.idle", sessionId: "ses_b" });
+    expect(reviewCalls()[1]![0]).toBe("ses_review_2");
+    finishReview(1);
     await new Promise((r) => setTimeout(r, 0));
     expect(reviewCalls()).toHaveLength(2);
   });
@@ -2165,8 +2300,8 @@ describe("auto-review on turn completion", () => {
     expect(reviewCalls()).toHaveLength(1); // the interrupt itself is not reviewed
 
     // Once the slot frees, the review ses_b was already owed still happens.
-    mocks.fireEvent({ type: "session.idle", sessionId: "ses_a" });
+    finishReview(0);
     await vi.waitFor(() => expect(reviewCalls()).toHaveLength(2));
-    expect(reviewCalls()[1]![0]).toBe("ses_b");
+    expect(reviewCalls()[1]![0]).toBe("ses_review_2");
   });
 });

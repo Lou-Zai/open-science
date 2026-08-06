@@ -1,7 +1,7 @@
 // Auto-review on turn completion (#72): when a turn actually changed workspace
-// files, the bundled `reviewer` agent gets one read-only turn in the same
-// session, and its ```review block renders as reviewer findings in the thread
-// the user is already watching.
+// files, the bundled `reviewer` agent gets one read-only BACKGROUND turn in a
+// fork of the completed checkpoint. Its structured result is persisted back on
+// that checkpoint; the foreground session never takes the reviewer's lock.
 //
 // Off by default. It costs a second model turn per file-changing turn, so it is
 // the user's call — and the gates below exist so it never doubles that cost on
@@ -21,6 +21,19 @@ export const AUTO_REVIEW_PROMPT =
   "Review the work just completed in this workspace and report findings. " +
   "Follow your output contract exactly: a short summary, then one `review` " +
   "fenced block as the last thing in the message.";
+
+/** Scope the background reviewer to files the completed turn actually changed.
+ *  The fork already carries the parent conversation through that checkpoint;
+ *  explicit paths keep a later foreground turn from silently widening scope. */
+export function autoReviewPrompt(paths: string[]): string {
+  if (paths.length === 0) return AUTO_REVIEW_PROMPT;
+  return (
+    `${AUTO_REVIEW_PROMPT}\n\n` +
+    "Checkpoint files reported by the completed turn:\n" +
+    paths.map((path) => `- ${path}`).join("\n") +
+    "\nReview this checkpoint only. Do not treat an absent Git HEAD or baseline as a finding by itself."
+  );
+}
 
 /** Tools whose success means a workspace file changed. `bash` is deliberately
  *  absent: a command that happens to write a file is indistinguishable here from

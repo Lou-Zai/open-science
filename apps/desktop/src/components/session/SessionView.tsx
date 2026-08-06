@@ -114,6 +114,9 @@ export function SessionView({
   // Selecting the scalar lets Zustand's identity check bail out instead (#34).
   const sending = useRuntimeStore((s) => !!s.sendingSessions[key]);
   const running = useRuntimeStore((s) => !!(eid && s.runningSessions[eid]));
+  const backgroundReview = useRuntimeStore((s) =>
+    eid ? s.backgroundReviews[eid] : undefined,
+  );
   const step = useRuntimeStore((s) => (eid ? (s.stepCounts[eid] ?? 0) : 0));
   const retryNotice = useRuntimeStore((s) => (eid ? s.retryNotices[eid] : undefined));
   const serverUrl = useRuntimeStore((s) => s.serverUrl);
@@ -138,6 +141,7 @@ export function SessionView({
   const rejectQuestion = useRuntimeStore((s) => s.rejectQuestion);
   const replyPermission = useRuntimeStore((s) => s.replyPermission);
   const interrupt = useRuntimeStore((s) => s.interrupt);
+  const cancelAutoReview = useRuntimeStore((s) => s.cancelAutoReview);
   const editMessage = useRuntimeStore((s) => s.editMessage);
   const revertMessage = useRuntimeStore((s) => s.revertMessage);
   const setComposerDraft = useUiStore((s) => s.setComposerDraft);
@@ -654,6 +658,28 @@ export function SessionView({
                 liveReasoningIndex={liveReasoningIndex}
                 workspaceDirectory={sessionDir ?? undefined}
               />
+            )}
+            {backgroundReview && eid && (
+              <div
+                role="status"
+                className="flex w-fit max-w-full items-center gap-2 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-xs text-muted"
+              >
+                <Loader2 size={12} className="shrink-0 animate-spin text-accent" />
+                <span className="truncate">
+                  {backgroundReview === "queued"
+                    ? t("live.review.queued")
+                    : t("live.review.running")}
+                </span>
+                <button
+                  type="button"
+                  className="-mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full hover:bg-surface"
+                  aria-label={t("live.review.cancelAria")}
+                  title={t("live.review.cancelTitle")}
+                  onClick={() => cancelAutoReview(eid)}
+                >
+                  <X size={11} />
+                </button>
+              </div>
             )}
             {/* Acts on a text selection anywhere in this pane's answers. */}
             {!webReadOnly && <SelectionActions sessionId={eid} />}

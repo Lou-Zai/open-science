@@ -223,7 +223,7 @@
     "title": "Relecture",
     "hint": "Un agent relecteur en lecture seule qui audite le travail terminé : traçabilité, statistiques, unités et provenance.",
     "autoTitle": "Relire après chaque tour qui modifie des fichiers",
-    "autoHint": "Coûte un tour de modèle supplémentaire par modification. Les tours en lecture seule sont ignorés, et vous pouvez toujours demander une relecture avec /science-review."
+    "autoHint": "Exécute un tour de modèle supplémentaire en arrière-plan par modification. La conversation reste disponible ; les tours en lecture seule sont ignorés."
   },
   "python": {
     "title": "Noyau Python local",

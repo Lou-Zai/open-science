@@ -223,7 +223,7 @@
     "title": "Review",
     "hint": "A read-only reviewer agent that audits finished work for traceability, statistics, units and provenance.",
     "autoTitle": "Review after every turn that changes files",
-    "autoHint": "Costs one extra model turn per change. Read-only turns are skipped, and you can always ask for a review with /science-review."
+    "autoHint": "Runs one extra model turn in the background per change. The conversation stays usable; read-only turns are skipped."
   },
   "python": {
     "title": "Local Python kernel",

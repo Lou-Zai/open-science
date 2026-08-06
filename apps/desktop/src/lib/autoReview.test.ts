@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isMutatingTool, shouldAutoReview, type AutoReviewGate } from "./autoReview";
+import {
+  autoReviewPrompt,
+  isMutatingTool,
+  shouldAutoReview,
+  type AutoReviewGate,
+} from "./autoReview";
 
 const ON: AutoReviewGate = {
   enabled: true,
@@ -51,5 +56,14 @@ describe("shouldAutoReview", () => {
 
   it("does nothing when the runtime has no reviewer agent", () => {
     expect(shouldAutoReview({ ...ON, hasReviewer: false })).toBe(false);
+  });
+});
+
+describe("autoReviewPrompt", () => {
+  it("pins the reviewer to the completed turn's changed files", () => {
+    const prompt = autoReviewPrompt(["analysis.py", "report.md"]);
+    expect(prompt).toContain("- analysis.py\n- report.md");
+    expect(prompt).toContain("checkpoint only");
+    expect(prompt).toContain("absent Git HEAD");
   });
 });

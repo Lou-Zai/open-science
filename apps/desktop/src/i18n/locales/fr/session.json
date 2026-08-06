@@ -194,6 +194,12 @@
       "working": "En cours…",
       "step": "étape {{count}}"
     },
+    "review": {
+      "queued": "Révision en arrière-plan en attente…",
+      "running": "Révision de ce point de contrôle en arrière-plan…",
+      "cancelAria": "Arrêter la révision en arrière-plan",
+      "cancelTitle": "Arrêter cette révision"
+    },
     "placeholder": {
       "disconnected": "Connectez-vous pour discuter",
       "waiting": "En attente de la réponse…",

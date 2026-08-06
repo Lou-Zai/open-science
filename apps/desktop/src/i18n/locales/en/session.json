@@ -194,6 +194,12 @@
       "working": "Working…",
       "step": "step {{count}}"
     },
+    "review": {
+      "queued": "Background review queued…",
+      "running": "Reviewing this checkpoint in the background…",
+      "cancelAria": "Stop background review",
+      "cancelTitle": "Stop this review"
+    },
     "placeholder": {
       "disconnected": "Connect to chat",
       "waiting": "Waiting for the reply…",

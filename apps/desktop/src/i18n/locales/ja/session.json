@@ -194,6 +194,12 @@
       "working": "作業中…",
       "step": "ステップ {{count}}"
     },
+    "review": {
+      "queued": "バックグラウンドレビューを待機中…",
+      "running": "このチェックポイントをバックグラウンドでレビュー中…",
+      "cancelAria": "バックグラウンドレビューを停止",
+      "cancelTitle": "このレビューを停止"
+    },
     "placeholder": {
       "disconnected": "チャットするには接続してください",
       "waiting": "返信を待っています…",

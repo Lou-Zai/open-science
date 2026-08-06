@@ -194,6 +194,12 @@
       "working": "Arbeitet…",
       "step": "Schritt {{count}}"
     },
+    "review": {
+      "queued": "Hintergrundprüfung wartet…",
+      "running": "Dieser Prüfpunkt wird im Hintergrund geprüft…",
+      "cancelAria": "Hintergrundprüfung stoppen",
+      "cancelTitle": "Diese Prüfung stoppen"
+    },
     "placeholder": {
       "disconnected": "Zum Chatten verbinden",
       "waiting": "Warte auf die Antwort…",

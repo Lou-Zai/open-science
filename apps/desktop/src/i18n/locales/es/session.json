@@ -194,6 +194,12 @@
       "working": "Trabajando…",
       "step": "paso {{count}}"
     },
+    "review": {
+      "queued": "Revisión en segundo plano en cola…",
+      "running": "Revisando este punto de control en segundo plano…",
+      "cancelAria": "Detener revisión en segundo plano",
+      "cancelTitle": "Detener esta revisión"
+    },
     "placeholder": {
       "disconnected": "Conéctate para chatear",
       "waiting": "Esperando la respuesta…",

@@ -359,6 +359,23 @@ export class OpenCodeClient extends BaseAgentRuntime implements AgentRuntime {
     return json.id;
   }
 
+  /** Fork a completed checkpoint so a specialist can work with the parent's
+   *  context without occupying or writing into the foreground conversation. */
+  async forkSession(sessionId: string, beforeMessageId?: string): Promise<string> {
+    const res = await this.fetchWithTimeout(
+      `${this.baseUrl}/session/${encodeURIComponent(sessionId)}/fork${this.dirQuery()}`,
+      {
+        method: "POST",
+        headers: this.headers(true),
+        // OpenCode's boundary is exclusive: the named message is NOT copied.
+        body: JSON.stringify(beforeMessageId ? { messageID: beforeMessageId } : {}),
+      },
+    );
+    if (!res.ok) throw await this.apiError(res, "Failed to fork session");
+    const json = (await res.json()) as { id: string };
+    return json.id;
+  }
+
   /** The recent conversations the sidebar shows: newest first, across every
    *  workspace folder, archived ones excluded. Bounded by RECENT_WINDOW — the
    *  whole history is never held in memory (see the constant). */
@@ -480,6 +497,48 @@ export class OpenCodeClient extends BaseAgentRuntime implements AgentRuntime {
       { method: "PATCH", headers: this.headers(true), body: JSON.stringify({ metadata }) },
     );
     if (!patch.ok) throw await this.apiError(patch, "Failed to archive the session");
+  }
+
+  /** Add an app-produced text part to a completed assistant message. This is a
+   *  persistence operation only: unlike sendPrompt it starts no model turn. */
+  async appendTextPart(
+    sessionId: string,
+    messageId: string,
+    text: string,
+    partId = OpenCodeClient.partId(),
+  ): Promise<string> {
+    const res = await this.fetchWithTimeout(
+      `${this.baseUrl}/session/${encodeURIComponent(sessionId)}` +
+        `/message/${encodeURIComponent(messageId)}/part/${encodeURIComponent(partId)}` +
+        this.dirQuery(),
+      {
+        method: "PATCH",
+        headers: this.headers(true),
+        body: JSON.stringify({
+          id: partId,
+          sessionID: sessionId,
+          messageID: messageId,
+          type: "text",
+          text,
+          synthetic: true,
+          metadata: { source: "ai4s.background-review" },
+        }),
+      },
+    );
+    if (!res.ok) throw await this.apiError(res, "Failed to persist background result");
+    return partId;
+  }
+
+  /** OpenCode only requires the `prt` prefix, but matching its ascending ID
+   *  shape keeps a newly appended part ordered after the checkpoint's parts. */
+  private static partId(): string {
+    const stamp = (BigInt(Date.now()) * 0x1000n + 1n).toString(16).padStart(12, "0");
+    const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    const bytes = new Uint8Array(14);
+    globalThis.crypto.getRandomValues(bytes);
+    let random = "";
+    for (const byte of bytes) random += alphabet[byte % alphabet.length];
+    return `prt_${stamp}${random}`;
   }
 
   /** Rename a session (PATCH /session/:id). OpenCode titles a new session

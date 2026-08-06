@@ -343,6 +343,10 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
     return result.sessionId;
   }
 
+  async forkSession(_sessionId: string, _messageId?: string): Promise<string> {
+    throw new Error(`${this.displayName} does not support session forks`);
+  }
+
   /**
    * The agent's sessions, when it keeps any (`sessionCapabilities.list`), merged
    * with the ones created here.
@@ -570,6 +574,15 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
       promptRunning: false,
       turn: 0,
     };
+  }
+
+  async appendTextPart(
+    _sessionId: string,
+    _messageId: string,
+    _text: string,
+    _partId?: string,
+  ): Promise<string> {
+    throw new Error(`${this.displayName} does not support synthetic message parts`);
   }
 
   async sendPrompt(

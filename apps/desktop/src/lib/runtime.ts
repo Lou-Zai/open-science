@@ -16,7 +16,13 @@ import {
   type ToolCallStatus,
 } from "@ai4s/sdk";
 import { AcpRuntime, toAcpMcpServers, type AcpConfigOption } from "@ai4s/sdk/acp";
-import type { ArtifactBlock, RuntimeStatus, ThreadBlock, ToolVerb } from "@ai4s/shared";
+import type {
+  ArtifactBlock,
+  ReviewerBlock,
+  RuntimeStatus,
+  ThreadBlock,
+  ToolVerb,
+} from "@ai4s/shared";
 import {
   adoptWorkspaceSkills,
   detectTools as probeTools,
@@ -61,6 +67,7 @@ import {
   AUTO_REVIEW_KEY,
   AUTO_REVIEW_PROMPT,
   REVIEWER_AGENT,
+  autoReviewPrompt,
   isMutatingTool,
   shouldAutoReview,
 } from "./autoReview";
@@ -189,6 +196,9 @@ interface RuntimeState {
    *  which also makes it work in the gateway web client. */
   autoReview: boolean;
   setAutoReview: (enabled: boolean) => void;
+  /** Non-blocking reviewer activity keyed by the foreground parent session. */
+  backgroundReviews: Record<string, "queued" | "running">;
+  cancelAutoReview: (sessionId: string) => void;
   /** The last failed model switch's error, or null. While set, the Settings
    *  page keeps the model browser on screen (instead of the connect prompt)
    *  so the user can retry. Cleared by any successful reconnect, a successful
@@ -644,29 +654,64 @@ const relayedSignIns = new Set<string>();
 const interruptedSessions = new Set<string>();
 
 // ---- Auto-review (#72) ----
-// All four live outside the store on purpose: they change on tool events, and
-// store writes on streamed events repaint every subscriber (#50). Nothing here
-// is rendered — the review's own turn is what the user sees.
+// Per-token review state stays outside Zustand so a background reviewer never
+// repaints the foreground pane. The store only receives queued/running
+// transitions and the final structured result.
 /** Sessions whose CURRENT turn has written or edited a workspace file. */
 const dirtyTurns = new Set<string>();
-/** Sessions whose current turn IS the auto-review — its idle must not start
- *  another one, and its prompt is hidden from the thread. */
-const reviewTurns = new Set<string>();
+/** Exact paths observed on mutating tool events, scoped to the parent turn. */
+const dirtyTurnPaths = new Map<string, Set<string>>();
 /** Sessions waiting for the single review slot, oldest first. */
 const reviewQueue: string[] = [];
-/** The session being reviewed right now, or null. Exactly one review runs at a
- *  time: concurrent reviews across tiled panes are what starved the main thread
- *  in #50, and a review is never urgent. */
+/** Paths coalesced while a parent waits for the single review slot. */
+const queuedReviewPaths = new Map<string, Set<string>>();
+interface BackgroundReviewJob {
+  parentId: string;
+  checkpointMessageId: string;
+  checkpointUserMessageId?: string;
+  runtime: AgentRuntime;
+  paths: string[];
+}
+/** Hidden fork id → the foreground checkpoint it reviews. */
+const backgroundReviewJobs = new Map<string, BackgroundReviewJob>();
+/** Reviews explicitly stopped by the user produce no fallback finding. */
+const cancelledBackgroundReviews = new Set<string>();
+/** Ignore abort/error trailing events after a hidden review has been folded
+ *  back and removed; otherwise they recreate an unreachable child thread. */
+const retiredBackgroundReviews = new Set<string>();
+/** Synthetic result parts must not make a quiet parent look like it started a
+ *  new model turn when their SSE update arrives. */
+const backgroundReviewResultParts = new Set<string>();
+/** Parent session holding the one global review slot. */
 let reviewInFlight: string | null = null;
+
+function mergePaths(target: Map<string, Set<string>>, sid: string, paths: Iterable<string>): void {
+  const merged = target.get(sid) ?? new Set<string>();
+  for (const path of paths) if (path) merged.add(path);
+  if (merged.size > 0) target.set(sid, merged);
+}
+
+function takePaths(target: Map<string, Set<string>>, sid: string): string[] {
+  const paths = [...(target.get(sid) ?? [])];
+  target.delete(sid);
+  return paths;
+}
 
 /** Forget every trace of a session's review state (session deleted, runtime
  *  torn down) so a queued id can't resurrect a review for a gone session. */
 function forgetAutoReview(sid: string) {
   dirtyTurns.delete(sid);
-  reviewTurns.delete(sid);
+  dirtyTurnPaths.delete(sid);
+  queuedReviewPaths.delete(sid);
   const at = reviewQueue.indexOf(sid);
   if (at >= 0) reviewQueue.splice(at, 1);
   if (reviewInFlight === sid) reviewInFlight = null;
+  for (const [child, job] of backgroundReviewJobs) {
+    if (job.parentId !== sid && child !== sid) continue;
+    backgroundReviewJobs.delete(child);
+    remember(retiredBackgroundReviews, child);
+    void job.runtime.abortSession(child).catch(() => {});
+  }
 }
 
 /** Longest error text written to debug.log. The diagnostic value is in the first
@@ -1084,51 +1129,218 @@ async function performTurn(
   }
 }
 
-/** Take `sid` out of the review queue, reporting whether it was waiting there —
- *  i.e. whether a review is still owed for changes it made earlier. */
-function dequeueReview(sid: string): boolean {
+/** Take `sid` and its coalesced changed-file scope out of the review queue. */
+function dequeueReview(sid: string): string[] | null {
   const at = reviewQueue.indexOf(sid);
-  if (at < 0) return false;
+  if (at < 0) return null;
   reviewQueue.splice(at, 1);
+  return takePaths(queuedReviewPaths, sid);
+}
+
+function reviewFence(review: ReviewerBlock): string {
+  return `\`\`\`review\n${JSON.stringify({ findings: review.findings, note: review.note })}\n\`\`\``;
+}
+
+function backgroundReviewPartId(reviewSid: string): string {
+  const time = (BigInt(Date.now()) * 0x1000n).toString(16).padStart(12, "0").slice(-12);
+  const suffix = reviewSid.replace(/[^A-Za-z0-9]/g, "").slice(-14).padStart(14, "0");
+  return `prt_${time}${suffix}`;
+}
+
+/** Move one hidden review's structured result onto its parent checkpoint. The
+ *  synthetic part persists with the parent but starts no model turn, so it is
+ *  visible after reload and becomes context for the parent's next turn. */
+function finishAutoReview(
+  set: StoreSet,
+  get: StoreGet,
+  reviewSid: string,
+  completed: boolean,
+): boolean {
+  const job = backgroundReviewJobs.get(reviewSid);
+  if (!job) return false;
+  backgroundReviewJobs.delete(reviewSid);
+  remember(retiredBackgroundReviews, reviewSid);
+  if (reviewInFlight === job.parentId) reviewInFlight = null;
+
+  const cancelled = cancelledBackgroundReviews.delete(reviewSid);
+  const blocks = get().threads[reviewSid]?.blocks ?? [];
+  const emitted = [...blocks].reverse().find((block): block is ReviewerBlock => block.kind === "reviewer");
+  const result = cancelled
+    ? null
+    : emitted ?? {
+        kind: "reviewer" as const,
+        findings: [],
+        note: completed
+          ? "Background review finished without a structured result."
+          : "Background review could not complete; no findings were recorded.",
+      };
+  const partId = backgroundReviewPartId(reviewSid);
+  if (result) remember(backgroundReviewResultParts, `${job.parentId}:${partId}`);
+
+  set((s) => {
+    const backgroundReviews = { ...s.backgroundReviews };
+    delete backgroundReviews[job.parentId];
+    const sessionParents = { ...s.sessionParents };
+    delete sessionParents[reviewSid];
+    const threads = { ...s.threads };
+    delete threads[reviewSid];
+    const runningSessions = { ...s.runningSessions };
+    const stepCounts = { ...s.stepCounts };
+    const retryNotices = { ...s.retryNotices };
+    const shellTurns = { ...s.shellTurns };
+    delete runningSessions[reviewSid];
+    delete stepCounts[reviewSid];
+    delete retryNotices[reviewSid];
+    delete shellTurns[reviewSid];
+    if (result) {
+      const parent = threads[job.parentId] ?? emptyThread();
+      const blocks = [...parent.blocks];
+      let insertAt = blocks.length;
+      if (job.checkpointUserMessageId) {
+        const checkpointUserAt = blocks.findIndex(
+          (block) =>
+            block.kind === "user" && block.messageID === job.checkpointUserMessageId,
+        );
+        if (checkpointUserAt >= 0) {
+          const nextUserAt = blocks.findIndex(
+            (block, index) => index > checkpointUserAt && block.kind === "user",
+          );
+          if (nextUserAt >= 0) insertAt = nextUserAt;
+        }
+      }
+      blocks.splice(insertAt, 0, result);
+      const index = Object.fromEntries(
+        Object.entries(parent.index).map(([key, value]) => [
+          key,
+          value >= insertAt ? value + 1 : value,
+        ]),
+      );
+      index[`review:${partId}`] = insertAt;
+      threads[job.parentId] = {
+        ...parent,
+        blocks,
+        index,
+        loaded: true,
+      };
+    }
+    return {
+      backgroundReviews,
+      sessionParents,
+      threads,
+      runningSessions,
+      stepCounts,
+      retryNotices,
+      shellTurns,
+      questions: s.questions.filter((question) => question.sessionId !== reviewSid),
+      permissions: s.permissions.filter((permission) => permission.sessionId !== reviewSid),
+      sessions: s.sessions.filter((session) => session.id !== reviewSid),
+    };
+  });
+
+  if (result) {
+    void job.runtime
+      .appendTextPart(job.parentId, job.checkpointMessageId, reviewFence(result), partId)
+      .catch((err) =>
+        logDebug(
+          `auto-review result not persisted: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
+  }
+  drainReviewQueue(set, get);
   return true;
 }
 
-/**
- * Send the reviewer's one read-only turn (#72). Deliberately NOT performTurn:
- * this turn is the app's, not the user's, so it adds no user row to the thread —
- * what appears is the reviewer's answer and its findings card.
- */
-async function startAutoReview(set: StoreSet, get: StoreGet, sid: string): Promise<void> {
-  const s = get();
-  // The user started another turn in the meantime: review after THAT one, or the
-  // prompt would land on a busy session.
-  if (s.runningSessions[sid] || s.sendingSessions[sid]) {
-    if (!reviewQueue.includes(sid)) reviewQueue.push(sid);
+/** Run the reviewer in a hidden fork of the completed parent checkpoint. The
+ *  parent remains idle and usable while this independent session streams. */
+async function startAutoReview(
+  set: StoreSet,
+  get: StoreGet,
+  sid: string,
+  paths: string[],
+): Promise<void> {
+  const runtime = clientForSession(get, sid);
+  if (!runtime) {
+    drainReviewQueue(set, get);
     return;
   }
-  const runtime = clientForSession(get, sid);
-  if (!runtime) return;
   reviewInFlight = sid;
-  reviewTurns.add(sid);
-  // Same "Working…" state as any other turn — a review that runs invisibly
-  // would look like the app froze.
-  set((st) => ({ runningSessions: { ...st.runningSessions, [sid]: true } }));
+  set((s) => ({
+    backgroundReviews: { ...s.backgroundReviews, [sid]: "running" },
+  }));
+  let reviewSid: string | null = null;
   try {
+    const messages = await runtime.getMessages(sid);
+    let checkpointAt = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]?.role === "assistant" && messages[i]?.id) {
+        checkpointAt = i;
+        break;
+      }
+    }
+    const checkpoint = checkpointAt >= 0 ? messages[checkpointAt]?.id : undefined;
+    if (!checkpoint) throw new Error("The completed checkpoint has no assistant message id");
+    // Fork's boundary is exclusive. A newer user message may already exist if
+    // the foreground continued immediately; stop before it so the completed
+    // assistant checkpoint is included and the newer turn is not.
+    const boundary = messages.slice(checkpointAt + 1).find((message) => !!message.id)?.id;
+    let checkpointUserMessageId: string | undefined;
+    for (let i = checkpointAt - 1; i >= 0; i--) {
+      if (messages[i]?.role === "user" && messages[i]?.id) {
+        checkpointUserMessageId = messages[i]!.id;
+        break;
+      }
+    }
+
+    // Forking gives the reviewer the completed plan, prompts and response while
+    // keeping its reasoning/tools out of the foreground transcript.
+    reviewSid = await runtime.forkSession(sid, boundary);
+    if (reviewInFlight !== sid) {
+      void runtime.abortSession(reviewSid).catch(() => {});
+      return;
+    }
+    backgroundReviewJobs.set(reviewSid, {
+      parentId: sid,
+      checkpointMessageId: checkpoint,
+      checkpointUserMessageId,
+      runtime,
+      paths,
+    });
+    const parent = get().sessions.find((session) => session.id === sid);
+    set((s) => ({
+      sessionParents: { ...s.sessionParents, [reviewSid!]: sid },
+      sessions: s.sessions.some((session) => session.id === reviewSid)
+        ? s.sessions
+        : [
+            ...s.sessions,
+            {
+              id: reviewSid!,
+              title: "Background review",
+              parentId: sid,
+              directory: parent?.directory,
+              created: Date.now(),
+              updated: Date.now(),
+            },
+          ],
+    }));
+    void runtime.renameSession(reviewSid, "Background review").catch(() => {});
+    await runtime.setSessionArchived(reviewSid, true).catch((err) =>
+      logDebug(
+        `auto-review child not archived: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
     // No model or effort is passed on purpose: the reviewer's own model and
     // reasoning effort come from its per-agent config (#71), and an explicit
     // per-turn model would override exactly that setting.
-    await runtime.sendPrompt(sid, AUTO_REVIEW_PROMPT, REVIEWER_AGENT);
-    void logDebug(`auto-review → ${sid}`);
+    await runtime.sendPrompt(reviewSid, autoReviewPrompt(paths), REVIEWER_AGENT);
+    void logDebug(`auto-review ${reviewSid} → ${sid}`);
   } catch (err) {
-    // Best effort: a failed review must not break the session the user is in,
-    // and must not leave the slot or the "Working…" row stuck.
     void logDebug(`auto-review failed: ${err instanceof Error ? err.message : String(err)}`);
-    reviewTurns.delete(sid);
+    if (reviewSid && finishAutoReview(set, get, reviewSid, false)) return;
     if (reviewInFlight === sid) reviewInFlight = null;
-    set((st) => {
-      const runningSessions = { ...st.runningSessions };
-      delete runningSessions[sid];
-      return { runningSessions };
+    set((s) => {
+      const backgroundReviews = { ...s.backgroundReviews };
+      delete backgroundReviews[sid];
+      return { backgroundReviews };
     });
     drainReviewQueue(set, get);
   }
@@ -1138,7 +1350,7 @@ async function startAutoReview(set: StoreSet, get: StoreGet, sid: string): Promi
 function drainReviewQueue(set: StoreSet, get: StoreGet): void {
   if (reviewInFlight) return;
   const next = reviewQueue.shift();
-  if (next) void startAutoReview(set, get, next);
+  if (next) void startAutoReview(set, get, next, takePaths(queuedReviewPaths, next));
 }
 
 /**
@@ -1147,28 +1359,29 @@ function drainReviewQueue(set: StoreSet, get: StoreGet): void {
  * has to be released if the interrupted turn WAS the review.
  */
 function onTurnIdle(set: StoreSet, get: StoreGet, sid: string, reviewable: boolean): void {
-  const wasReview = reviewTurns.delete(sid);
-  if (wasReview && reviewInFlight === sid) reviewInFlight = null;
+  if (finishAutoReview(set, get, sid, reviewable)) return;
   // This turn's own changes are settled either way, so clear them. A review the
   // session was already OWED is different: the files that earned it are on disk
   // whether or not this turn touched anything, so its queue entry is consumed
   // only on an idle that can actually act on it — otherwise an interrupted or
   // errored turn silently cancels a review earned by an earlier one.
   const dirty = dirtyTurns.delete(sid);
+  const paths = takePaths(dirtyTurnPaths, sid);
   // Both are consumed, never one or the other: `dirty || dequeueReview(sid)`
   // short-circuits, so a session that was dirty AND already owed a review kept
   // its queue entry — and the moment that review ended early (interrupted, or
   // dead server-side) the drain turned the leftover into a second paid review of
   // the same state.
-  const owed = reviewable && dequeueReview(sid);
-  const changedFiles = reviewable && (dirty || owed);
+  const owed = reviewable ? dequeueReview(sid) : null;
+  const changedFiles = reviewable && (dirty || owed !== null);
+  const scope = [...new Set([...paths, ...(owed ?? [])])];
   const s = get();
   if (
     reviewable &&
     shouldAutoReview({
       enabled: s.autoReview,
       changedFiles,
-      wasReview,
+      wasReview: false,
       isSubagent: !!s.sessionParents[sid],
       hasReviewer: s.agents.some((a) => a.name === REVIEWER_AGENT),
     })
@@ -1178,10 +1391,15 @@ function onTurnIdle(set: StoreSet, get: StoreGet, sid: string, reviewable: boole
     // its review and becomes a second, redundant paid review of the same state.
     if (reviewInFlight) {
       if (!reviewQueue.includes(sid)) reviewQueue.push(sid);
-    } else void startAutoReview(set, get, sid);
+      mergePaths(queuedReviewPaths, sid, scope);
+      set((state) => ({
+        backgroundReviews: state.backgroundReviews[sid]
+          ? state.backgroundReviews
+          : { ...state.backgroundReviews, [sid]: "queued" },
+      }));
+    } else void startAutoReview(set, get, sid, scope);
     return;
   }
-  if (wasReview) drainReviewQueue(set, get);
 }
 
 /** Shared core of the two destructive "go back to a past message" actions
@@ -1299,6 +1517,33 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       else window.localStorage.removeItem(AUTO_REVIEW_KEY);
     }
     set({ autoReview: enabled });
+  },
+  backgroundReviews: {},
+  cancelAutoReview: (sessionId) => {
+    const queuedAt = reviewQueue.indexOf(sessionId);
+    if (queuedAt >= 0) reviewQueue.splice(queuedAt, 1);
+    queuedReviewPaths.delete(sessionId);
+    const active = [...backgroundReviewJobs.entries()].find(
+      ([, job]) => job.parentId === sessionId,
+    );
+    if (active) {
+      const [reviewSid, job] = active;
+      cancelledBackgroundReviews.add(reviewSid);
+      void job.runtime.abortSession(reviewSid).then(
+        () => finishAutoReview(set, get, reviewSid, false),
+        () => finishAutoReview(set, get, reviewSid, false),
+      );
+    } else if (reviewInFlight === sessionId) {
+      // The fork is still being created. Clearing the reservation makes
+      // startAutoReview abort it as soon as the id arrives.
+      reviewInFlight = null;
+      drainReviewQueue(set, get);
+    }
+    set((s) => {
+      const backgroundReviews = { ...s.backgroundReviews };
+      delete backgroundReviews[sessionId];
+      return { backgroundReviews };
+    });
   },
   modelSwitchError: null,
   approvalMode: "approve",
@@ -1711,6 +1956,19 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
             // capped: a provider echoing a credential back must not land on disk.
             (event.type === "error" ? `: ${redactForLog(event.message)}` : ""),
         );
+      if (
+        "sessionId" in event &&
+        event.sessionId &&
+        retiredBackgroundReviews.has(event.sessionId)
+      )
+        return;
+      const backgroundReviewParent =
+        "sessionId" in event && event.sessionId
+          ? backgroundReviewJobs.get(event.sessionId)?.parentId
+          : undefined;
+      const isBackgroundReviewResult =
+        event.type === "text.updated" &&
+        backgroundReviewResultParts.has(`${event.sessionId}:${event.partId}`);
       if ("sessionId" in event && event.sessionId) {
         sseLast.set(event.sessionId, ++sseSeq);
         while (sseLast.size > 500) {
@@ -1735,6 +1993,8 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         const active = event.sessionId;
         if (
           ACTIVITY_EVENTS.has(event.type) &&
+          !backgroundReviewParent &&
+          !isBackgroundReviewResult &&
           !interruptedSessions.has(active) &&
           !get().runningSessions[active]
         ) {
@@ -1749,6 +2009,17 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         // After a user interrupt the abort's own "aborted" error is expected —
         // the thread already says "Interrupted"; don't add a second red line.
         if (sid) clearLiveFolds(sid);
+        if (sid && backgroundReviewParent) {
+          finishAutoReview(set, get, sid, false);
+          set((s) => {
+            const runningSessions = { ...s.runningSessions };
+            const retryNotices = { ...s.retryNotices };
+            delete runningSessions[sid];
+            delete retryNotices[sid];
+            return { runningSessions, retryNotices };
+          });
+          return;
+        }
         if (sid && interruptedSessions.has(sid)) return;
         const message = explainRuntimeError(event.message);
         if (sid) {
@@ -1920,13 +2191,26 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       }
       // Only a file the agent actually wrote earns a review; a read-only turn
       // (questions, searches, plain analysis) has nothing to audit.
-      if (event.type === "tool.updated" && isMutatingTool(event.tool, event.status)) {
+      if (
+        event.type === "tool.updated" &&
+        !backgroundReviewParent &&
+        isMutatingTool(event.tool, event.status)
+      ) {
         // Credited to the session at the top of the subagent chain, not to the one
         // that ran the tool. A subagent's own session is never reviewed (see the
         // `isSubagent` gate) because its parent's turn is what gets reviewed — so
         // attributing the write to the child meant a turn that delegated ALL of
         // its file work was reviewed by nobody.
-        dirtyTurns.add(rootSessionOf(get().sessionParents, sid));
+        const root = rootSessionOf(get().sessionParents, sid);
+        dirtyTurns.add(root);
+        const directPath = str(event.input?.filePath) || str(event.input?.path);
+        mergePaths(
+          dirtyTurnPaths,
+          root,
+          directPath
+            ? [directPath, ...provenanceInputsFromEvent(event).map((input) => input.path)]
+            : provenanceInputsFromEvent(event).map((input) => input.path),
+        );
       }
       // The agent reached a compute host that authenticates interactively and
       // asked us to sign in (#73). The dialog opens here, in the conversation the
@@ -1987,7 +2271,7 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       // of events per second under a progress bar. Fold at most one partial
       // update per LIVE_FOLD_MS per call (latest wins); everything else
       // (status changes, completion) folds immediately and supersedes.
-      if (event.type === "tool.updated") {
+      if (event.type === "tool.updated" && !backgroundReviewParent) {
         if (event.status === "running" && event.partialOutput !== undefined) {
           const now = Date.now();
           const last = liveFoldLast.get(event.callId) ?? 0;
@@ -2114,14 +2398,18 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       }
       // A completed experiment execution (bash running code) becomes a run —
       // its reproducibility recipe (once per call).
-      if (event.type === "tool.updated" && !recordedRuns.has(event.callId)) {
+      if (
+        event.type === "tool.updated" &&
+        !backgroundReviewParent &&
+        !recordedRuns.has(event.callId)
+      ) {
         const run = runInputFromEvent(event);
         if (run) {
           remember(recordedRuns, event.callId);
           void recordRun(run, sid, get().defaultModel);
         }
       }
-      if (event.type === "session.idle") {
+      if (event.type === "session.idle" && !backgroundReviewParent) {
         syncAcpConfig(set, sid);
         void get().refreshSessions();
         // Name the session in the snapshot: a project folder is shared by many
@@ -2280,15 +2568,27 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
   },
 
   disconnect: () => {
+    // Closing the event stream does not stop server-side turns. Explicitly
+    // abort hidden reviewers first so reconnecting cannot leave paid work
+    // running with no UI or completion handler attached.
+    for (const [reviewSid, job] of backgroundReviewJobs) {
+      remember(retiredBackgroundReviews, reviewSid);
+      void job.runtime.abortSession(reviewSid).catch(() => {});
+    }
     teardownClient();
     teardownStreamClients();
     // Nothing can be reviewed without a runtime; a stale queue would fire into
     // the next connection.
     dirtyTurns.clear();
-    reviewTurns.clear();
+    dirtyTurnPaths.clear();
     reviewQueue.length = 0;
+    queuedReviewPaths.clear();
+    backgroundReviewJobs.clear();
+    cancelledBackgroundReviews.clear();
+    retiredBackgroundReviews.clear();
+    backgroundReviewResultParts.clear();
     reviewInFlight = null;
-    set({ status: "offline", modelSwitchError: null });
+    set({ status: "offline", modelSwitchError: null, backgroundReviews: {} });
   },
 
   refreshSessions: async () => {
@@ -2774,12 +3074,15 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       delete panes[id];
       const sessionAgents = { ...s.sessionAgents };
       delete sessionAgents[id];
+      const backgroundReviews = { ...s.backgroundReviews };
+      delete backgroundReviews[id];
       return {
         sessions: s.sessions.filter((x) => x.id !== id),
         threads,
         runningSessions,
         panes,
         sessionAgents,
+        backgroundReviews,
         currentId: s.currentId === id ? null : s.currentId,
       };
     });
@@ -3064,7 +3367,7 @@ export function foldEvent(
       const { clean, review } = splitReview(event.text);
       const key = `text:${event.partId}`;
       if (key in index) blocks[index[key]] = { kind: "agent", markdown: clean };
-      else {
+      else if (clean) {
         blocks.push({ kind: "agent", markdown: clean });
         index[key] = blocks.length - 1;
       }

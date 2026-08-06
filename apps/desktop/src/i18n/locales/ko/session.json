@@ -194,6 +194,12 @@
       "working": "작업 중…",
       "step": "{{count}}단계"
     },
+    "review": {
+      "queued": "백그라운드 검토 대기 중…",
+      "running": "이 체크포인트를 백그라운드에서 검토 중…",
+      "cancelAria": "백그라운드 검토 중지",
+      "cancelTitle": "이 검토 중지"
+    },
     "placeholder": {
       "disconnected": "채팅하려면 연결하세요",
       "waiting": "응답을 기다리는 중…",

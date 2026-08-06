@@ -223,7 +223,7 @@
     "title": "Prüfung",
     "hint": "Ein rein lesender Prüfagent, der fertige Arbeit auf Nachvollziehbarkeit, Statistik, Einheiten und Herkunft prüft.",
     "autoTitle": "Nach jedem Zug prüfen, der Dateien ändert",
-    "autoHint": "Kostet pro Änderung einen zusätzlichen Modellzug. Rein lesende Züge werden übersprungen, und Sie können jederzeit mit /science-review prüfen lassen."
+    "autoHint": "Führt pro Änderung einen zusätzlichen Modellzug im Hintergrund aus. Die Unterhaltung bleibt nutzbar; rein lesende Züge werden übersprungen."
   },
   "python": {
     "title": "Lokaler Python-Kernel",

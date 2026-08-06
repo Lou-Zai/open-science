@@ -194,6 +194,12 @@
       "working": "正在处理…",
       "step": "第 {{count}} 步"
     },
+    "review": {
+      "queued": "后台审阅已排队…",
+      "running": "正在后台审阅此检查点…",
+      "cancelAria": "停止后台审阅",
+      "cancelTitle": "停止此次审阅"
+    },
     "placeholder": {
       "disconnected": "连接以开始聊天",
       "waiting": "等待回复…",
