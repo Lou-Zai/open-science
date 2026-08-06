@@ -57,6 +57,24 @@
     "mirrorPythonPlaceholder": "https://mirror.example.com/python-build-standalone",
     "mirrorHint": "可选镜像,仅在设置 Python 工具(Jupyter、科学数据库)下载时使用,适合 pypi.org / github.com 访问缓慢的网络。留空则使用默认源。"
   },
+  "acp": {
+    "title": "智能体",
+    "hint": "本应用驱动哪个智能体：内置的 OpenCode 运行时，或任何通过 stdio 使用 Agent Client Protocol（ACP）的智能体。",
+    "bundled": "OpenCode（内置）",
+    "bundledHint": "默认运行时——模型供应商、技能、计划模式与已保存的会话。",
+    "add": "添加智能体",
+    "edit": "编辑",
+    "remove": "删除",
+    "nameLabel": "名称",
+    "namePlaceholder": "名称（Codex、Gemini CLI…）",
+    "commandLabel": "命令",
+    "commandPlaceholder": "命令（npx、gemini…）",
+    "argsLabel": "参数",
+    "argsPlaceholder": "参数（-y @agentclientprotocol/codex-acp）",
+    "limits": "ACP 智能体以命令形式运行在本机的当前工作区文件夹中。它自行管理模型、技能与历史记录，因此模型选择器、计划模式和已保存的会话仍属于 OpenCode——在 ACP 智能体上创建的会话仅在应用运行期间列出。",
+    "running": "已连接到 ACP 智能体。",
+    "starting": "正在启动 ACP 智能体…"
+  },
   "updates": {
     "title": "应用更新",
     "hint": "通过 GitHub Releases 检查更新，24 小时内最多自动检查一次",

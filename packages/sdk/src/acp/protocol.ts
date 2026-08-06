@@ -217,10 +217,21 @@ export interface AcpAuthMethod {
   description?: string;
 }
 
+/** Capability-gated session methods. Presence of the KEY is the signal — the
+ *  spec uses an empty object (`"list": {}`) as "supported", so a truthiness test
+ *  on the value would read `{}` correctly but must never require a `true`. */
+export interface AcpSessionCapabilities {
+  list?: unknown;
+  resume?: unknown;
+  close?: unknown;
+  delete?: unknown;
+  additionalDirectories?: unknown;
+}
+
 export interface AcpAgentCapabilities {
   loadSession?: boolean;
   promptCapabilities?: { image?: boolean; audio?: boolean; embeddedContext?: boolean };
-  sessionCapabilities?: Record<string, unknown>;
+  sessionCapabilities?: AcpSessionCapabilities;
   mcpCapabilities?: Record<string, unknown>;
 }
 
@@ -239,12 +250,54 @@ export interface AcpModelInfo {
   description?: string;
 }
 
+/** One of the agent's own session selectors (model, reasoning level, permission
+ *  mode, …). `session/set_config_option` is v1's stable way to change any of
+ *  them, and the agent decides which exist — which is why nothing here is
+ *  hard-coded to "model". */
+export interface AcpConfigOptionValue {
+  value: string;
+  name?: string;
+  description?: string;
+}
+export interface AcpConfigOption {
+  id: string;
+  name?: string;
+  description?: string;
+  /** "mode" | "model" | "model_config" | "thought_level" | `_custom`, or absent.
+   *  UX metadata only: the spec forbids depending on it for correctness. */
+  category?: string;
+  /** "select" (default) or "boolean" — the latter only if the CLIENT advertised
+   *  `session.configOptions.boolean`, which we do not. */
+  type?: string;
+  currentValue?: string | boolean;
+  options?: AcpConfigOptionValue[];
+}
+export interface AcpConfigOptionsResult {
+  configOptions?: AcpConfigOption[];
+}
+
 export interface AcpNewSessionResult {
   sessionId: string;
-  /** The agent's OWN model list. ACP v1 has no `session/set_model`, so which
-   *  models exist — and, for codex-acp, which reasoning efforts, encoded in the
-   *  id as `gpt-5.6-sol[high]` — is the agent's call, not ours. */
+  /** The agent's OWN model list, as older agents report it beside the session.
+   *  `configOptions` is the stable v1 way to expose (and change) a model; this
+   *  is kept because agents in the wild still answer with it. */
   models?: { availableModels?: AcpModelInfo[]; currentModelId?: string };
+  /** The agent's session selectors — model, reasoning level, permission mode. */
+  configOptions?: AcpConfigOption[];
+}
+
+/** `session/list` — one page of the agent's OWN session history. */
+export interface AcpSessionInfo {
+  sessionId: string;
+  /** Absolute workspace folder the session belongs to. */
+  cwd: string;
+  title?: string;
+  /** RFC 3339 timestamp. */
+  updatedAt?: string;
+}
+export interface AcpSessionListResult {
+  sessions?: AcpSessionInfo[];
+  nextCursor?: string | null;
 }
 
 export interface AcpPromptResult {

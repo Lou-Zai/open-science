@@ -268,6 +268,10 @@ export function SessionView({
   }, [thread?.blocks]);
 
   const pane = panes[key];
+  // An ACP agent is driving instead of the bundled OpenCode runtime (#14).
+  const acp = useRuntimeStore((s) => s.runtimeKind) === "acp";
+  const acpConfigOptions = useRuntimeStore((s) => s.acpConfigOptions);
+  const setAcpConfigOption = useRuntimeStore((s) => s.setAcpConfigOption);
   const planAvailable = agents.some((a) => a.name === "plan");
   const agentMode = sessionAgents[key] ?? "build";
   const activeArtifact = pane?.artifact ?? null;
@@ -777,11 +781,25 @@ export function SessionView({
                         ? t("composer.placeholder.plan")
                         : t("composer.placeholder.default")
               }
-              approvalMode={approvalMode}
-              onApprovalModeChange={(mode) => void setApprovalMode(mode)}
+              // Both switches belong to the OpenCode runtime: the approval mode is
+              // its config (an ACP agent asks for permission on its own terms),
+              // and the model picker sends a per-turn model ACP v1 has no way to
+              // honour — the agent owns its model. Withheld rather than shown
+              // doing nothing (#14).
+              approvalMode={acp ? undefined : approvalMode}
+              onApprovalModeChange={acp ? undefined : (mode) => void setApprovalMode(mode)}
               agentMode={planAvailable ? agentMode : undefined}
               onAgentModeChange={planAvailable ? (mode) => setAgentMode(mode, key) : undefined}
-              showModelPicker={connected && !webReadOnly}
+              showModelPicker={connected && !webReadOnly && !acp}
+              // The ACP agent's own selectors stand in for the model picker: the
+              // agent owns its model list, and `session/set_config_option` is how
+              // v1 changes it.
+              configOptions={acp && !webReadOnly ? (acpConfigOptions[key] ?? []) : undefined}
+              onConfigOption={
+                acp && sid
+                  ? (configId, value) => void setAcpConfigOption(sid, configId, value)
+                  : undefined
+              }
               modelSessionId={key}
               draftKey={draftKey}
               showWorkspaceChip={eid === null}

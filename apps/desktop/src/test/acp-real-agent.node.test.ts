@@ -26,6 +26,9 @@ function last<T>(items: T[]): T | undefined {
 }
 
 const COMMAND = process.env.ACP_TEST_COMMAND;
+/** Arguments for it, space-separated — `npx -y @agentclientprotocol/codex-acp`
+ *  is how the agent most people have is actually launched. */
+const ARGS = (process.env.ACP_TEST_ARGS ?? "").split(" ").filter(Boolean);
 
 describe.skipIf(!COMMAND)("AcpRuntime against a real ACP agent", () => {
   it(
@@ -33,7 +36,7 @@ describe.skipIf(!COMMAND)("AcpRuntime against a real ACP agent", () => {
     async () => {
       const events: OpenCodeEvent[] = [];
       const runtime = new AcpRuntime({
-        transport: stdioTransport({ command: COMMAND!, cwd: process.cwd() }),
+        transport: stdioTransport({ command: COMMAND!, args: ARGS, cwd: process.cwd() }),
         cwd: process.cwd(),
       });
       runtime.onEvent((e) => events.push(e));
@@ -75,5 +78,73 @@ describe.skipIf(!COMMAND)("AcpRuntime against a real ACP agent", () => {
       expect(runtime.getStatus()).toBe("offline");
     },
     180_000,
+  );
+
+  it(
+    "lists and replays its own history, and exposes its own selectors",
+    async () => {
+      // Everything here is capability-gated, so the test asserts the CONTRACT
+      // ("if it says it can list, listing works and finds this session"), not
+      // that some particular agent supports it. A real agent is the only way to
+      // find out that the shapes we read off the spec survive contact.
+      const runtime = new AcpRuntime({
+        transport: stdioTransport({ command: COMMAND!, args: ARGS, cwd: process.cwd() }),
+        cwd: process.cwd(),
+      });
+      const events: OpenCodeEvent[] = [];
+      runtime.onEvent((e) => events.push(e));
+      await runtime.connect();
+
+      const sessionId = await runtime.createSession("real-agent history check");
+      await runtime.sendPrompt(sessionId, "Reply with exactly: hello");
+      if (process.env.ACP_TEST_DEBUG)
+        console.log({
+          list: runtime.supportsSessionList,
+          replay: runtime.supportsSessionReplay,
+          delete: runtime.supportsSessionDelete,
+          configOptions: runtime.configOptionsFor(sessionId).map((o) => `${o.id}=${String(o.currentValue)}`),
+        });
+
+      if (runtime.supportsSessionList) {
+        const sessions = await runtime.listSessions();
+        const mine = sessions.find((s) => s.id === sessionId);
+        expect(mine, "the session just created is missing from session/list").toBeTruthy();
+        // Every listed session carries the folder it belongs to — the sidebar
+        // groups by it.
+        expect(sessions.every((s) => !!s.directory)).toBe(true);
+      }
+
+      if (runtime.supportsSessionReplay) {
+        const before = events.length;
+        const history = await runtime.getMessages(sessionId);
+        // The replay is history, not live activity.
+        expect(events.length).toBe(before);
+        expect(history.length).toBeGreaterThan(0);
+        expect(history[0].role).toBe("user");
+        expect(JSON.stringify(history).toLowerCase()).toContain("hello");
+        // Nothing replayed may look like a turn still in flight.
+        expect(history.every((m) => typeof m.completed === "number")).toBe(true);
+      }
+
+      // Whatever selectors it exposes must be settable through the spec method:
+      // set the current value back to itself, which changes nothing and proves
+      // the round-trip.
+      const selectable = runtime
+        .configOptionsFor(sessionId)
+        .filter((o) => o.type !== "boolean" && (o.options?.length ?? 0) > 0);
+      if (selectable.length > 0) {
+        const option = selectable[0]!;
+        const next = await runtime.setConfigOption(sessionId, option.id, String(option.currentValue));
+        expect(next.some((o) => o.id === option.id)).toBe(true);
+      }
+
+      if (runtime.supportsSessionDelete) {
+        await runtime.deleteSession(sessionId);
+        expect((await runtime.listSessions()).some((s) => s.id === sessionId)).toBe(false);
+      }
+
+      runtime.close();
+    },
+    240_000,
   );
 });

@@ -102,12 +102,22 @@ vi.mock("./systemNotification", () => ({
 vi.mock("@ai4s/sdk", () => {
   class OpenCodeClient {
     private statusCb: (s: string) => void = () => {};
+    /** The real client keeps its status (BaseAgentRuntime); the store reads it
+     *  after connecting rather than waiting for a transition. */
+    private status = "offline";
     constructor(opts: Record<string, unknown>) {
       mocks.clientOpts.push(opts);
     }
+    getStatus() {
+      return this.status;
+    }
     onStatus(cb: (s: string) => void) {
-      this.statusCb = cb;
-      mocks.fireStatus = cb;
+      const wrapped = (s: string) => {
+        this.status = s;
+        cb(s);
+      };
+      this.statusCb = wrapped;
+      mocks.fireStatus = wrapped;
       return () => {
         this.statusCb = () => {};
       };

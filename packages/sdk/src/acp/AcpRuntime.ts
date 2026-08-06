@@ -11,17 +11,27 @@
 // Rust side, and relayed here. Node tests inject a stdio transport that really
 // does spawn one (`./stdio`), which is how this is verified against real agents.
 //
-// What ACP v1 does NOT give us, and is therefore honest about below rather than
-// faked: conversation history on reopen (`session/load` replays notifications,
-// it does not answer with a transcript), model SELECTION (no `session/set_model`
-// — the agent owns its model list; codex-acp even encodes reasoning effort in
-// the model id, `gpt-5.6-sol[high]`), revert/unrevert, skills, and archiving.
+// Everything optional in ACP is CAPABILITY-GATED, never assumed: the spec says
+// a Client MUST check `initialize`'s capabilities before calling `session/list`,
+// `session/load` or `session/delete`, and agents differ widely. So each of those
+// has one code path when the agent advertises it and an honest fallback when it
+// does not — see `supportsSessionList` / `supportsSessionReplay` below. (An
+// earlier draft of this file hard-coded "v1 cannot list or replay"; that was
+// read off one agent build, and both are stable v1 methods — codex-acp
+// advertises `loadSession`, `sessionCapabilities.{list,delete,resume,close}`.)
+//
+// What ACP genuinely has no equivalent for, and is therefore honest about rather
+// than faked: revert/unrevert, skills, archiving, and running a shell command
+// outside a turn. Model selection is NOT in that list: `session/set_config_option`
+// is v1's stable way to change a model, reasoning level or permission mode, and
+// the options come from the agent (`configOptions`), never from our own catalog.
 import { BaseAgentRuntime } from "../base-runtime";
 import type { AgentRuntime } from "../runtime";
 import type {
   AgentInfo,
   CommandInfo,
   HistoryMessage,
+  HistoryPart,
   PermissionAskedEvent,
   PermissionReply,
   QuestionAskedEvent,
@@ -37,11 +47,14 @@ import {
   type AcpAgentCapabilities,
   type AcpAgentInfo,
   type AcpCommand,
+  type AcpConfigOption,
+  type AcpConfigOptionsResult,
   type AcpInitializeResult,
   type AcpModelInfo,
   type AcpNewSessionResult,
   type AcpPermissionRequest,
   type AcpPromptResult,
+  type AcpSessionListResult,
   type AcpSessionNotification,
   type AcpSessionUpdate,
   type AcpToolCallUpdate,
@@ -53,16 +66,30 @@ const NO_TIMEOUT = 0;
 
 export interface AcpRuntimeOptions {
   transport: JsonRpcTransport;
-  /** Workspace folder every session is created in — ACP takes it per session
-   *  (`session/new`'s `cwd`), which is exactly our per-session workspace. */
+  /** Workspace folder NEW sessions are created in — ACP takes it per session
+   *  (`session/new`'s `cwd`), which is exactly our per-session workspace. It is
+   *  a default, not a binding: the spec requires the session's `cwd` to be used
+   *  "regardless of where the Agent subprocess was spawned", so one agent
+   *  process serves sessions in many folders and `setCwd` just moves the target
+   *  for the next one. */
   cwd: string;
   /** Optional label for errors and Settings ("Codex", "Gemini CLI"). Falls back
    *  to whatever the agent calls itself in `initialize`. */
   name?: string;
 }
 
+/** Pages of `session/list` to walk. A bound, not a policy: an agent with a
+ *  runaway cursor must not spin here, and 20 pages is far past any sidebar. */
+const MAX_SESSION_PAGES = 20;
+
 interface SessionState {
   title: string;
+  /** The folder THIS session was created in (`session/new`'s cwd). Per session,
+   *  not per process — sessions in different projects share one agent child. */
+  cwd: string;
+  /** The agent's own selectors for this session (model, reasoning level, mode),
+   *  as last reported by `session/new`, `config_option_update`, or a set. */
+  configOptions: AcpConfigOption[];
   /** Accumulated text per `messageId`. ACP streams agent_message_chunk as
    *  DELTAS (verified against codex-acp 1.1.9), while our `text.updated` carries
    *  the full current value and the app upserts by `partId` — so the runtime
@@ -83,8 +110,15 @@ interface SessionState {
 export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
   private readonly peer: JsonRpcPeer;
   private readonly sessions = new Map<string, SessionState>();
-  private readonly cwd: string;
+  /** Folder the NEXT `session/new` uses. Mutable (`setCwd`): the workspace moves
+   *  while the agent process stays. */
+  private cwd: string;
   private readonly label?: string;
+  /** Sessions being replayed by `session/load` right now. While a session has a
+   *  collector, its `session/update` notifications are HISTORY, not live events,
+   *  and must be collected instead of emitted — emitting them would append the
+   *  whole past conversation to a thread that is already showing it. */
+  private readonly replays = new Map<string, ReplayCollector>();
   private agentInfo?: AcpAgentInfo;
   private agentCapabilities?: AcpAgentCapabilities;
   private commands: CommandInfo[] = [];
@@ -124,21 +158,77 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
   }
 
   /** Whether the agent can replay a past conversation (`initialize`'s
-   *  `loadSession`). Recorded now because it decides whether reopening an ACP
-   *  session can ever show its history — see `getMessages`. */
+   *  `loadSession`) — what decides whether reopening a session shows its
+   *  history at all. See `getMessages`. */
   get supportsSessionReplay(): boolean {
     return this.agentCapabilities?.loadSession === true;
   }
 
-  /** Models the agent reported for the session it created, if any. ACP has no
-   *  model-setting method, so this is display/diagnostic only. */
+  /** Whether the agent keeps its own session history and will list it
+   *  (`sessionCapabilities.list`). The spec signals support by the key being
+   *  PRESENT (its value is an empty object), so this tests presence. */
+  get supportsSessionList(): boolean {
+    return this.agentCapabilities?.sessionCapabilities?.list !== undefined;
+  }
+
+  /** Whether `session/delete` may be called (`sessionCapabilities.delete`).
+   *  Without it, "delete" can only forget the session locally. */
+  get supportsSessionDelete(): boolean {
+    return this.agentCapabilities?.sessionCapabilities?.delete !== undefined;
+  }
+
+  /** Point new sessions at another workspace folder. Existing sessions keep
+   *  their own `cwd` — the agent binds it per session, so nothing is restarted
+   *  and no live conversation moves. */
+  setCwd(cwd: string): void {
+    this.cwd = cwd;
+  }
+
+  /** Models the agent reported beside the session, if any. Display only: a model
+   *  is CHANGED through `configOptions` (`setConfigOption`), which is where a
+   *  modern agent exposes it. */
   modelsFor(sessionId: string): AcpModelInfo[] {
     return this.sessions.get(sessionId)?.models ?? [];
+  }
+
+  /** The agent's own selectors for a session — model, reasoning level,
+   *  permission mode, whatever it chose to expose. Empty when it exposes none. */
+  configOptionsFor(sessionId: string): AcpConfigOption[] {
+    return this.sessions.get(sessionId)?.configOptions ?? [];
+  }
+
+  /**
+   * Change one of the agent's session selectors (`session/set_config_option`).
+   *
+   * The agent answers with the COMPLETE option list, which replaces ours —
+   * options can depend on each other (picking a model can change which
+   * reasoning levels exist), so merging our stale copy would show levels the
+   * agent no longer offers. Returns the new list.
+   */
+  async setConfigOption(
+    sessionId: string,
+    configId: string,
+    value: string | boolean,
+  ): Promise<AcpConfigOption[]> {
+    const state = this.sessions.get(sessionId);
+    if (!state) throw new Error(`unknown session ${sessionId}`);
+    const result = await this.peer.request<AcpConfigOptionsResult>("session/set_config_option", {
+      sessionId,
+      configId,
+      value,
+    });
+    state.configOptions = result?.configOptions ?? state.configOptions;
+    return state.configOptions;
   }
 
   // ---- lifecycle ----
 
   async connect(): Promise<void> {
+    // Idempotent: the app reconnects whenever the workspace moves, and this
+    // runtime now OUTLIVES those moves (one agent process, cwd per session). A
+    // second `initialize` on a live peer is at best wasted and at worst an
+    // error the agent is entitled to return.
+    if (this.getStatus() === "ready") return;
     this.setStatus("connecting");
     try {
       const result = await this.peer.request<AcpInitializeResult>("initialize", {
@@ -176,14 +266,17 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
   // ---- sessions ----
 
   async createSession(title?: string): Promise<string> {
+    const cwd = this.cwd;
     const result = await this.peer.request<AcpNewSessionResult>("session/new", {
-      cwd: this.cwd,
+      cwd,
       mcpServers: [],
     });
     this.sessions.set(result.sessionId, {
-      // ACP has no session title, so the app's own is kept here — it is what the
-      // sidebar shows, and the agent never needs to know it.
+      // ACP's own title (when the agent has one) arrives via `session/list`; the
+      // app's is kept here so a brand-new session has a name before then.
       title: title ?? "New session",
+      cwd,
+      configOptions: result.configOptions ?? [],
       text: new Map(),
       reasoning: new Map(),
       models: result.models?.availableModels ?? [],
@@ -194,15 +287,50 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
     return result.sessionId;
   }
 
+  /**
+   * The agent's sessions, when it keeps any (`sessionCapabilities.list`), merged
+   * with the ones created here.
+   *
+   * Deliberately UNFILTERED by cwd, though `session/list` accepts that filter:
+   * the sidebar groups sessions by folder itself, and filtering would hide every
+   * conversation belonging to a project the user is not currently standing in.
+   * A listing failure falls back to the local sessions rather than emptying the
+   * sidebar — a transient RPC error must not read as "your history is gone".
+   */
   async listSessions(): Promise<SessionMeta[]> {
-    // Only the sessions this client created. ACP v1 standardizes no listing (the
-    // `session/list` some agents advertise is an extension), and inventing one
-    // would make the sidebar claim a history we cannot actually load.
-    return [...this.sessions.entries()].map(([id, s]) => ({
-      id,
-      title: s.title,
-      directory: this.cwd,
-    }));
+    const local = (): SessionMeta[] =>
+      [...this.sessions.entries()].map(([id, s]) => ({ id, title: s.title, directory: s.cwd }));
+    if (!this.supportsSessionList) return local();
+    try {
+      const listed = new Map<string, SessionMeta>();
+      let cursor: string | undefined;
+      for (let page = 0; page < MAX_SESSION_PAGES; page++) {
+        const result = await this.peer.request<AcpSessionListResult>(
+          "session/list",
+          cursor ? { cursor } : {},
+        );
+        for (const info of result?.sessions ?? []) {
+          if (!info?.sessionId) continue;
+          const known = this.sessions.get(info.sessionId);
+          const updated = info.updatedAt ? Date.parse(info.updatedAt) : NaN;
+          listed.set(info.sessionId, {
+            id: info.sessionId,
+            title: info.title || known?.title || "Session",
+            directory: info.cwd,
+            ...(Number.isFinite(updated) ? { updated } : {}),
+          });
+        }
+        cursor = result?.nextCursor ?? undefined;
+        if (!cursor) break;
+      }
+      // A session created seconds ago may not be listed yet (agents write their
+      // history when a turn produces something); keep ours so the conversation
+      // the user is in cannot vanish from the sidebar mid-turn.
+      for (const meta of local()) if (!listed.has(meta.id)) listed.set(meta.id, meta);
+      return [...listed.values()];
+    } catch {
+      return local();
+    }
   }
 
   async querySessions(_query?: SessionQuery): Promise<SessionPage> {
@@ -214,7 +342,19 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
   }
 
   async deleteSession(sessionId: string): Promise<void> {
+    // Forget it locally either way: an agent that cannot delete must still not
+    // keep showing a conversation the user deleted in this app.
+    const known = this.sessions.get(sessionId);
     this.sessions.delete(sessionId);
+    if (!this.supportsSessionDelete) return;
+    try {
+      await this.peer.request("session/delete", { sessionId });
+    } catch (err) {
+      // Put it back: the agent still has it, so hiding it here would make the
+      // sidebar disagree with the next `session/list`.
+      if (known) this.sessions.set(sessionId, known);
+      throw err;
+    }
   }
 
   async renameSession(sessionId: string, title: string): Promise<void> {
@@ -222,12 +362,63 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
     if (s) s.title = title;
   }
 
-  async getMessages(_sessionId: string): Promise<HistoryMessage[]> {
-    // ACP's `session/load` REPLAYS `session/update` notifications rather than
-    // answering with a transcript, so there is nothing to return synchronously.
-    // The thread is built from live events; reopening an ACP session shows it
-    // empty until replay is wired (the next slice).
-    return [];
+  /**
+   * A past conversation, from `session/load` when the agent advertises
+   * `loadSession`.
+   *
+   * ACP replays history as `session/update` NOTIFICATIONS — the same shape a
+   * live turn streams — and only then answers the request. So the notifications
+   * for this session are diverted into a collector for the duration (emitting
+   * them would append the whole conversation to the thread that is displaying
+   * it), and the collected turns are returned as history instead.
+   *
+   * Every replayed message is marked completed: an assistant message with no
+   * completion time is how this app recognises a turn still in flight, and a
+   * reopened session would otherwise show "Working…" with a Stop button for a
+   * turn that ended days ago.
+   */
+  async getMessages(sessionId: string): Promise<HistoryMessage[]> {
+    if (!this.supportsSessionReplay) return [];
+    const state = this.sessions.get(sessionId);
+    // Never replay a session that is mid-turn. A replay diverts this session's
+    // notifications into the collector, so loading a running turn would swallow
+    // the tokens it is streaming — and the caller (a reconnect reconciling
+    // "is this turn over") reads an empty history as "still running", which is
+    // exactly right here.
+    if (state?.promptRunning) return [];
+    // Register the session BEFORE loading: the replay carries its selectors and
+    // title, which have nowhere to land otherwise — this session exists on the
+    // agent (it came from `session/list`), this client just never made it.
+    if (!state) {
+      this.sessions.set(sessionId, {
+        title: "Session",
+        cwd: this.cwd,
+        configOptions: [],
+        text: new Map(),
+        reasoning: new Map(),
+        models: [],
+        promptRunning: false,
+        turn: 0,
+      });
+    }
+    const collector = new ReplayCollector();
+    this.replays.set(sessionId, collector);
+    try {
+      await this.peer.request("session/load", {
+        sessionId,
+        cwd: state?.cwd ?? this.cwd,
+        mcpServers: [],
+      });
+    } catch {
+      // A refused or timed-out load leaves the thread as it was — better than
+      // replacing a conversation with a half-replayed one.
+      return [];
+    } finally {
+      // Always: while an entry is here, live events for this session are being
+      // swallowed as "history".
+      this.replays.delete(sessionId);
+    }
+    return collector.finish();
   }
 
   async sendPrompt(
@@ -374,6 +565,34 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
 
   private applyUpdate(sessionId: string, update: AcpSessionUpdate): void {
     const state = this.sessions.get(sessionId);
+    // Session STATE, not conversation: which model/mode the session is on, and
+    // what it is called. Handled BEFORE the replay diversion below, because a
+    // reopened session must show the selectors it is actually running with —
+    // they arrive during the replay, and swallowing them as "history" would
+    // leave the composer offering the previous session's model.
+    if (update.sessionUpdate === "config_option_update") {
+      // The agent sends the COMPLETE list, so it replaces ours rather than
+      // merging: options depend on each other (a model decides which reasoning
+      // levels exist).
+      if (state) state.configOptions = (update.configOptions as AcpConfigOption[] | undefined) ?? [];
+      return;
+    }
+    if (update.sessionUpdate === "session_info_update") {
+      // The agent named (or renamed) the session — usually from the first
+      // prompt. This is the title the sidebar shows until the next
+      // `session/list`.
+      const title = update.title as string | undefined;
+      if (state && title) state.title = title;
+      return;
+    }
+    // A `session/load` is in flight for this session: these updates are its
+    // REPLAY, not new activity. Collect them as history; emitting them would
+    // duplicate the conversation into the thread that asked for it.
+    const replay = this.replays.get(sessionId);
+    if (replay) {
+      replay.apply(update);
+      return;
+    }
     switch (update.sessionUpdate) {
       case "agent_message_chunk": {
         const partId = update.messageId ?? `message@${state?.turn ?? 0}`;
@@ -412,9 +631,10 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
         return;
       }
       // Deliberately ignored: `plan` (no thread block for it yet),
-      // `usage_update` and `session_info_update` (agent-specific bookkeeping),
-      // `current_mode_update` (no ACP mode concept in our UI), and
-      // `user_message_chunk` (the app already shows what the user sent).
+      // `usage_update` (agent-specific bookkeeping), `current_mode_update`
+      // (superseded by config options), and `user_message_chunk` — live, the
+      // app already shows what the user sent; during a replay it is history and
+      // never reaches here (see the collector above).
       default:
         return;
     }
@@ -437,6 +657,131 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
       this.permissions.set(requestId, { event, options: req.options, resolve });
       this.emit(event);
     });
+  }
+}
+
+/**
+ * Turns a `session/load` replay back into conversation history.
+ *
+ * ACP replays a past conversation as the same `session/update` notifications a
+ * live turn streams, so this is the inverse of the live fold: chunks accumulate
+ * into message parts instead of being emitted, and a `user_message_chunk` is
+ * what ends one turn and starts the next.
+ *
+ * The shapes it produces are the app's history shapes (`type: "text" |
+ * "reasoning" | "tool"`, tool status in the runtime's own vocabulary), so a
+ * replayed conversation renders through exactly the same path as an OpenCode
+ * one — no ACP-specific branch in the thread.
+ */
+class ReplayCollector {
+  private readonly messages: HistoryMessage[] = [];
+  /** The turn being built. Parts are keyed so a later chunk or tool update
+   *  lands on the part it belongs to rather than appending a new one. */
+  private assistant: HistoryMessage | null = null;
+  private parts = new Map<string, HistoryPart>();
+  private userMessage: HistoryMessage | null = null;
+  private userId: string | undefined;
+
+  apply(update: AcpSessionUpdate): void {
+    switch (update.sessionUpdate) {
+      case "user_message_chunk":
+        return this.user(update.messageId, update.content?.text ?? "");
+      case "agent_message_chunk":
+        return this.assistantText("text", update.messageId, update.content?.text ?? "");
+      case "agent_thought_chunk":
+        return this.assistantText("reasoning", update.messageId, update.content?.text ?? "");
+      case "tool_call":
+      case "tool_call_update":
+        return this.tool(update as unknown as AcpToolCallUpdate);
+      // Everything else in a replay is bookkeeping (commands, config, usage):
+      // it says nothing about what was said.
+      default:
+        return;
+    }
+  }
+
+  /** The collected conversation, every message marked finished. */
+  finish(completedAt = Date.now()): HistoryMessage[] {
+    for (const m of this.messages) m.completed = completedAt;
+    return this.messages;
+  }
+
+  private user(messageId: string | undefined, text: string): void {
+    // Consecutive chunks of the SAME user message append; a new id (or the
+    // first chunk after an assistant turn) starts a new one.
+    if (this.userMessage && (messageId === undefined || messageId === this.userId)) {
+      const part = this.userMessage.parts[0];
+      part.text = (part.text ?? "") + text;
+      return;
+    }
+    const message: HistoryMessage = { role: "user", parts: [{ type: "text", text }] };
+    if (messageId) message.id = messageId;
+    this.messages.push(message);
+    this.userMessage = message;
+    this.userId = messageId;
+    // A user message ends the previous turn: what follows belongs to a new one.
+    this.assistant = null;
+    this.parts.clear();
+  }
+
+  private assistantText(type: "text" | "reasoning", messageId: string | undefined, delta: string): void {
+    const message = this.ensureAssistant();
+    const key = `${type}:${messageId ?? "@"}`;
+    let part = this.parts.get(key);
+    if (!part) {
+      part = { type, text: "" };
+      this.parts.set(key, part);
+      message.parts.push(part);
+    }
+    part.text = (part.text ?? "") + delta;
+  }
+
+  private tool(call: AcpToolCallUpdate): void {
+    if (!call.toolCallId) return;
+    const message = this.ensureAssistant();
+    const key = `tool:${call.toolCallId}`;
+    let part = this.parts.get(key);
+    if (!part) {
+      part = { type: "tool", tool: call.kind ?? call.title ?? "tool", state: {} };
+      this.parts.set(key, part);
+      message.parts.push(part);
+    }
+    // `tool_call_update` carries only what CHANGED, so each field is merged
+    // rather than assigned — an update with no title must not erase the one the
+    // original `tool_call` gave.
+    if (call.kind || call.title) part.tool = call.kind ?? part.tool;
+    const state = (part.state ??= {});
+    if (call.status) state.status = historyToolStatus(call.status);
+    if (call.title) state.title = call.title;
+    if (call.rawInput) state.input = call.rawInput;
+    const output = toolOutput(call);
+    if (output) state.output = output;
+  }
+
+  private ensureAssistant(): HistoryMessage {
+    if (this.assistant) return this.assistant;
+    const message: HistoryMessage = { role: "assistant", parts: [] };
+    this.messages.push(message);
+    this.assistant = message;
+    this.userMessage = null;
+    this.userId = undefined;
+    this.parts.clear();
+    return message;
+  }
+}
+
+/** ACP tool status → the vocabulary the app's HISTORY reader expects
+ *  ("running" | "completed" | "error"), which is the runtime's own, not ACP's. */
+function historyToolStatus(status: string): string {
+  switch (status) {
+    case "completed":
+      return "completed";
+    case "failed":
+      return "error";
+    case "in_progress":
+      return "running";
+    default:
+      return status;
   }
 }
 

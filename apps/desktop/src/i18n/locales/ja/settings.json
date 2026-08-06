@@ -57,6 +57,24 @@
     "mirrorPythonPlaceholder": "https://mirror.example.com/python-build-standalone",
     "mirrorHint": "任意のミラー。Python ツール(Jupyter・科学データベース)のセットアップ時のダウンロードにのみ使用され、pypi.org / github.com が遅いネットワーク向けです。空欄でデフォルト。"
   },
+  "acp": {
+    "title": "エージェント",
+    "hint": "このアプリが操作するエージェント：同梱の OpenCode ランタイム、または stdio 経由で Agent Client Protocol（ACP）を話す任意のエージェント。",
+    "bundled": "OpenCode（同梱）",
+    "bundledHint": "既定のランタイム — プロバイダー、スキル、プランモード、保存された会話。",
+    "add": "エージェントを追加",
+    "edit": "編集",
+    "remove": "削除",
+    "nameLabel": "名前",
+    "namePlaceholder": "名前（Codex、Gemini CLI など）",
+    "commandLabel": "コマンド",
+    "commandPlaceholder": "コマンド（npx、gemini など）",
+    "argsLabel": "引数",
+    "argsPlaceholder": "引数（-y @agentclientprotocol/codex-acp）",
+    "limits": "ACP エージェントはこのコンピューター上で、現在のワークスペースフォルダー内のコマンドとして実行されます。モデル・スキル・履歴はエージェント自身が管理するため、モデルピッカー、プランモード、保存された会話は OpenCode のものです。ACP エージェントで開始したセッションはアプリの実行中のみ一覧に表示されます。",
+    "running": "ACP エージェントに接続しました。",
+    "starting": "ACP エージェントを起動しています…"
+  },
   "updates": {
     "title": "アプリの更新",
     "hint": "GitHub Releases を確認します。自動確認は 24 時間に 1 回までです",

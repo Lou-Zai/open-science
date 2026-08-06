@@ -64,6 +64,15 @@ export async function acpTransport(
   };
 
   try {
+    // Stop first, and AWAIT it. `acp_start` is idempotent per agent id, so a
+    // still-running child from the previous connection would be adopted instead
+    // of replaced — and its cwd is the workspace folder it was spawned in, which
+    // is exactly what a workspace switch (teardown → connect) has just changed.
+    // The previous transport's own `close` fires `acp_stop` without awaiting, so
+    // ordering the two commands is this call's job.
+    await call("acp_stop", { agentId }).catch(() => {
+      /* nothing was running */
+    });
     await call("acp_start", { agentId, command, args });
   } catch (err) {
     detach();

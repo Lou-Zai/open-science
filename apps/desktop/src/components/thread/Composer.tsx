@@ -34,6 +34,8 @@ import {
   walkWorkspace,
 } from "@/components/thread/references";
 import { ModelPicker } from "@/components/thread/ModelPicker";
+import { AcpConfigPicker } from "@/components/thread/AcpConfigPicker";
+import type { AcpConfigOption } from "@ai4s/sdk/acp";
 import { WorkspaceChip } from "@/components/thread/WorkspaceChip";
 import { useUiStore } from "@/lib/store";
 import { toast } from "@/lib/toast";
@@ -136,6 +138,8 @@ export function Composer({
   onAgentModeChange,
   showModelPicker,
   modelSessionId,
+  configOptions,
+  onConfigOption,
   showWorkspaceChip = true,
   draftKey,
   sessionDir,
@@ -166,6 +170,11 @@ export function Composer({
   /** Bind the model picker to a session (per-pane model/effort); omit for the
    *  global default. */
   modelSessionId?: string;
+  /** An ACP agent's OWN session selectors (model, reasoning level, mode). They
+   *  replace the model picker when an ACP agent is driving: the agent owns its
+   *  model, and these are the choices it actually offers (#14). */
+  configOptions?: AcpConfigOption[];
+  onConfigOption?: (configId: string, value: string) => void;
   /** Show the draft workspace-folder chip. Only the draft pane opts in — in a
    *  split layout the other panes already have a bound session/folder. */
   showWorkspaceChip?: boolean;
@@ -1000,6 +1009,9 @@ export function Composer({
             unit) so the send button is always reachable on a narrow pane. */}
         <div className="ml-auto flex min-w-0 items-center gap-1.5">
           {showModelPicker && <ModelPicker sessionId={modelSessionId} />}
+          {configOptions && onConfigOption && (
+            <AcpConfigPicker options={configOptions} onChange={onConfigOption} disabled={working} />
+          )}
           {working && onStop ? (
             // Same spot, same shape, one action: the send button becomes Stop
             // while the agent works — always live, even though the input is not.

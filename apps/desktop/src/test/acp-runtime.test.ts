@@ -88,6 +88,10 @@ const INITIALIZE_RESULT = {
   agentCapabilities: {
     loadSession: true,
     promptCapabilities: { image: true, embeddedContext: true },
+    // Presence is the signal (empty object = supported), copied from what
+    // codex-acp actually advertises today — history, listing and deletion are
+    // stable v1 capabilities, not extensions.
+    sessionCapabilities: { resume: {}, list: {}, close: {}, delete: {}, additionalDirectories: {} },
   },
   authMethods: [{ id: "chat-gpt", name: "ChatGPT" }],
 };
@@ -111,6 +115,10 @@ async function connected(extra?: (msg: Record<string, unknown>, agent: FakeAgent
     if (msg.method === "initialize") return a.reply(msg.id, INITIALIZE_RESULT);
     if (msg.method === "session/new") return a.reply(msg.id, NEW_SESSION_RESULT);
     extra?.(msg, a);
+    // Default: an agent with no stored history. The test's own handler runs
+    // first and its answer wins — a second response to an already-settled id is
+    // dropped by the peer.
+    if (msg.method === "session/list") a.reply(msg.id, { sessions: [] });
   });
   const runtime = new AcpRuntime({ transport, cwd: "/ws/project" });
   runtime.onEvent((e) => events.push(e));
@@ -339,7 +347,153 @@ describe("AcpRuntime", () => {
     await expect(runtime.runShell(sessionId, "ls")).rejects.toThrow(/outside a turn/);
     await expect(runtime.setSessionArchived(sessionId, true)).rejects.toThrow(/archiving/);
     expect(await runtime.listSkills()).toEqual([]);
+  });
+
+  it("asks for nothing the agent did not advertise", async () => {
+    // Capability gating is the spec's rule, not politeness: a Client MUST check
+    // `initialize` before calling session/list, session/load or session/delete.
+    const { transport, agent } = fakeAgent((msg, a) => {
+      if (msg.method === "initialize")
+        return a.reply(msg.id, { protocolVersion: 1, agentInfo: { name: "plain" } });
+      if (msg.method === "session/new") return a.reply(msg.id, { sessionId: "s1" });
+    });
+    const runtime = new AcpRuntime({ transport, cwd: "/ws/project" });
+    await runtime.connect();
+    const sessionId = await runtime.createSession("Local only");
+
+    expect(runtime.supportsSessionList).toBe(false);
+    expect(runtime.supportsSessionReplay).toBe(false);
+    expect(runtime.supportsSessionDelete).toBe(false);
+    // Sessions this client made are still listed — that much needs no agent.
+    expect(await runtime.listSessions()).toEqual([
+      { id: "s1", title: "Local only", directory: "/ws/project" },
+    ]);
     expect(await runtime.getMessages(sessionId)).toEqual([]);
+    await runtime.deleteSession(sessionId);
+    expect(await runtime.listSessions()).toEqual([]);
+    expect(agent.sent.map((m) => m.method)).toEqual(["initialize", "session/new"]);
+  });
+
+  it("replays a past conversation as history instead of as live events", async () => {
+    const { runtime, agent, events } = await connected((msg, a) => {
+      if (msg.method !== "session/load") return;
+      const sessionId = (msg.params as { sessionId: string }).sessionId;
+      const update = (update: Record<string, unknown>) =>
+        a.notify("session/update", { sessionId, update });
+      update({
+        sessionUpdate: "user_message_chunk",
+        messageId: "u1",
+        content: { type: "text", text: "Plot the trend" },
+      });
+      update({ sessionUpdate: "agent_thought_chunk", messageId: "t1", content: { type: "text", text: "thinking" } });
+      update({ sessionUpdate: "tool_call", toolCallId: "c1", kind: "read", title: "read data.csv", status: "pending" });
+      update({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "c1",
+        status: "completed",
+        content: [{ type: "content", content: { type: "text", text: "42 rows" } }],
+      });
+      update({ sessionUpdate: "agent_message_chunk", messageId: "a1", content: { type: "text", text: "Rising " } });
+      update({ sessionUpdate: "agent_message_chunk", messageId: "a1", content: { type: "text", text: "since May." } });
+      // The response comes only after the whole conversation has been streamed.
+      a.reply(msg.id, {});
+    });
+    const before = events.length;
+    const history = await runtime.getMessages("019fd184-40c8-79d2-a310-268586830f43");
+
+    // The replay is HISTORY: emitting it would append the whole conversation to
+    // the thread that asked for it.
+    expect(events.length).toBe(before);
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({ role: "user", id: "u1" });
+    expect(history[0].parts[0].text).toBe("Plot the trend");
+    const assistant = history[1];
+    expect(assistant.role).toBe("assistant");
+    // Deltas of one message are one part, and the tool keeps its own.
+    expect(assistant.parts.map((p) => p.type)).toEqual(["reasoning", "tool", "text"]);
+    expect(assistant.parts[2].text).toBe("Rising since May.");
+    expect(assistant.parts[1].state).toMatchObject({
+      // The runtime's OWN status vocabulary, not ACP's — this is what the
+      // history reader understands.
+      status: "completed",
+      title: "read data.csv",
+      output: "42 rows",
+    });
+    // Every replayed message is finished: an assistant message with no
+    // completion time is how the app recognises a turn still in flight, and a
+    // reopened session must not show "Working…" for a turn that ended days ago.
+    expect(history.every((m) => typeof m.completed === "number")).toBe(true);
+    // Live events flow again once the replay is over.
+    agent.notify("session/update", {
+      sessionId: "019fd184-40c8-79d2-a310-268586830f43",
+      update: { sessionUpdate: "agent_message_chunk", messageId: "a2", content: { type: "text", text: "ok" } },
+    });
+    expect(last(events)).toMatchObject({ type: "text.updated", text: "ok" });
+  });
+
+  it("lists the agent's own sessions, paged, without losing the one just created", async () => {
+    const { runtime, agent, sessionId } = await connected((msg, a) => {
+      if (msg.method !== "session/list") return;
+      const cursor = (msg.params as { cursor?: string }).cursor;
+      if (!cursor)
+        return a.reply(msg.id, {
+          sessions: [
+            { sessionId: "old-1", cwd: "/ws/other", title: "Yesterday", updatedAt: "2026-08-04T10:00:00Z" },
+          ],
+          nextCursor: "page-2",
+        });
+      a.reply(msg.id, { sessions: [{ sessionId: "old-2", cwd: "/ws/project" }], nextCursor: null });
+    });
+    const sessions = await runtime.listSessions();
+
+    expect(sessions.map((s) => s.id)).toEqual(["old-1", "old-2", sessionId]);
+    // Each session carries its OWN folder: the sidebar groups by it, so a
+    // conversation from another project must not claim the current one.
+    expect(sessions[0]).toMatchObject({
+      title: "Yesterday",
+      directory: "/ws/other",
+      updated: Date.parse("2026-08-04T10:00:00Z"),
+    });
+    // Deliberately unfiltered by cwd, though session/list accepts that filter —
+    // filtering would hide every conversation outside the current folder.
+    const listed = agent.sent.filter((m) => m.method === "session/list");
+    expect(listed.map((m) => m.params)).toEqual([{}, { cursor: "page-2" }]);
+  });
+
+  it("keeps the sidebar when listing fails", async () => {
+    const { runtime, sessionId } = await connected((msg, a) => {
+      if (msg.method === "session/list") a.replyError(msg.id, -32000, "no history store");
+    });
+    // A transient RPC error must not read as "your history is gone".
+    expect((await runtime.listSessions()).map((s) => s.id)).toEqual([sessionId]);
+  });
+
+  it("changes one of the agent's own selectors and takes the answer whole", async () => {
+    const OPTIONS = [
+      { id: "model", name: "Model", category: "model", type: "select", currentValue: "fast", options: [] },
+    ];
+    // Built directly: this agent answers `session/new` with its own selectors,
+    // which the shared fixture does not.
+    const { transport } = fakeAgent((msg, a) => {
+      if (msg.method === "initialize") return a.reply(msg.id, INITIALIZE_RESULT);
+      if (msg.method === "session/new")
+        return a.reply(msg.id, { sessionId: "s-cfg", configOptions: OPTIONS });
+      if (msg.method === "session/set_config_option")
+        return a.reply(msg.id, {
+          configOptions: [{ ...OPTIONS[0], currentValue: "slow" }, { id: "effort", type: "select", currentValue: "high" }],
+        });
+    });
+    const runtime = new AcpRuntime({ transport, cwd: "/ws/project" });
+    await runtime.connect();
+    const sessionId = await runtime.createSession("Config");
+    expect(runtime.configOptionsFor(sessionId)).toEqual(OPTIONS);
+    const next = await runtime.setConfigOption(sessionId, "model", "slow");
+
+    // The agent answers with the COMPLETE list and it replaces ours: options
+    // depend on each other (a model decides which efforts exist), so merging a
+    // stale copy would offer levels the agent no longer has.
+    expect(next.map((o) => o.id)).toEqual(["model", "effort"]);
+    expect(runtime.configOptionsFor(sessionId)[0].currentValue).toBe("slow");
   });
 });
 

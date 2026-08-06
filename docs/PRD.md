@@ -404,7 +404,13 @@ discussion. Shipped versions are kept here as the delivery record.
     `docs/rfc/multi-agent-acp.md`). This is what #14's reporter actually asked
     for — "I'd like OpenScience to be able to invoke Codex ACP, Cursor Agent
     ACP" — so it comes before the server direction, which earlier drafts of this
-    section had listed alone. In progress;
+    section had listed alone. In progress: the runtime, its Rust-supervised
+    child, and the Settings picker + runtime selector have landed, so an agent
+    configured in Settings → Runtime answers a turn through the ordinary UI.
+    What is left on this half is a conversation the user can come BACK to — ACP
+    v1's `session/load` replays notifications instead of answering with a
+    transcript, and an ACP session is not listed after a restart, so listing and
+    replay are one later slice rather than two;
   - Open Science *as* an ACP server, so external editors and agents drive the
     runtime through that seam in ACP's dialect (#14), reusing the shipped
     gateway rather than a second surface;

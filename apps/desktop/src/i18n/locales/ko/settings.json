@@ -57,6 +57,24 @@
     "mirrorPythonPlaceholder": "https://mirror.example.com/python-build-standalone",
     "mirrorHint": "선택적 미러로, Python 도구(Jupyter, 과학 데이터베이스)를 설정할 때 pypi.org / github.com이 느린 네트워크에서 다운로드에만 사용됩니다. 비워 두면 기본값을 사용합니다."
   },
+  "acp": {
+    "title": "에이전트",
+    "hint": "이 앱이 구동하는 에이전트: 내장된 OpenCode 런타임 또는 stdio로 Agent Client Protocol(ACP)을 사용하는 모든 에이전트.",
+    "bundled": "OpenCode(내장)",
+    "bundledHint": "기본 런타임 — 공급자, 스킬, 계획 모드, 저장된 대화.",
+    "add": "에이전트 추가",
+    "edit": "편집",
+    "remove": "삭제",
+    "nameLabel": "이름",
+    "namePlaceholder": "이름(Codex, Gemini CLI 등)",
+    "commandLabel": "명령",
+    "commandPlaceholder": "명령(npx, gemini 등)",
+    "argsLabel": "인수",
+    "argsPlaceholder": "인수(-y @agentclientprotocol/codex-acp)",
+    "limits": "ACP 에이전트는 이 컴퓨터의 현재 작업 공간 폴더에서 명령으로 실행됩니다. 모델, 스킬, 기록을 스스로 관리하므로 모델 선택기, 계획 모드, 저장된 대화는 OpenCode에 남습니다. ACP 에이전트에서 시작한 세션은 앱이 실행 중일 때만 목록에 표시됩니다.",
+    "running": "ACP 에이전트에 연결되었습니다.",
+    "starting": "ACP 에이전트를 시작하는 중…"
+  },
   "updates": {
     "title": "앱 업데이트",
     "hint": "GitHub Releases를 확인합니다. 자동 확인은 24시간에 한 번까지만 실행됩니다",

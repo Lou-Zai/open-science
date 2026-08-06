@@ -60,6 +60,7 @@ import {
 import { useSetupStore } from "@/lib/setup";
 import { RemoteComputeCard } from "@/components/settings/RemoteComputeCard";
 import { RemoteAccessCard } from "@/components/settings/RemoteAccessCard";
+import { AcpAgentsCard } from "@/components/settings/AcpAgentsCard";
 import { ModalCard } from "@/components/settings/ModalCard";
 import { DataFlowCard } from "@/components/settings/DataFlowCard";
 import { ModelBrowser } from "@/components/settings/ModelBrowser";
@@ -1707,6 +1708,9 @@ export function SettingsPage() {
           </div>
         </Section>
         )}
+
+        {/* ---- Which agent this app drives: OpenCode, or an ACP agent (#14) ---- */}
+        {section === "runtime" && <AcpAgentsCard />}
 
         {/* ---- Local Python kernel ---- */}
         {section === "runtime" && isTauri && (

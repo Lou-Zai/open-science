@@ -57,6 +57,24 @@
     "mirrorPythonPlaceholder": "https://mirror.example.com/python-build-standalone",
     "mirrorHint": "Espejos opcionales, usados solo al configurar herramientas de Python (Jupyter, bases de datos científicas) en redes donde pypi.org / github.com son lentos. Déjalo en blanco para los valores predeterminados."
   },
+  "acp": {
+    "title": "Agente",
+    "hint": "Qué agente controla esta aplicación: el entorno OpenCode incluido, o cualquier agente que hable el Agent Client Protocol (ACP) por stdio.",
+    "bundled": "OpenCode (incluido)",
+    "bundledHint": "El entorno predeterminado: proveedores, habilidades, modo plan y conversaciones guardadas.",
+    "add": "Añadir un agente",
+    "edit": "Editar",
+    "remove": "Eliminar",
+    "nameLabel": "Nombre",
+    "namePlaceholder": "Nombre (Codex, Gemini CLI, …)",
+    "commandLabel": "Comando",
+    "commandPlaceholder": "Comando (npx, gemini, …)",
+    "argsLabel": "Argumentos",
+    "argsPlaceholder": "Argumentos (-y @agentclientprotocol/codex-acp)",
+    "limits": "Un agente ACP se ejecuta como un comando en este equipo, dentro de la carpeta del espacio de trabajo actual. Gestiona su propio modelo, habilidades e historial, así que el selector de modelo, el modo plan y las conversaciones guardadas siguen siendo de OpenCode: las sesiones iniciadas en un agente ACP solo aparecen mientras la aplicación está abierta.",
+    "running": "Conectado al agente ACP.",
+    "starting": "Iniciando el agente ACP…"
+  },
   "updates": {
     "title": "Actualizaciones de la app",
     "hint": "Consulta GitHub Releases como máximo una vez cada 24 horas",
