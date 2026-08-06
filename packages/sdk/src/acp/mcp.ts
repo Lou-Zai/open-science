@@ -17,7 +17,11 @@ export interface AcpStdioMcpServer {
   name: string;
   command: string;
   args: string[];
-  env?: Array<{ name: string; value: string }>;
+  /** REQUIRED by the schema, empty list and all. The published zod schema has
+   *  `env: z.array(...)` with no `.optional()`, so an agent that validates with
+   *  the official SDK — codex-acp does — rejects `session/new` outright when it
+   *  is missing. Found by driving our own agent with that library. */
+  env: Array<{ name: string; value: string }>;
 }
 /** ACP's HTTP/SSE MCP server. Allowed only when the agent advertises the
  *  matching `mcpCapabilities` entry. */
@@ -53,8 +57,8 @@ export function toAcpMcpServers(mcp: Record<string, McpConfig> | undefined): Acp
     if (config.type === "local") {
       const [command, ...args] = config.command ?? [];
       if (!command) continue;
-      const env = pairs(config.environment);
-      out.push({ name, command, args, ...(env.length > 0 ? { env } : {}) });
+      // `env` is always sent, even empty — see the field's own comment.
+      out.push({ name, command, args, env: pairs(config.environment) });
       continue;
     }
     if (config.type === "remote") {

@@ -346,7 +346,9 @@ describe("runtime selector", () => {
 
       const created = mocks.agent?.sent.find((m) => m.method === "session/new");
       expect((created?.params as { mcpServers: unknown }).mcpServers).toEqual([
-        { name: "pubmed", command: "/opt/app/bin/uvx", args: ["science-mcp"] },
+        // `env` travels even when empty: the published schema requires it, and
+        // an agent validating with the official SDK refuses the session without it.
+        { name: "pubmed", command: "/opt/app/bin/uvx", args: ["science-mcp"], env: [] },
       ]);
     } finally {
       vi.unstubAllGlobals();

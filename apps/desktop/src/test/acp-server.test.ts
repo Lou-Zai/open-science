@@ -269,7 +269,7 @@ describe("Open Science as an ACP agent", () => {
     });
     const client = new AcpRuntime({ transport: clientSide, cwd: "/ws/project" });
     await client.connect();
-    client.setMcpServers([{ name: "filesystem", command: "/bin/mcp", args: [] }]);
+    client.setMcpServers([{ name: "filesystem", command: "/bin/mcp", args: [], env: [] }]);
     await client.createSession();
 
     expect(notices).toHaveLength(1);

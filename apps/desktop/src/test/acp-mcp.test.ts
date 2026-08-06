@@ -7,6 +7,16 @@ import { describe, expect, it } from "vitest";
 import { AcpRuntime, toAcpMcpServers } from "@ai4s/sdk/acp";
 import type { JsonRpcTransport } from "@ai4s/sdk/acp";
 import type { McpConfig } from "@ai4s/sdk";
+import type { McpServer } from "@agentclientprotocol/sdk";
+
+/** Compile-time conformance against the OFFICIAL type — how the missing `env`
+ *  was caught. Our mapping's output must be assignable to what an agent built
+ *  on the reference SDK accepts, or `session/new` is refused on arrival. */
+const _conforms: McpServer[] = toAcpMcpServers({
+  local: { type: "local", command: ["/bin/tool"] },
+  remote: { type: "remote", url: "https://x/mcp" },
+});
+void _conforms;
 
 describe("OpenCode connectors → ACP mcpServers", () => {
   it("splits a local command into command + args and lists env as pairs", () => {
@@ -25,6 +35,15 @@ describe("OpenCode connectors → ACP mcpServers", () => {
         args: ["science-mcp", "--stdio"],
         env: [{ name: "NCBI_API_KEY", value: "k" }],
       },
+    ]);
+  });
+
+  it("sends env even when there is none", () => {
+    // The published schema has `env: z.array(...)` with no `.optional()`, so an
+    // agent validating with the official SDK rejects `session/new` when the key
+    // is missing — which is every connector that needs no environment.
+    expect(toAcpMcpServers({ plain: { type: "local", command: ["/bin/tool"] } })).toEqual([
+      { name: "plain", command: "/bin/tool", args: [], env: [] },
     ]);
   });
 
