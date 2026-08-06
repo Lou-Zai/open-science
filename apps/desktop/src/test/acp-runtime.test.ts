@@ -557,6 +557,32 @@ describe("AcpRuntime", () => {
     await expect(runtime.sendPrompt("ghost", "hi")).rejects.toThrow(/unknown session ghost/);
   });
 
+  it("turns a signed-out agent's refusal into something the user can act on", async () => {
+    // -32000 is ACP's auth_required. The sign-in is the AGENT's own, so there is
+    // nothing to fix in Settings — the raw refusal is a dead end, and the whole
+    // fix is the sentence saying where the login lives.
+    const { transport } = fakeAgent((msg, a) => {
+      if (msg.method === "initialize") return a.reply(msg.id, INITIALIZE_RESULT);
+      if (msg.method === "session/new") return a.replyError(msg.id, -32000, "Not logged in");
+    });
+    const runtime = new AcpRuntime({ transport, cwd: "/ws" });
+    await runtime.connect();
+
+    await expect(runtime.createSession()).rejects.toThrow(
+      /Codex is not signed in: Not logged in\. Its sign-in is its own — run the agent's login command in a terminal \(it offers ChatGPT\), then reconnect/,
+    );
+  });
+
+  it("leaves every other failure exactly as the agent worded it", async () => {
+    const { transport } = fakeAgent((msg, a) => {
+      if (msg.method === "initialize") return a.reply(msg.id, INITIALIZE_RESULT);
+      if (msg.method === "session/new") return a.replyError(msg.id, -32603, "disk full");
+    });
+    const runtime = new AcpRuntime({ transport, cwd: "/ws" });
+    await runtime.connect();
+    await expect(runtime.createSession()).rejects.toThrow(/^disk full$/);
+  });
+
   it("changes one of the agent's own selectors and takes the answer whole", async () => {
     const OPTIONS = [
       { id: "model", name: "Model", category: "model", type: "select", currentValue: "fast", options: [] },

@@ -44,9 +44,11 @@ import type {
 import type { AcpMcpServer } from "./mcp";
 import {
   ACP_PROTOCOL_VERSION,
+  JsonRpcError,
   JsonRpcPeer,
   type AcpAgentCapabilities,
   type AcpAgentInfo,
+  type AcpAuthMethod,
   type AcpCommand,
   type AcpConfigOption,
   type AcpConfigOptionsResult,
@@ -64,6 +66,10 @@ import {
 
 /** A turn has no deadline: an agent legitimately works for many minutes. */
 const NO_TIMEOUT = 0;
+
+/** ACP's `auth_required` error code: the agent needs a sign-in before it will
+ *  do this. Its own sign-in — see `explainAuthRequired`. */
+const AUTH_REQUIRED = -32000;
 
 export interface AcpRuntimeOptions {
   transport: JsonRpcTransport;
@@ -130,6 +136,9 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
   private readonly replays = new Map<string, ReplayCollector>();
   private agentInfo?: AcpAgentInfo;
   private agentCapabilities?: AcpAgentCapabilities;
+  /** Sign-in methods the agent listed at `initialize`, so a refusal can name
+   *  them ("it offers ChatGPT") instead of leaving the user guessing. */
+  private authMethods: AcpAuthMethod[] = [];
   private commands: CommandInfo[] = [];
   /** Permission requests the agent is blocked on, keyed by our own request id.
    *  ACP answers a permission by RESPONDING to the agent's request, so the
@@ -282,6 +291,7 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
       });
       this.agentInfo = result.agentInfo;
       this.agentCapabilities = result.agentCapabilities;
+      this.authMethods = result.authMethods ?? [];
       if (result.protocolVersion !== ACP_PROTOCOL_VERSION) {
         // Not fatal: v1 is what every agent tested answers, and a higher number
         // means the agent is newer, not incompatible. Recorded, not enforced.
@@ -306,10 +316,17 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
 
   async createSession(title?: string): Promise<string> {
     const cwd = this.cwd;
-    const result = await this.peer.request<AcpNewSessionResult>("session/new", {
-      cwd,
-      mcpServers: this.mcpForRequest(),
-    });
+    let result: AcpNewSessionResult;
+    try {
+      result = await this.peer.request<AcpNewSessionResult>("session/new", {
+        cwd,
+        mcpServers: this.mcpForRequest(),
+      });
+    } catch (err) {
+      // The first thing a signed-out agent refuses, and the first thing the
+      // user sees — so this is where the dead end has to become an instruction.
+      throw this.explainAuthRequired(err);
+    }
     this.sessions.set(result.sessionId, {
       // ACP's own title (when the agent has one) arrives via `session/list`; the
       // app's is kept here so a brand-new session has a name before then.
@@ -511,9 +528,34 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
       }
     } catch (err) {
       this.sessions.delete(sessionId);
-      throw err;
+      // A logout can strand an existing session too — the spec says so.
+      throw this.explainAuthRequired(err);
     }
     return state;
+  }
+
+  /**
+   * An `auth_required` refusal, turned into something the user can act on.
+   *
+   * The agent's sign-in is the AGENT's — Codex's ChatGPT login, Gemini's Google
+   * account — and this app holds no credentials for it, so there is nothing to
+   * fix in Settings. Deliberately NOT wired to ACP's `authenticate`: every
+   * client surveyed treats an external login as the normal case (agent-shell
+   * sends no authenticate request at all by default), and a user who configured
+   * `npx …` as the agent command has the terminal that login needs. What was
+   * missing was only the sentence saying so — the raw refusal is a dead end.
+   *
+   * Anything that is not `auth_required` passes through untouched.
+   */
+  private explainAuthRequired(err: unknown): unknown {
+    if (!(err instanceof JsonRpcError) || err.code !== AUTH_REQUIRED) return err;
+    const offers = this.authMethods.map((m) => m.name ?? m.id).filter(Boolean);
+    return new Error(
+      `${this.displayName} is not signed in: ${err.message}. ` +
+        `Its sign-in is its own — run the agent's login command in a terminal` +
+        (offers.length > 0 ? ` (it offers ${offers.join(", ")})` : "") +
+        `, then reconnect in Settings → Runtime.`,
+    );
   }
 
   /** A session record with nothing learned yet. */
@@ -559,10 +601,11 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
       this.emit({ type: "session.idle", sessionId });
     } catch (err) {
       state.promptRunning = false;
+      const explained = this.explainAuthRequired(err);
       this.emit({
         type: "error",
         sessionId,
-        message: err instanceof Error ? err.message : String(err),
+        message: explained instanceof Error ? explained.message : String(explained),
       });
       this.emit({ type: "session.idle", sessionId });
     }
