@@ -41,6 +41,7 @@ import type {
   SkillInfo,
   ToolCallStatus,
 } from "../types";
+import type { AcpMcpServer } from "./mcp";
 import {
   ACP_PROTOCOL_VERSION,
   JsonRpcPeer,
@@ -114,6 +115,10 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
    *  while the agent process stays. */
   private cwd: string;
   private readonly label?: string;
+  /** MCP servers every session is created with. ACP takes them per session
+   *  where OpenCode holds them globally, so they are set once and sent with
+   *  each `session/new` / `session/load`. */
+  private mcpServers: AcpMcpServer[] = [];
   /** Sessions being replayed by `session/load` right now. While a session has a
    *  collector, its `session/update` notifications are HISTORY, not live events,
    *  and must be collected instead of emitted — emitting them would append the
@@ -175,6 +180,29 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
    *  Without it, "delete" can only forget the session locally. */
   get supportsSessionDelete(): boolean {
     return this.agentCapabilities?.sessionCapabilities?.delete !== undefined;
+  }
+
+  /**
+   * The MCP servers new sessions should connect to — this app's own connectors,
+   * translated by `toAcpMcpServers`. Replaces the previous list, so a connector
+   * the user turned off stops reaching sessions created after that.
+   */
+  setMcpServers(servers: AcpMcpServer[]): void {
+    this.mcpServers = servers;
+  }
+
+  /**
+   * The subset this agent can actually connect to. Every agent MUST support
+   * stdio; HTTP and SSE are optional (`mcpCapabilities`), and sending one an
+   * agent never advertised is a protocol violation on our side — so an
+   * unsupported transport is dropped rather than hopefully sent.
+   */
+  private mcpForRequest(): AcpMcpServer[] {
+    const caps = (this.agentCapabilities?.mcpCapabilities ?? {}) as Record<string, unknown>;
+    return this.mcpServers.filter((server) => {
+      if (!("type" in server)) return true; // stdio: always supported
+      return caps[server.type] === true;
+    });
   }
 
   /** Point new sessions at another workspace folder. Existing sessions keep
@@ -269,7 +297,7 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
     const cwd = this.cwd;
     const result = await this.peer.request<AcpNewSessionResult>("session/new", {
       cwd,
-      mcpServers: [],
+      mcpServers: this.mcpForRequest(),
     });
     this.sessions.set(result.sessionId, {
       // ACP's own title (when the agent has one) arrives via `session/list`; the
@@ -407,7 +435,10 @@ export class AcpRuntime extends BaseAgentRuntime implements AgentRuntime {
       await this.peer.request("session/load", {
         sessionId,
         cwd: state?.cwd ?? this.cwd,
-        mcpServers: [],
+        // Reconnected per load, exactly as on `session/new`: the spec has the
+        // Client restate them, and a session reopened without its connectors
+        // would answer the next prompt with fewer tools than it had before.
+        mcpServers: this.mcpForRequest(),
       });
     } catch {
       // A refused or timed-out load leaves the thread as it was — better than

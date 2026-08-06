@@ -4,6 +4,8 @@
 // pulling it into this barrel would break the webview bundle. Node callers
 // import `@ai4s/sdk/acp/stdio` directly.
 export { AcpRuntime, mapToolStatus, pickPermissionOption } from "./AcpRuntime";
+export { toAcpMcpServers } from "./mcp";
+export type { AcpMcpServer, AcpRemoteMcpServer, AcpStdioMcpServer } from "./mcp";
 export type { AcpRuntimeOptions } from "./AcpRuntime";
 export {
   ACP_PROTOCOL_VERSION,

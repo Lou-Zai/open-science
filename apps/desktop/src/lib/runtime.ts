@@ -15,7 +15,7 @@ import {
   type SkillInfo,
   type ToolCallStatus,
 } from "@ai4s/sdk";
-import { AcpRuntime, type AcpConfigOption } from "@ai4s/sdk/acp";
+import { AcpRuntime, toAcpMcpServers, type AcpConfigOption } from "@ai4s/sdk/acp";
 import type { ArtifactBlock, RuntimeStatus, ThreadBlock, ToolVerb } from "@ai4s/shared";
 import {
   adoptWorkspaceSkills,
@@ -532,6 +532,44 @@ function blankDraft(s: RuntimeState, key: string = DRAFT_KEY) {
   delete sessionAgents[key];
   return { currentId: null, threads, panes, sessionAgents };
 }
+/**
+ * Hand the app's own MCP connectors to the ACP agent.
+ *
+ * ACP takes MCP servers per session; OpenCode keeps them in its global config.
+ * That config is read through a THROWAWAY OpenCodeClient — the sidecar is
+ * running either way (it backs the workspace, kernels and the gateway), and
+ * `getClient()` must keep answering null under an ACP agent so Settings does not
+ * offer a provider surface that is not driving anything.
+ *
+ * Best-effort by design: a connector list that cannot be read must not stop the
+ * agent from connecting. The session simply gets the tools the agent brings.
+ *
+ * A connector's own credentials (env, headers) travel with it — they are what
+ * makes it work, and the bundled runtime already launches these servers with
+ * them. Nothing else does: the agent is a command the user configured, and no
+ * provider API key of ours is ever part of this payload.
+ */
+async function shareMcpServers(runtime: AcpRuntime, baseUrl: string, password: string | null) {
+  try {
+    const config = new OpenCodeClient({
+      baseUrl,
+      password: password ?? undefined,
+      // The sidecar is local; a connector list is not worth stalling a connect.
+      requestTimeoutMs: 4000,
+    });
+    const servers = await config.listMcpServers();
+    const acp = toAcpMcpServers(
+      Object.fromEntries(
+        servers.filter((s) => s.config).map((s) => [s.name, s.config!]),
+      ),
+    );
+    runtime.setMcpServers(acp);
+    if (acp.length > 0) void logDebug(`acp mcp → ${acp.map((s) => s.name).join(", ")}`);
+  } catch (err) {
+    void logDebug(`acp mcp skipped: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 /**
  * Mirror the ACP agent's own session selectors into the store, so the composer
  * can offer them. A local read, not an RPC — and it writes only when they
@@ -1585,22 +1623,22 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         set({ error: "No workspace folder to run the ACP agent in.", status: "error" });
         return;
       }
+      let acp: AcpRuntime;
       try {
         if (reusableAcp) {
           // Same agent, still alive: point new sessions at this folder and keep
           // the process. Sessions it already holds keep their own folder — the
           // agent binds cwd per session, so nothing that is running moves.
           reusableAcp.setCwd(directory);
-          client = reusableAcp;
-          c = reusableAcp;
+          acp = reusableAcp;
         } else {
           const transport = await acpTransport(acpAgent.id, acpAgent.command, acpAgent.args);
-          const acp = new AcpRuntime({ transport, cwd: directory, name: acpAgent.name });
+          acp = new AcpRuntime({ transport, cwd: directory, name: acpAgent.name });
           acpRuntime = acp;
           acpRuntimeAgentId = acpAgent.id;
-          client = acp;
-          c = acp;
         }
+        client = acp;
+        c = acp;
         // No OpenCode instance backs this connection: `getClient()` must answer
         // null so Settings' provider/MCP surface hides instead of PATCHing a
         // sidecar that is not driving anything.
@@ -1611,10 +1649,17 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
         set({ error: msg, status: "error", runtimeKind: "acp", acpAgentName: acpAgent.name });
         return;
       }
+      // The app's own connectors are per-session in ACP, so the agent has to
+      // know them BEFORE any session is created (#14). Awaited only on a fresh
+      // child: on a reuse the list is already loaded, and every new session
+      // reconnects — paying a config round-trip each time would put the
+      // sidecar's latency in front of every "New".
+      if (reusableAcp) void shareMcpServers(acp, baseUrl, password);
+      else await shareMcpServers(acp, baseUrl, password);
       // The OpenCode catalog belongs to the runtime that is no longer driving:
-      // an ACP agent owns its own model choice (ACP v1 has no set-model method),
-      // so leaving the old providers on screen would offer a switch that does
-      // nothing.
+      // an ACP agent owns its own model choice (v1 changes it through
+      // `session/set_config_option`, from the agent's own list), so leaving the
+      // old providers on screen would offer a switch that does nothing.
       set({ runtimeKind: "acp", acpAgentName: acpAgent.name, providers: [], defaultModel: null });
     } else {
       const oc = new OpenCodeClient({

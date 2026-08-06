@@ -407,10 +407,11 @@ discussion. Shipped versions are kept here as the delivery record.
     section had listed alone. In progress: the runtime, its Rust-supervised
     child, and the Settings picker + runtime selector have landed, so an agent
     configured in Settings → Runtime answers a turn through the ordinary UI.
-    What is left on this half is a conversation the user can come BACK to — ACP
-    v1's `session/load` replays notifications instead of answering with a
-    transcript, and an ACP session is not listed after a restart, so listing and
-    replay are one later slice rather than two;
+    Listing (`session/list`), history (`session/load` replay), the agent's own
+    model / reasoning selectors (`session/set_config_option`) and this app's MCP
+    connectors all work through it, capability-gated on what each agent
+    advertises. What is left on this half: `session/resume` (a faster reopen
+    than replay) and the agent's own `providers` / `auth` surface;
   - Open Science *as* an ACP server, so external editors and agents drive the
     runtime through that seam in ACP's dialect (#14), reusing the shipped
     gateway rather than a second surface;

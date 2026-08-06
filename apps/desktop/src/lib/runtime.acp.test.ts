@@ -319,6 +319,40 @@ describe("runtime selector", () => {
     );
   });
 
+  it("hands this app's own connectors to the agent, per session", async () => {
+    // ACP takes MCP servers per session; OpenCode keeps them in its global
+    // config. Without this an ACP agent runs with none of the connectors the
+    // user configured — which reads as the feature being broken.
+    const json = (body: unknown) => ({ ok: true, status: 200, json: async () => body });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: unknown) => {
+        const at = String(url);
+        if (at.endsWith("/mcp")) return json({ pubmed: { status: "connected" } });
+        if (at.endsWith("/global/config"))
+          return json({
+            mcp: {
+              pubmed: { type: "local", command: ["/opt/app/bin/uvx", "science-mcp"] },
+              off: { type: "local", command: ["/opt/app/bin/other"], enabled: false },
+            },
+          });
+        return { ok: false, status: 404, json: async () => ({}) };
+      }),
+    );
+    try {
+      const { useRuntimeStore } = await freshStore("acp-1");
+      await useRuntimeStore.getState().connect();
+      await useRuntimeStore.getState().sendPrompt("Search PubMed");
+
+      const created = mocks.agent?.sent.find((m) => m.method === "session/new");
+      expect((created?.params as { mcpServers: unknown }).mcpServers).toEqual([
+        { name: "pubmed", command: "/opt/app/bin/uvx", args: ["science-mcp"] },
+      ]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("keeps the bundled runtime when no agent is selected", async () => {
     const { useRuntimeStore } = await freshStore(null);
     await useRuntimeStore.getState().connect();
