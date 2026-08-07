@@ -57,6 +57,8 @@ const mocks = vi.hoisted(() => ({
   failSetModel: false,
   /** History the mock server returns for any session. */
   messages: [] as unknown[],
+  /** Optional pause for exercising cancellation while review setup awaits history. */
+  messagesGate: null as Promise<void> | null,
   /** Next getMessages call throws. */
   failMessages: false,
   /** Next runShell call throws (HTTP-level failure). */
@@ -240,6 +242,7 @@ vi.mock("@ai4s/sdk", () => {
     async getMessages(sid: string) {
       mocks.getMessages(sid);
       if (mocks.failMessages) throw new Error("history hung");
+      if (mocks.messagesGate) await mocks.messagesGate;
       return mocks.messages;
     }
     async revert(sid: string, messageID: string, partID?: string) {
@@ -281,6 +284,7 @@ beforeEach(async () => {
   mocks.dropCommandPost = false;
   mocks.abortTrailing = [];
   mocks.messages = [];
+  mocks.messagesGate = null;
   mocks.failMessages = false;
   mocks.failReverts = 0;
   mocks.approvalMode = "approve";
@@ -2013,6 +2017,74 @@ describe("auto-review on turn completion", () => {
     expect(mocks.abortSession).toHaveBeenCalledWith("ses_review_1");
     expect(mocks.appendTextPartSpy).not.toHaveBeenCalled();
     expect(useRuntimeStore.getState().threads["ses_review_1"]).toBeUndefined();
+  });
+
+  it("turning auto-review off cancels the running review and every queued review", async () => {
+    armed(["ses_a", "ses_b"]);
+    wroteAFile("ses_a");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_a" });
+    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(1));
+
+    wroteAFile("ses_b");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_b" });
+    await vi.waitFor(() =>
+      expect(useRuntimeStore.getState().backgroundReviews).toEqual({
+        ses_a: "running",
+        ses_b: "queued",
+      }),
+    );
+
+    window.localStorage.setItem("ai4s.autoReview.v1", "1");
+    useRuntimeStore.getState().setAutoReview(false);
+
+    await vi.waitFor(() => expect(mocks.abortSession).toHaveBeenCalledWith("ses_review_1"));
+    await vi.waitFor(() => expect(useRuntimeStore.getState().backgroundReviews).toEqual({}));
+    expect(window.localStorage.getItem("ai4s.autoReview.v1")).toBeNull();
+    expect(mocks.appendTextPartSpy).not.toHaveBeenCalled();
+    expect(reviewCalls()).toHaveLength(1);
+  });
+
+  it("turning auto-review off while history loads prevents the hidden fork", async () => {
+    let releaseHistory!: () => void;
+    mocks.messagesGate = new Promise<void>((resolve) => {
+      releaseHistory = resolve;
+    });
+    armed(["ses_1"]);
+    wroteAFile("ses_1");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_1" });
+    await vi.waitFor(() => expect(mocks.getMessages).toHaveBeenCalledWith("ses_1"));
+    expect(useRuntimeStore.getState().backgroundReviews["ses_1"]).toBe("running");
+
+    useRuntimeStore.getState().setAutoReview(false);
+    releaseHistory();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mocks.forkSessionSpy).not.toHaveBeenCalled();
+    expect(reviewCalls()).toHaveLength(0);
+    expect(useRuntimeStore.getState().backgroundReviews).toEqual({});
+  });
+
+  it("rechecks the switch before draining a stale queued review", async () => {
+    armed(["ses_a", "ses_b"]);
+    wroteAFile("ses_a");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_a" });
+    await vi.waitFor(() => expect(reviewCalls()).toHaveLength(1));
+
+    wroteAFile("ses_b");
+    mocks.fireEvent({ type: "session.idle", sessionId: "ses_b" });
+    await vi.waitFor(() =>
+      expect(useRuntimeStore.getState().backgroundReviews["ses_b"]).toBe("queued"),
+    );
+
+    // Simulate stale persisted/module state: the queue itself must defend the
+    // invariant even when the public setter was not the path that flipped it.
+    useRuntimeStore.setState({ autoReview: false });
+    finishReview(0);
+
+    await vi.waitFor(() =>
+      expect(useRuntimeStore.getState().backgroundReviews["ses_b"]).toBeUndefined(),
+    );
+    expect(reviewCalls()).toHaveLength(1);
   });
 
   it("stops the hidden reviewer when its parent session is deleted", async () => {

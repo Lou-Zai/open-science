@@ -1250,6 +1250,18 @@ function finishAutoReview(
   return true;
 }
 
+/** Release a review that was cancelled while its hidden fork was still being
+ * prepared. A later queued review may start only if auto-review is still on. */
+function releaseAutoReviewReservation(set: StoreSet, get: StoreGet, sid: string): void {
+  if (reviewInFlight === sid) reviewInFlight = null;
+  set((s) => {
+    const backgroundReviews = { ...s.backgroundReviews };
+    delete backgroundReviews[sid];
+    return { backgroundReviews };
+  });
+  drainReviewQueue(set, get);
+}
+
 /** Run the reviewer in a hidden fork of the completed parent checkpoint. The
  *  parent remains idle and usable while this independent session streams. */
 async function startAutoReview(
@@ -1290,12 +1302,17 @@ async function startAutoReview(
         break;
       }
     }
+    if (!get().autoReview || reviewInFlight !== sid) {
+      releaseAutoReviewReservation(set, get, sid);
+      return;
+    }
 
     // Forking gives the reviewer the completed plan, prompts and response while
     // keeping its reasoning/tools out of the foreground transcript.
     reviewSid = await runtime.forkSession(sid, boundary);
-    if (reviewInFlight !== sid) {
+    if (!get().autoReview || reviewInFlight !== sid) {
       void runtime.abortSession(reviewSid).catch(() => {});
+      releaseAutoReviewReservation(set, get, sid);
       return;
     }
     backgroundReviewJobs.set(reviewSid, {
@@ -1348,6 +1365,18 @@ async function startAutoReview(
 
 /** Start the next waiting review, if the single slot is free. */
 function drainReviewQueue(set: StoreSet, get: StoreGet): void {
+  if (!get().autoReview) {
+    const queued = reviewQueue.splice(0);
+    queuedReviewPaths.clear();
+    if (queued.length > 0) {
+      set((s) => {
+        const backgroundReviews = { ...s.backgroundReviews };
+        for (const sid of queued) delete backgroundReviews[sid];
+        return { backgroundReviews };
+      });
+    }
+    return;
+  }
   if (reviewInFlight) return;
   const next = reviewQueue.shift();
   if (next) void startAutoReview(set, get, next, takePaths(queuedReviewPaths, next));
@@ -1517,6 +1546,13 @@ export const useRuntimeStore = create<RuntimeState>((set, get) => ({
       else window.localStorage.removeItem(AUTO_REVIEW_KEY);
     }
     set({ autoReview: enabled });
+    if (!enabled) {
+      // "Off" is immediate: discard work that has not started and abort the
+      // one hidden reviewer that may currently hold the global slot.
+      const pending = new Set([...reviewQueue, ...Object.keys(get().backgroundReviews)]);
+      for (const sid of pending) get().cancelAutoReview(sid);
+      drainReviewQueue(set, get);
+    }
   },
   backgroundReviews: {},
   cancelAutoReview: (sessionId) => {

@@ -109,6 +109,7 @@ export function SettingsPage() {
   const disconnect = useRuntimeStore((s) => s.disconnect);
   const defaultModel = useRuntimeStore((s) => s.defaultModel);
   const loadCatalog = useRuntimeStore((s) => s.loadCatalog);
+  const runtimeKind = useRuntimeStore((s) => s.runtimeKind);
   const autoReview = useRuntimeStore((s) => s.autoReview);
   const setAutoReview = useRuntimeStore((s) => s.setAutoReview);
   const connected = status === "ready";
@@ -1691,7 +1692,7 @@ export function SettingsPage() {
         )}
 
         {/* ---- Review ---- */}
-        {section === "general" && (
+        {section === "general" && runtimeKind !== "acp" && (
         <Section title={t("review.title")} hint={t("review.hint")} flush>
           <div className="divide-y divide-faint">
             <Row
