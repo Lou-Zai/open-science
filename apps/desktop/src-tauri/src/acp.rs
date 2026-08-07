@@ -45,11 +45,57 @@ pub struct AcpExit {
 struct Agent {
     child: Child,
     stdin: ChildStdin,
+    logged_stdin: bool,
 }
 
 #[derive(Default)]
 pub struct AcpState {
     agents: Mutex<HashMap<String, Agent>>,
+}
+
+impl AcpState {
+    /// Wait until a registered child exits and remove exactly that entry.
+    ///
+    /// Returning `None` means another path stopped and removed the child.
+    fn wait_for_exit(&self, agent_id: &str) -> Option<String> {
+        loop {
+            {
+                let mut agents = self.agents.lock().unwrap();
+                let status = match agents.get_mut(agent_id) {
+                    None => return None,
+                    Some(agent) => match agent.child.try_wait() {
+                        Ok(Some(status)) => Some(match status.code() {
+                            Some(code) => format!("code {code}"),
+                            None => "a signal".to_string(),
+                        }),
+                        Ok(None) => None,
+                        Err(_) => Some("an unknown status".to_string()),
+                    },
+                };
+                if let Some(how) = status {
+                    agents.remove(agent_id);
+                    return Some(how);
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+    }
+}
+
+fn exit_reason(command: &str, how: &str, detail: &str) -> String {
+    if detail.is_empty() {
+        format!("{command} exited ({how})")
+    } else {
+        let tail: String = detail
+            .chars()
+            .rev()
+            .take(500)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect();
+        format!("{command} exited ({how}): {tail}")
+    }
 }
 
 /// Split whatever whole lines `buffer` now holds, leaving any trailing partial
@@ -111,6 +157,7 @@ pub fn acp_start(
     let stdout = child.stdout.take().ok_or("the agent has no stdout")?;
     let stderr = child.stderr.take().ok_or("the agent has no stderr")?;
     let stdin = child.stdin.take().ok_or("the agent has no stdin")?;
+    let pid = child.id();
 
     // Reader: relay whole lines. stdout is the protocol; nothing is interpreted
     // here, which is the point — the wire format belongs to the SDK.
@@ -120,6 +167,7 @@ pub fn acp_start(
         std::thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
             let mut buffer = String::new();
+            let mut saw_output = false;
             loop {
                 let mut chunk = Vec::new();
                 match reader.read_until(b'\n', &mut chunk) {
@@ -129,6 +177,16 @@ pub fn acp_start(
                         for line in take_lines(&mut buffer) {
                             if line.is_empty() {
                                 continue;
+                            }
+                            if !saw_output {
+                                crate::debug_log::append(
+                                    &app,
+                                    &format!(
+                                        "[acp] first stdout line pid={pid} bytes={}",
+                                        line.len()
+                                    ),
+                                );
+                                saw_output = true;
                             }
                             let _ = app.emit(
                                 LINE_EVENT,
@@ -164,6 +222,19 @@ pub fn acp_start(
             }
         });
     }
+    // Publish the child before its waiter starts. A process can exit immediately;
+    // starting the waiter first would let it observe a missing map entry and leave
+    // the frontend waiting for a response that can never arrive.
+    app.state::<AcpState>().agents.lock().unwrap().insert(
+        agent_id.clone(),
+        Agent {
+            child,
+            stdin,
+            logged_stdin: false,
+        },
+    );
+    crate::debug_log::append(&app, &format!("[acp] child started pid={pid}"));
+
     // Waiter: one exit event, so the frontend can fail pending requests instead
     // of hanging on a process that is gone.
     {
@@ -171,47 +242,21 @@ pub fn acp_start(
         let id = agent_id.clone();
         let command = command.clone();
         std::thread::spawn(move || {
-            // `wait` needs the Child, which lives in the map — poll instead, so
-            // the lock is never held across a blocking wait.
-            let status = loop {
-                {
-                    let state = app.state::<AcpState>();
-                    let mut agents = state.agents.lock().unwrap();
-                    match agents.get_mut(&id) {
-                        None => return, // stopped locally; stop() already reported
-                        Some(agent) => match agent.child.try_wait() {
-                            Ok(Some(status)) => break Some(status),
-                            Ok(None) => {}
-                            Err(_) => break None,
-                        },
-                    }
-                }
-                std::thread::sleep(std::time::Duration::from_millis(250));
+            let Some(how) = app.state::<AcpState>().wait_for_exit(&id) else {
+                return;
             };
             let detail = last_error.lock().unwrap().trim().to_string();
-            let how = match status {
-                Some(s) => match s.code() {
-                    Some(code) => format!("code {code}"),
-                    None => "a signal".to_string(),
+            crate::debug_log::append(&app, &format!("[acp] child exited pid={pid} status={how}"));
+            let reason = exit_reason(&command, &how, &detail);
+            let _ = app.emit(
+                EXIT_EVENT,
+                AcpExit {
+                    agent_id: id,
+                    reason,
                 },
-                None => "an unknown status".to_string(),
-            };
-            let reason = if detail.is_empty() {
-                format!("{command} exited ({how})")
-            } else {
-                let tail: String = detail.chars().rev().take(500).collect::<String>().chars().rev().collect();
-                format!("{command} exited ({how}): {tail}")
-            };
-            app.state::<AcpState>().agents.lock().unwrap().remove(&id);
-            let _ = app.emit(EXIT_EVENT, AcpExit { agent_id: id, reason });
+            );
         });
     }
-
-    app.state::<AcpState>()
-        .agents
-        .lock()
-        .unwrap()
-        .insert(agent_id, Agent { child, stdin });
     Ok(())
 }
 
@@ -223,6 +268,7 @@ pub fn acp_send(app: AppHandle, agent_id: String, line: String) -> Result<(), St
     let agent = agents
         .get_mut(&agent_id)
         .ok_or("that agent is not running")?;
+    let pid = agent.child.id();
     // The frontend frames its own messages; a missing newline would merge two
     // JSON-RPC messages into one unparseable line.
     let payload = if line.ends_with('\n') {
@@ -234,7 +280,15 @@ pub fn acp_send(app: AppHandle, agent_id: String, line: String) -> Result<(), St
         .stdin
         .write_all(payload.as_bytes())
         .map_err(|e| format!("could not write to the agent: {e}"))?;
-    agent.stdin.flush().map_err(|e| e.to_string())
+    agent.stdin.flush().map_err(|e| e.to_string())?;
+    if !agent.logged_stdin {
+        crate::debug_log::append(
+            &app,
+            &format!("[acp] first stdin write pid={pid} bytes={}", payload.len()),
+        );
+        agent.logged_stdin = true;
+    }
+    Ok(())
 }
 
 /// Stop one agent. The next start gets a fresh process.
@@ -279,7 +333,47 @@ pub fn shutdown(app: &AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::take_lines;
+    use std::io::{BufReader, Read};
+    use std::process::{Command, Stdio};
+
+    use super::{exit_reason, take_lines, AcpState, Agent};
+
+    #[test]
+    fn an_immediately_exiting_registered_child_reports_its_stderr() {
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--definitely-invalid-acp-test-flag")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let stderr = child.stderr.take().unwrap();
+        let stdin = child.stdin.take().unwrap();
+        let stderr_reader = std::thread::spawn(move || {
+            let mut detail = String::new();
+            BufReader::new(stderr).read_to_string(&mut detail).unwrap();
+            detail
+        });
+
+        let state = AcpState::default();
+        state.agents.lock().unwrap().insert(
+            "instant".into(),
+            Agent {
+                child,
+                stdin,
+                logged_stdin: false,
+            },
+        );
+
+        let how = state.wait_for_exit("instant").unwrap();
+        let detail = stderr_reader.join().unwrap();
+        let reason = exit_reason("test-agent", &how, detail.trim());
+
+        assert!(reason.starts_with("test-agent exited (code "));
+        assert!(!detail.trim().is_empty());
+        assert!(reason.contains(detail.trim()));
+        assert!(!state.agents.lock().unwrap().contains_key("instant"));
+    }
 
     #[test]
     fn whole_lines_are_taken_and_a_partial_one_is_kept() {
